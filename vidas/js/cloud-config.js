@@ -2,6 +2,6 @@
 // apiKey: Configuración del proyecto → Tus apps. databaseURL: Realtime Database → pestaña Datos (arriba).
 export const CLOUD = {
   apiKey: '',
-  databaseURL: '',
-  projectId: '',
+  databaseURL: 'https://vidas-d15a9-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'vidas-d15a9',
 };
