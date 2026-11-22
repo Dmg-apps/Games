@@ -48,7 +48,13 @@ export class IsoRenderer {
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     this.dpr = dpr; this.w = this.c.clientWidth; this.h = this.c.clientHeight;
     this.c.width = Math.round(this.w * dpr); this.c.height = Math.round(this.h * dpr);
-    if (!this.cam.init) { this.cam.zoom = Math.min(1.5, Math.max(0.62, this.w / (GRID * TW * 0.7))); this.cam.init = true; }
+    if (!this.cam.init) { this.fit(); this.cam.init = true; }
+  }
+  // Zoom para que la casa quepa: en vertical manda el ancho, en horizontal el alto
+  fit() {
+    const landscape = this.w > this.h;
+    const byW = (this.w - (landscape ? 120 : 24)) / (HOUSE * TW + 40), byH = (this.h - (landscape ? 90 : 300)) / (HOUSE * TH + WALL + 30);
+    this.cam.zoom = Math.min(1.6, Math.max(0.55, Math.min(byW, byH)));
   }
   origin() { const z = this.cam.zoom; return { x: this.w / 2 + this.cam.x, y: this.h / 2 + this.cam.y - GRID * TH / 2 * z }; }
   iso(x, y, zpx = 0) { const o = this.origin(), z = this.cam.zoom; return { x: o.x + (x - y) * TW / 2 * z, y: o.y + (x + y) * TH / 2 * z - zpx * z }; }
@@ -60,7 +66,11 @@ export class IsoRenderer {
   // Centra con un deslizamiento suave (se interpola en render)
   centerOn(x, y, instant = false) {
     const p = this.iso(x + 0.5, y + 0.5);
-    const tx = this.cam.x + this.w / 2 - p.x, ty = this.cam.y + this.h / 2 - p.y + 30;
+    const landscape = this.w > this.h;
+    // centro del área libre: en horizontal descuenta la barra lateral y el panel abierto
+    const cx = landscape ? (this.w - 90 - (this.insetRight || 0)) / 2 + 10 : this.w / 2;
+    const cy = landscape ? this.h / 2 + 10 : this.h / 2 - 10;
+    const tx = this.cam.x + cx - p.x, ty = this.cam.y + cy - p.y + (landscape ? 20 : 30);
     if (instant) { this.cam.x = tx; this.cam.y = ty; this.cam.tx = null; } else this.cam.tx = { x: tx, y: ty };
   }
   pan(dx, dy) { this.cam.tx = null; this.cam.x += dx; this.cam.y += dy; this.clampCam(); }

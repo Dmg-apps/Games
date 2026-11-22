@@ -6,6 +6,7 @@ import {
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
 import { icon } from './icons.js';
+import * as Cloud from './cloud.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -56,7 +57,7 @@ export class UI {
   movePill() {
     const bar = $('#tabbar'); const on = bar.querySelector('button.on'); const pill = bar.querySelector('.pill');
     bar.classList.toggle('has-on', !!on);
-    if (on) { pill.style.width = on.offsetWidth + 'px'; pill.style.transform = `translateX(${on.offsetLeft - 6}px)`; }
+    if (on) { pill.style.width = on.offsetWidth + 'px'; pill.style.height = on.offsetHeight + 'px'; pill.style.transform = `translate(${on.offsetLeft - 6}px, ${on.offsetTop - 6}px)`; }
   }
   setTab(name) {
     document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.panel === name));
@@ -161,6 +162,7 @@ export class UI {
     document.body.classList.add('sheet-open');
     $('#sheet h2').textContent = { needs: 'Estado', rels: 'Relaciones', build: 'Catálogo', menu: 'Menú' }[name];
     $('#sheet .sheet-body').scrollTop = 0;
+    this.reframe(true);
     if (name === 'needs') this.renderNeeds();
     if (name === 'rels') this.renderRels(true);
     if (name === 'build') this.renderBuild();
@@ -174,6 +176,15 @@ export class UI {
   hideSheetOnly() {
     this.panel = null; const sh = $('#sheet'); sh.classList.add('closed'); sh.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('sheet-open');
+    this.reframe(false);
+  }
+  // En horizontal, la casa se aparta para no quedar debajo del panel lateral
+  reframe(open) {
+    const r = this.g.renderer; const landscape = window.innerWidth > window.innerHeight && window.innerHeight <= 560;
+    const inset = open && landscape ? $('#sheet').offsetWidth + 20 : 0;
+    if (r.insetRight === inset) return;
+    r.insetRight = inset;
+    if (landscape && this.g.state) r.centerOn(4.5, 4.5);
   }
 
   renderNeeds() {
@@ -291,6 +302,7 @@ export class UI {
       <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="baja">Baja · estate pendiente</button><button data-v="normal">Normal</button></div></div>
       <div class="field"><label>Envejecimiento</label><div class="seg" id="age"><button data-v="1">Activado</button><button data-v="0">Desactivado</button></div></div>
       <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y las necesidades nunca llegan a cero.</p>
+      <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloud"></div>
       <div class="sec">Partida</div>
       <div class="row"><button class="btn alt" id="msave">${icon('save')} Guardar</button><button class="btn red" id="mnew">${icon('trash')} Nueva</button></div>
       <div class="sec">Cómo se juega</div>
@@ -298,8 +310,34 @@ export class UI {
     const seg = (id, val, fn) => { const el = body.querySelector(id); el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === val)); el.onclick = (e) => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); this.renderMenu(); } }; };
     seg('#aut', st.settings.autonomy, (v) => (st.settings.autonomy = v));
     seg('#age', st.settings.aging ? '1' : '0', (v) => (st.settings.aging = v === '1'));
+    this.renderCloud(body.querySelector('#cloud'));
     body.querySelector('#msave').onclick = () => { this.g.save(); this.toast('Partida guardada', 'good'); };
     body.querySelector('#mnew').onclick = () => this.confirm('Se borrará la partida actual. ¿Empezar de nuevo?', () => this.g.newGame());
+  }
+
+  renderCloud(el) {
+    if (!Cloud.configured()) { el.innerHTML = `<p class="hint">La copia en la nube aún no está activada en esta versión. Mientras, la partida se guarda en este móvil.</p>`; return; }
+    const s = Cloud.session();
+    if (!s) {
+      el.innerHTML = `<p class="hint" style="margin-top:0">Crea una cuenta para guardar tu partida fuera del móvil y seguir en otro dispositivo. Sin conexión se guarda aquí y se sube sola al volver internet.</p>
+        <div class="field"><input type="text" id="cem" inputmode="email" autocomplete="email" autocapitalize="none" autocorrect="off" placeholder="Email"></div>
+        <div class="field"><input type="text" id="cpw" autocomplete="current-password" placeholder="Contraseña (mín. 6)" style="-webkit-text-security:disc"></div>
+        <div class="row"><button class="btn coral" id="cin">Entrar</button><button class="btn alt" id="cup">Crear cuenta</button></div>
+        <p style="text-align:center;margin:10px 0 0"><button class="hint" id="cfg" style="text-decoration:underline">He olvidado la contraseña</button></p>`;
+      const v = () => [el.querySelector('#cem').value.trim(), el.querySelector('#cpw').value];
+      el.querySelector('#cpw').type = 'password';
+      const go = (mode) => { const [e, p] = v(); if (!e || !p) return this.toast('Escribe tu email y una contraseña', 'warn'); el.querySelectorAll('button').forEach((b) => (b.disabled = true)); this.g.cloudLogin(mode, e, p); };
+      el.querySelector('#cin').onclick = () => go('in'); el.querySelector('#cup').onclick = () => go('up');
+      el.querySelector('#cfg').onclick = async () => { const [e] = v(); if (!e) return this.toast('Escribe tu email primero', 'warn'); try { await Cloud.resetPassword(e); this.toast('Te hemos enviado un email para cambiarla', 'good'); } catch (err) { this.toast(err.message, 'bad'); } };
+      return;
+    }
+    const m = Cloud.meta();
+    const ago = m.syncedAt ? Math.max(0, Math.round((Date.now() - m.syncedAt) / 60000)) : null;
+    const status = m.pending ? (navigator.onLine ? 'Hay cambios por subir' : 'Sin conexión: se subirá al volver internet') : ago === null ? 'Aún no se ha subido' : ago < 1 ? 'Sincronizada ahora mismo' : `Sincronizada hace ${ago} min`;
+    el.innerHTML = `<div class="card"><div class="h"><span class="tilebox" style="background:${m.pending ? '#fff3dc' : '#e3f7ee'};color:${m.pending ? '#b7791f' : '#127a52'}">${icon(m.pending ? 'clock' : 'check')}</span><div style="min-width:0"><b>${esc(s.email)}</b><div class="hint">${status}</div></div></div></div>
+      <div class="row" style="margin-top:8px"><button class="btn alt" id="cpush">${icon('cloud')} Subir ahora</button><button class="btn alt" id="cout">${icon('logout')} Salir</button></div>`;
+    el.querySelector('#cpush').onclick = () => { this.g.save(); this.g.cloudPush(true); };
+    el.querySelector('#cout').onclick = () => this.confirm('¿Cerrar sesión en la nube? La partida seguirá guardada en este móvil.', () => this.g.cloudLogout());
   }
 
   // ---------- modales ----------
@@ -313,6 +351,10 @@ export class UI {
   info(title, html, btn = 'Vale', cb) {
     const box = this.modal(`<h2>${title}</h2>${html}<div class="actions"><button class="btn coral" id="iok">${btn}</button></div>`);
     box.querySelector('#iok').onclick = () => { this.closeModal(); cb && cb(); };
+  }
+  choose(title, text, opts) {
+    const box = this.modal(`<h2>${esc(title)}</h2><p>${esc(text)}</p><div class="actions" style="flex-direction:column">${opts.map(([l], i) => `<button class="btn ${i ? 'alt' : 'coral'}" data-i="${i}">${esc(l)}</button>`).join('')}</div>`);
+    box.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { this.closeModal(); opts[+b.dataset.i][1](); }));
   }
   li(ic, html) { return `<li><span class="tilebox">${icon(ic)}</span><span>${html}</span></li>`; }
 
@@ -367,11 +409,11 @@ export class UI {
   }
 
   // ---------- pantalla de título ----------
-  showTitle(hasSave, onContinue, onNew) {
+  showTitle(hasSave, onContinue, onNew, cloudFamily) {
     const t = $('#title'); t.hidden = false; t.classList.remove('out');
     t.innerHTML = `<div class="logo"><div class="mark">${icon('home')}</div><h1>Vidas</h1><p>Cuida de tu familia. Ama a quien quieras.</p>
       <div class="pride">${PRIDE.map((c) => `<i style="background:${c}"></i>`).join('')}</div></div>
-      <div class="acts">${hasSave ? `<button class="btn coral" id="tcont">${icon('play')} Continuar</button>` : ''}<button class="btn ${hasSave ? 'ghost' : 'coral'}" id="tnew">${icon('plus')} Nueva familia</button></div>`;
+      <div class="acts">${hasSave ? `<button class="btn coral" id="tcont">${icon(cloudFamily ? 'cloud' : 'play')} Continuar${cloudFamily ? ` · familia ${esc(cloudFamily)}` : ''}</button>` : ''}<button class="btn ${hasSave ? 'ghost' : 'coral'}" id="tnew">${icon('plus')} Nueva familia</button></div>`;
     const hide = () => { t.classList.add('out'); setTimeout(() => (t.hidden = true), 400); };
     if (hasSave) t.querySelector('#tcont').onclick = () => { hide(); onContinue(); };
     t.querySelector('#tnew').onclick = () => {

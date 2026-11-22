@@ -244,3 +244,31 @@ body.sheet-open #buildbar { display: none; }
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
   #sheet, #sheet.closed, .toast, #pie, #tabbar .pill, #speeds .thumb { transition-property: opacity !important; }
 }
+
+/* ---------- Horizontal en móvil ---------- */
+:root { --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px); }
+#top { padding-left: calc(var(--safe-l) + 10px); padding-right: calc(var(--safe-r) + 10px); }
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --rail: 76px; }
+  #top { padding-top: calc(var(--safe-t) + 8px); right: calc(var(--rail) + var(--safe-r) + 10px); }
+  #clock { flex: none; }
+  #queue { top: calc(var(--safe-t) + 58px); left: calc(var(--safe-l) + 10px); }
+  #toasts { top: calc(var(--safe-t) + 8px); right: calc(var(--rail) + var(--safe-r) + 20px); width: min(42vw, 320px); }
+  #bottom { inset: 0; padding: 0; display: block; }
+  #family { position: absolute; left: calc(var(--safe-l) + 12px); bottom: calc(var(--safe-b) + 12px); }
+  body.sheet-open #family { opacity: 1; transform: none; pointer-events: auto; }
+  #tabbar { position: absolute; right: calc(var(--safe-r) + 10px); top: 50%; transform: translateY(-50%); flex-direction: column; width: var(--rail); height: auto; padding: 6px; gap: 2px; }
+  #tabbar button { flex: none; height: 58px; }
+  #tabbar .pill { top: 6px; left: 6px; right: auto; bottom: auto; }
+  #sheet { left: auto; top: calc(var(--safe-t) + 8px); bottom: calc(var(--safe-b) + 8px); right: calc(var(--rail) + var(--safe-r) + 18px); width: min(400px, 52vw); max-height: none; }
+  #sheet.closed { transform: translateX(calc(100% + 140px)); }
+  #buildbar { left: calc(var(--safe-l) + 230px); right: calc(var(--rail) + var(--safe-r) + 20px); bottom: calc(var(--safe-b) + 12px); }
+  body.sheet-open #buildbar { display: flex; right: calc(var(--rail) + var(--safe-r) + min(400px, 52vw) + 30px); }
+  #title { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; padding-left: calc(var(--safe-l) + 40px); padding-right: calc(var(--safe-r) + 40px); background: linear-gradient(90deg, rgba(20, 24, 48, 0.5), rgba(20, 24, 48, 0) 60%); }
+  #title .logo { margin: 0; text-align: left; }
+  #title .logo .mark { margin: 0 0 10px; width: 60px; height: 60px; font-size: 32px; }
+  #title .logo h1 { font-size: 50px; }
+  #title .pride { justify-content: flex-start; }
+  #title .acts { max-width: 300px; align-self: flex-end; }
+  .modal-box { max-width: 560px; }
+}

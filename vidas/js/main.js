@@ -2,6 +2,7 @@ import * as Sim from './sim.js';
 import { OBJECTS, OBJ_IC, SOCIALS, GENDERS } from './data.js';
 import { IsoRenderer } from './render.js';
 import { UI } from './ui.js';
+import * as Cloud from './cloud.js';
 
 const SPEEDS = [0, 1, 3, 10]; // minutos de juego por segundo real
 
@@ -13,11 +14,14 @@ class Game {
     this.view = { build: false, ghost: null, selected: null, active: null };
     this.state = null;
     this.last = performance.now(); this.uiT = 0; this.saveT = 0;
-    window.addEventListener('resize', () => this.renderer.resize());
+    window.addEventListener('resize', () => this.onResize());
+    window.addEventListener('online', () => { if (this.state && Cloud.meta().pending) this.cloudPush(true); });
+    navigator.storage?.persist?.().catch(() => {}); // pide al navegador que no borre los datos guardados
+    this.lastPush = 0;
     this.setupInput();
     document.addEventListener('visibilitychange', () => {
       if (!this.state) return;
-      if (document.hidden) this.save();
+      if (document.hidden) this.save(true);
       else this.resumeFromBackground();
     });
     window.addEventListener('pagehide', () => this.save());
@@ -35,11 +39,28 @@ class Game {
     ], 'Demo');
     this.demo.settings.autonomy = 'normal'; this.demo.time = 17 * 60 + 30; this.demo.lastHour = 17;
     this.state = null; this.ui.showHud(false);
-    this.renderer.centerOn(5, 4.5, true);
-    this.ui.showTitle(!!saved, () => this.continueGame(), () => this.ui.createFamily((defs, surname) => this.start(defs, surname), () => this.showTitle()));
+    this.renderer.centerOn(4.5, 4.5, true);
+    const onNew = () => this.ui.createFamily((defs, surname) => this.start(defs, surname), () => this.showTitle());
+    this.ui.showTitle(!!saved, () => this.continueGame(), onNew);
+    // ¿Hay una partida en la nube? (por ejemplo, en un móvil nuevo)
+    Cloud.pull().then((remote) => {
+      this.remote = remote;
+      if (remote && !saved && !this.state) this.ui.showTitle(true, () => this.continueGame(), onNew, remote.family);
+    });
   }
   continueGame() {
-    const saved = Sim.load(); if (!saved) return this.showTitle();
+    const local = Sim.load(); const remote = this.remote;
+    if (remote && (!local || remote.savedAt > (local.lastSaved || 0) + 5000)) {
+      if (!local) return this.loadState(remote.state);
+      const when = new Date(remote.savedAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+      return this.ui.choose('Partida más reciente en la nube', `Hay una copia en la nube guardada el ${when}, más nueva que la de este móvil. ¿Cuál quieres usar?`,
+        [['Usar la de la nube', () => this.loadState(remote.state)], ['Usar la de este móvil', () => this.loadState(local)]]);
+    }
+    if (!local) return this.showTitle();
+    this.loadState(local);
+  }
+  loadState(saved) {
+    if (!saved || saved.v !== 1) return this.showTitle();
     this.demo = null; this.state = saved;
     globalThis.__simTime = saved.time;
     const sum = Sim.offlineProgress(saved, Date.now() - saved.lastSaved);
@@ -62,7 +83,7 @@ class Game {
   afterStart() {
     this.view.active = this.state.active;
     this.ui.showHud(true);
-    this.renderer.centerOn(5, 4.5, true);
+    this.renderer.centerOn(4.5, 4.5, true);
     this.ui.update();
     this.save();
   }
@@ -70,7 +91,36 @@ class Game {
     this.exitBuild(); this.ui.closePanel(); Sim.wipe();
     this.showTitle();
   }
-  save() { if (this.state) Sim.save(this.state); }
+  save(forceCloud = false) {
+    if (!this.state) return;
+    Sim.save(this.state);
+    if (forceCloud || Date.now() - this.lastPush > 60000) this.cloudPush();
+  }
+  async cloudPush(manual = false) {
+    if (!this.state || !Cloud.session()) return;
+    this.lastPush = Date.now();
+    const r = await Cloud.push(this.state);
+    if (manual) this.ui.toast(r.ok ? 'Partida subida a la nube' : r.reason === 'offline' ? 'Sin conexión: se subirá al volver internet' : 'No se ha podido subir ahora', r.ok ? 'good' : 'warn');
+    if (this.ui.panel === 'menu') this.ui.renderMenu();
+  }
+  async cloudLogin(mode, email, pass) {
+    try {
+      if (mode === 'up') await Cloud.signUp(email, pass); else await Cloud.signIn(email, pass);
+      const remote = await Cloud.pull();
+      if (remote && this.state && remote.savedAt > (this.state.lastSaved || 0) + 5000) {
+        this.ui.choose('Ya tienes una partida en la nube', `En la nube está la familia ${remote.family}. ¿Cuál quieres conservar?`,
+          [['La de la nube', () => { Sim.save(remote.state); this.exitBuild(); this.ui.closePanel(); this.loadState(Sim.load()); }], ['La de este móvil', () => this.cloudPush(true)]]);
+      } else { await this.cloudPush(true); }
+    } catch (e) { this.ui.toast(e.message, 'bad'); }
+    if (this.ui.panel === 'menu') this.ui.renderMenu();
+  }
+  cloudLogout() { Cloud.signOut(); this.ui.toast('Sesión cerrada. La partida sigue en este móvil.', 'info'); this.ui.renderMenu(); }
+  onResize() {
+    const wasPortrait = this.portrait; this.renderer.resize();
+    this.portrait = window.innerHeight >= window.innerWidth;
+    if (wasPortrait !== undefined && wasPortrait !== this.portrait) { this.renderer.fit(); this.renderer.centerOn(4.5, 4.5, true); }
+    this.ui.movePill();
+  }
   resumeFromBackground() {
     if (!this.state) return;
     const sum = Sim.offlineProgress(this.state, Date.now() - this.state.lastSaved);
