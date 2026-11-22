@@ -13,17 +13,20 @@ Simulador de vida para el móvil (PWA), inclusivo: cualquier persona puede amar 
 - `js/data.js`: objetos, acciones, interacciones, trabajos, rasgos.
 
 ## Copia en la nube (Firebase)
-La partida se guarda siempre en el móvil (funciona sin conexión) y, si inicias sesión, se sube a Firestore al volver internet.
-Para activarla, rellena `vidas/js/cloud-config.js` con `apiKey` y `projectId` de la app web de Firebase, activa
-Authentication → Correo/contraseña y crea Firestore con estas reglas:
+La partida se guarda siempre en el móvil (funciona sin conexión) y, si inicias sesión, se sube a Firebase al volver internet.
+Para activarla, rellena `vidas/js/cloud-config.js` con `apiKey` y `databaseURL` (Realtime Database), activa
+Authentication → Correo/contraseña y pon estas reglas en Realtime Database:
 
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /partidas/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+{
+  "rules": {
+    "partidas": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
 ```
+También funciona con Firestore si se rellena `projectId` en vez de `databaseURL`.

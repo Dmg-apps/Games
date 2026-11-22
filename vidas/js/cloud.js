@@ -18,7 +18,10 @@ const ERRORS = {
   USER_DISABLED: 'Esta cuenta está desactivada.',
 };
 
-export const configured = () => !!(CLOUD.apiKey && CLOUD.projectId);
+export const configured = () => !!(CLOUD.apiKey && (CLOUD.databaseURL || CLOUD.projectId));
+// Realtime Database si hay databaseURL; si no, Firestore
+const useRTDB = () => !!CLOUD.databaseURL;
+const rtdbUrl = (uid, tok) => `${CLOUD.databaseURL.replace(/\/$/, '')}/partidas/${uid}.json?auth=${encodeURIComponent(tok)}`;
 const read = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const write = (k, v) => (v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k));
 
@@ -68,6 +71,12 @@ export async function push(state) {
   if (!navigator.onLine) return { ok: false, reason: 'offline' };
   try {
     const s = await token(); if (!s) return { ok: false, reason: 'auth' };
+    if (useRTDB()) {
+      const r = await fetch(rtdbUrl(s.uid, s.idToken), { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: JSON.stringify(state), savedAt: state.lastSaved || Date.now(), family: state.surname || '' }) });
+      if (!r.ok) return { ok: false, reason: 'server' };
+      setMeta({ pending: false, syncedAt: Date.now() });
+      return { ok: true };
+    }
     const body = { fields: {
       data: { stringValue: JSON.stringify(state) },
       savedAt: { integerValue: String(state.lastSaved || Date.now()) },
@@ -85,6 +94,11 @@ export async function pull() {
   if (!configured() || !session() || !navigator.onLine) return null;
   try {
     const s = await token(); if (!s) return null;
+    if (useRTDB()) {
+      const r = await fetch(rtdbUrl(s.uid, s.idToken)); if (!r.ok) return null;
+      const j = await r.json(); if (!j || !j.data) return null;
+      return { state: JSON.parse(j.data), savedAt: Number(j.savedAt || 0), family: j.family || '' };
+    }
     const r = await fetch(docUrl(s.uid), { headers: { Authorization: `Bearer ${s.idToken}` } });
     if (r.status === 404 || !r.ok) return null;
     const j = await r.json();
