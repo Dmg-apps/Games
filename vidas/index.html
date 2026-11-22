@@ -2,55 +2,48 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#2f6fd0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#7fc3ee">
+  <meta name="color-scheme" content="light">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Vidas">
+  <meta name="description" content="Un simulador de vida para el móvil donde cada cual ama a quien quiera.">
   <title>Vidas</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preload" href="fonts/nunito.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <canvas id="game"></canvas>
 
-  <header id="top">
-    <div id="money" class="pill"></div>
-    <div id="clock" class="pill"></div>
-    <div id="speeds" class="pill">
-      <button data-s="0" aria-label="Pausa">⏸</button>
-      <button data-s="1" aria-label="Normal">▶</button>
-      <button data-s="2" aria-label="Rápido">⏩</button>
-      <button data-s="3" aria-label="Muy rápido">⏭</button>
-    </div>
+  <header id="top" hidden>
+    <div id="money" class="hud glass"><span class="badge"></span><b></b></div>
+    <div id="clock" class="hud glass"><span class="badge"></span><div class="t"><b></b><span></span></div></div>
+    <div id="speeds" class="hud glass"><span class="thumb"></span></div>
   </header>
 
   <div id="queue"></div>
-  <div id="toasts"></div>
-
+  <div id="toasts" aria-live="polite"></div>
   <div id="buildbar" hidden></div>
 
-  <nav id="bottom">
+  <nav id="bottom" hidden>
     <div id="family"></div>
-    <div id="modes">
-      <button data-panel="needs"><b>❤️</b><span>Estado</span></button>
-      <button data-panel="rels"><b>👥</b><span>Gente</span></button>
-      <button data-panel="build"><b>🛠️</b><span>Construir</span></button>
-      <button data-panel="menu"><b>☰</b><span>Menú</span></button>
-    </div>
+    <div id="tabbar" class="glass"><span class="pill"></span></div>
   </nav>
 
-  <section id="sheet" hidden>
-    <div class="sheet-head"><h2></h2><button class="close" aria-label="Cerrar">✕</button></div>
+  <section id="sheet" class="closed" aria-hidden="true">
+    <div class="sheet-head"><h2></h2><button class="close press" aria-label="Cerrar"></button></div>
     <div class="sheet-body"></div>
   </section>
 
   <div id="pie" hidden></div>
   <div id="modal" hidden><div class="modal-box"></div></div>
-  <div id="fade"><span>💕</span></div>
+  <div id="title" hidden></div>
+  <div id="fade"></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

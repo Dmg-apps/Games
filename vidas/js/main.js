@@ -1,5 +1,5 @@
 import * as Sim from './sim.js';
-import { OBJECTS } from './data.js';
+import { OBJECTS, OBJ_IC, SOCIALS, GENDERS } from './data.js';
 import { IsoRenderer } from './render.js';
 import { UI } from './ui.js';
 
@@ -22,39 +22,57 @@ class Game {
     });
     window.addEventListener('pagehide', () => this.save());
 
-    const saved = Sim.load();
-    if (saved) {
-      this.state = saved;
-      globalThis.__simTime = saved.time;
-      const sum = Sim.offlineProgress(saved, Date.now() - saved.lastSaved);
-      this.afterStart();
-      if (sum) this.ui.showOffline(sum);
-    } else this.ui.createFamily((defs, surname) => this.start(defs, surname));
+    this.showTitle();
     requestAnimationFrame((t) => this.loop(t));
   }
+  // Pantalla de inicio con una familia de demostración viviendo detrás
+  showTitle() {
+    const saved = Sim.load();
+    this.demo = Sim.newGame([
+      { name: 'Alex', gender: 'x', look: Sim.randomLook('x'), partnerIdx: 1 },
+      { name: 'Sol', gender: 'f', look: Sim.randomLook('f'), partnerIdx: 0 },
+      { name: 'Leo', gender: 'm', age: 'nino', look: Sim.randomLook('m') },
+    ], 'Demo');
+    this.demo.settings.autonomy = 'normal'; this.demo.time = 17 * 60 + 30; this.demo.lastHour = 17;
+    this.state = null; this.ui.showHud(false);
+    this.renderer.centerOn(5, 4.5, true);
+    this.ui.showTitle(!!saved, () => this.continueGame(), () => this.ui.createFamily((defs, surname) => this.start(defs, surname), () => this.showTitle()));
+  }
+  continueGame() {
+    const saved = Sim.load(); if (!saved) return this.showTitle();
+    this.demo = null; this.state = saved;
+    globalThis.__simTime = saved.time;
+    const sum = Sim.offlineProgress(saved, Date.now() - saved.lastSaved);
+    this.afterStart();
+    if (sum) this.ui.showOffline(sum);
+  }
   start(defs, surname) {
+    Sim.wipe(); this.demo = null;
     this.state = Sim.newGame(defs, surname);
     globalThis.__simTime = this.state.time;
     this.afterStart();
-    this.ui.info('¡Bienvenidos a casa! 🏡',
-      `<p>Esta es la casa de la familia ${surname}.</p><ul>
-      <li>Toca a alguien de tu familia (abajo) para controlarlo.</li>
-      <li>Toca objetos, personas o el suelo para darle órdenes.</li>
-      <li>Están en <b>autonomía baja</b>: si no les atiendes, lo pasarán mal. Puedes cambiarlo en el Menú.</li>
-      <li>Busca trabajo en el teléfono, paga las facturas en el buzón 📬 e invita a los vecinos.</li></ul>`, '¡A jugar!');
+    const u = this.ui;
+    u.info(`Bienvenida, familia ${surname}`,
+      `<ul>${u.li('user', 'Toca a alguien de tu familia (abajo) para controlarle.')}
+      ${u.li('pin', 'Toca muebles, personas o el suelo para darle órdenes.')}
+      ${u.li('alert', 'Tienen <b>poca autonomía</b>: si no les atiendes, lo pasarán mal. Puedes cambiarlo en el Menú.')}
+      ${u.li('phone', 'Busca trabajo en el teléfono, paga las facturas en el buzón e invita a gente.')}
+      ${u.li('heart', 'Aquí cada cual ama a quien quiera.')}</ul>`, 'A jugar');
   }
   afterStart() {
     this.view.active = this.state.active;
-    this.renderer.centerOn(5, 5);
+    this.ui.showHud(true);
+    this.renderer.centerOn(5, 4.5, true);
     this.ui.update();
     this.save();
   }
   newGame() {
-    Sim.wipe(); this.state = null; this.exitBuild(); this.ui.closePanel();
-    this.ui.createFamily((defs, surname) => this.start(defs, surname));
+    this.exitBuild(); this.ui.closePanel(); Sim.wipe();
+    this.showTitle();
   }
   save() { if (this.state) Sim.save(this.state); }
   resumeFromBackground() {
+    if (!this.state) return;
     const sum = Sim.offlineProgress(this.state, Date.now() - this.state.lastSaved);
     this.state.lastSaved = Date.now();
     this.last = performance.now();
@@ -167,13 +185,17 @@ class Game {
     };
     if (target) {
       const opts = [];
-      if (target.home && target.id !== st.active) opts.push({ icon: '👤', label: `Controlar a ${target.name}`, run: () => this.selectSim(target.id) });
+      if (target.home && target.id !== st.active) opts.push({ icon: 'user', label: `Controlar a ${target.name}`, cls: 'main', run: () => this.selectSim(target.id) });
       if (target.id === st.active) {
-        opts.push({ icon: '❤️', label: 'Ver su estado', run: () => this.ui.openPanel('needs') });
+        opts.push({ icon: 'heart', label: 'Ver su estado', cls: 'main', run: () => this.ui.openPanel('needs') });
       } else if (me && me.location === 'casa' && me.age !== 'bebe') {
-        for (const a of Sim.socialActions(st, me, target)) opts.push({ ...a, run: () => { Sim.queueSocial(st, me, a.id, target.id); this.ui.update(); } });
+        for (const a of Sim.socialActions(st, me, target)) {
+          const d = SOCIALS[a.id];
+          opts.push({ ...a, cls: d.romantic ? 'romantic' : d.care ? 'care' : d.bad ? 'bad' : '', run: () => { Sim.queueSocial(st, me, a.id, target.id); this.ui.update(); } });
+        }
       }
-      this.ui.showPie(x, y, target.name + (target.home ? '' : ' (visita)'), opts);
+      const rel = me && me !== target ? Sim.relLabel(st, me, target) : null;
+      this.ui.showPie(x, y, { sim: target, title: target.name, sub: [target.home ? null : 'De visita', rel, GENDERS[target.gender].label].filter(Boolean).join(' · ') }, opts);
       return;
     }
     const o = this.renderer.pickObject(st, x, y) || (inGrid && Sim.objectAt(st, t.x, t.y));
@@ -181,16 +203,20 @@ class Game {
     if (o && !OBJECTS[o.type].walkable) {
       if (!needMe()) return;
       const opts = Sim.objectActions(st, me, o).map((a) => ({ ...a, run: () => { Sim.queueObject(st, me, a.id, o.id); this.ui.update(); } }));
-      this.ui.showPie(x, y, OBJECTS[o.type].name, opts);
+      this.ui.showPie(x, y, { icon: OBJ_IC[o.type], title: OBJECTS[o.type].name, sub: me.name }, opts);
       return;
     }
     if (!needMe()) return;
-    this.ui.showPie(x, y, 'Suelo', [{ icon: '🚶', label: 'Ir aquí', run: () => { Sim.queueGo(st, me, t.x, t.y); this.ui.update(); } }]);
+    this.ui.showPie(x, y, { icon: 'pin', title: 'Suelo', sub: me.name }, [{ icon: 'pin', label: 'Ir aquí', run: () => { Sim.queueGo(st, me, t.x, t.y); this.ui.update(); } }]);
   }
 
   // ---------- bucle ----------
   loop(t) {
     const dtReal = Math.min(0.25, (t - this.last) / 1000); this.last = t;
+    if (this.demo && !this.state) {
+      Sim.tick(this.demo, dtReal * 1.5); Sim.drainEvents();
+      this.renderer.render(this.demo, { active: null });
+    }
     const st = this.state;
     if (st) {
       let dt = dtReal * SPEEDS[st.speed];

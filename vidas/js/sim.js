@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -29,12 +29,15 @@ export const dowOf = (t) => dayOf(t) % 7;
 // ---------- creación ----------
 export function randomLook(gender) {
   return {
-    skin: pick(SKINS), hair: gender === 'f' ? pick([0, 1, 1, 2]) : pick([0, 0, 3, 2]),
+    skin: pick(SKINS), hair: gender === 'f' ? pick([0, 1, 1, 2]) : gender === 'x' ? pick([0, 1, 2, 3]) : pick([0, 0, 3, 2]),
+    body: gender === 'f' ? (Math.random() < 0.7 ? 'vestido' : 'recto') : gender === 'x' ? pick(['recto', 'vestido']) : 'recto',
     hairColor: pick(HAIR_COLORS.slice(0, 6)), shirt: pick(CLOTHES), pants: pick(CLOTHES),
   };
 }
 
-export function randomName(gender) { return pick(gender === 'f' ? NAMES_F : NAMES_M); }
+export function randomName(gender) { return pick(gender === 'f' ? NAMES_F : gender === 'x' ? NAMES_X : NAMES_M); }
+export const ALL_GENDERS = ['f', 'm', 'x'];
+export function defaultFertility(g) { return { canCarry: g === 'f', canSire: g === 'm' }; }
 
 export function makeSim(state, def) {
   const id = 's' + state.nextId++;
@@ -49,7 +52,11 @@ export function makeSim(state, def) {
     parents: def.parents || [], pregnant: null, worries: [], moodlets: [], home: !!def.home,
     location: def.location || (def.home ? 'casa' : 'fuera'), alerted: {}, bubble: null, nextThink: 0,
     neglect: 0, warnings: 0, visitUntil: 0, cribId: null, sleeping: false, perfWarn: 0,
+    attraction: def.attraction || [...ALL_GENDERS],
+    canCarry: def.canCarry ?? defaultFertility(def.gender || 'f').canCarry,
+    canSire: def.canSire ?? defaultFertility(def.gender || 'f').canSire,
   };
+  if (!sim.look.body) sim.look.body = sim.gender === 'f' ? 'vestido' : 'recto';
   state.sims[id] = sim;
   return sim;
 }
@@ -87,8 +94,8 @@ export function newGame(familyDefs, surname) {
   });
   // vecinos
   for (let i = 0; i < 5; i++) {
-    const g = Math.random() < 0.5 ? 'f' : 'm';
-    const n = makeSim(state, { gender: g, traits: pickTraits(), home: false, location: 'fuera' });
+    const g = i === 4 ? 'x' : i % 2 ? 'f' : 'm';
+    const n = makeSim(state, { gender: g, traits: pickTraits(), home: false, location: 'fuera', attraction: randomAttraction(g) });
     if (Math.random() < 0.7) n.job = { id: pick(Object.keys(CAREERS)), level: Math.floor(rnd(0, 3)), perf: 50 };
   }
   for (const s of householdSims(state)) {
@@ -96,6 +103,15 @@ export function newGame(familyDefs, surname) {
   }
   return state;
 }
+
+function randomAttraction(g) {
+  const r = Math.random();
+  if (r < 0.45) return [...ALL_GENDERS];
+  if (r < 0.7) return g === 'x' ? ['f', 'm', 'x'] : [g === 'f' ? 'm' : 'f'];
+  if (r < 0.9) return g === 'x' ? ['x', 'f'] : [g];
+  return g === 'm' ? ['m', 'x'] : ['f', 'x'];
+}
+export const attractedTo = (a, b) => (a.attraction || ALL_GENDERS).includes(b.gender);
 
 function pickTraits() {
   const keys = Object.keys(TRAITS);
@@ -120,9 +136,9 @@ export function setRel(state, a, b, da, dr, absolute = false) {
 export function relLabel(state, a, b) {
   const r = getRel(a, b);
   if (a.partner === b.id) return a.married ? 'Cónyuge' : 'Pareja';
-  if (a.parents.includes(b.id)) return b.gender === 'f' ? 'Madre' : 'Padre';
-  if (b.parents.includes(a.id)) return b.gender === 'f' ? 'Hija' : 'Hijo';
-  if (a.parents.length && a.parents.some((p) => b.parents.includes(p))) return b.gender === 'f' ? 'Hermana' : 'Hermano';
+  if (a.parents.includes(b.id)) return gx(b, 'Padre', 'Madre', 'Mapadre');
+  if (b.parents.includes(a.id)) return gx(b, 'Hijo', 'Hija', 'Hije');
+  if (a.parents.length && a.parents.some((p) => b.parents.includes(p))) return gx(b, 'Hermano', 'Hermana', 'Hermane');
   if (r.r >= 30) return 'Atracción';
   if (r.a >= 75) return 'Mejor amistad';
   if (r.a >= 40) return 'Amistad';
@@ -319,7 +335,7 @@ export function objectActions(state, sim, o) {
     else if (id === 'deberes' && !sim.worries.includes('deberes')) disabled = 'No tiene deberes';
     else if (id === 'adoptar' && householdSims(state).length + pendingBabies(state) >= MAX_HOUSEHOLD) disabled = 'La familia está completa';
     else if ((o.users.length >= (def.cap || 1)) && !o.users.includes(sim.id) && !def.acts.includes('pagar')) disabled = 'En uso';
-    out.push({ id, label: a.label, icon: a.icon, disabled });
+    out.push({ id, label: a.label, icon: a.ic, disabled });
   }
   return out;
 }
@@ -331,7 +347,7 @@ export function socialActions(state, actor, target) {
   for (const [id, d] of Object.entries(SOCIALS)) {
     const r = socialReq(state, actor, target, id, d);
     if (r === false) continue;
-    out.push({ id, label: d.label, icon: d.icon, disabled: r === true ? null : r });
+    out.push({ id, label: d.label, icon: d.ic, disabled: r === true ? null : r });
   }
   return out;
 }
@@ -362,6 +378,7 @@ function socialReq(state, actor, target, id, d) {
       if (!target.home || !actor.home) return 'Tenéis que vivir juntos';
       if (actor.partner !== target.id) return 'Tenéis que ser pareja';
       if (actor.pregnant || target.pregnant) return 'Ya hay un bebé en camino';
+      if (!conceptionPair(actor, target)) return 'Podéis adoptar desde el teléfono';
       if (householdSims(state).length + pendingBabies(state) >= MAX_HOUSEHOLD) return 'La familia está completa';
     }
     return true;
@@ -375,15 +392,15 @@ function socialReq(state, actor, target, id, d) {
 export function queueObject(state, sim, actId, objId) {
   const a = ACTIONS[actId];
   if (sim.queue.length >= 6) return toast('La cola de acciones está llena');
-  sim.queue.push({ kind: 'obj', act: actId, objId, icon: a.icon, label: a.label });
+  sim.queue.push({ kind: 'obj', act: actId, objId, icon: a.ic, label: a.label });
 }
 export function queueSocial(state, sim, socId, targetId) {
   const d = SOCIALS[socId];
   if (sim.queue.length >= 6) return toast('La cola de acciones está llena');
-  sim.queue.push({ kind: 'soc', act: socId, targetId, icon: d.icon, label: d.label + ' con ' + state.sims[targetId].name });
+  sim.queue.push({ kind: 'soc', act: socId, targetId, icon: d.ic, label: d.label + ' con ' + state.sims[targetId].name });
 }
 export function queueGo(state, sim, x, y) {
-  sim.queue.push({ kind: 'go', x, y, icon: '🚶', label: 'Ir allí' });
+  sim.queue.push({ kind: 'go', x, y, icon: 'pin', label: 'Ir allí' });
 }
 export function cancelItem(state, sim, idx) {
   if (idx === -1) interrupt(state, sim);
@@ -438,7 +455,7 @@ function startNext(state, s) {
     const r = nearestSpot(state, s, objTiles(o));
     if (!r) { if (s.home) toast(`${s.name} no puede llegar a ${def.name}`, 'warn', s.id); return; }
     o.users.push(s.id);
-    s.cur = { kind: 'obj', act: item.act, objId: o.id, phase: 'walk', t: 0, spot: r.spot, onObj: !!def.onObj, icon: a.icon, label: a.label };
+    s.cur = { kind: 'obj', act: item.act, objId: o.id, phase: 'walk', t: 0, spot: r.spot, onObj: !!def.onObj, icon: a.ic, label: a.label };
     s.path = r.path;
     return;
   }
@@ -460,9 +477,9 @@ function startNext(state, s) {
     if (!r) { toast(`${s.name} no puede llegar hasta ${t.name}`, 'warn', s.id); return; }
     interrupt(state, t);
     if (t.age !== 'bebe') t.queue = t.home ? t.queue : [];
-    s.cur = { kind: 'soc', act: item.act, targetId: t.id, phase: 'walk', t: 0, spot: r.spot, icon: d.icon, label: item.label, bedId: bed?.id };
+    s.cur = { kind: 'soc', act: item.act, targetId: t.id, phase: 'walk', t: 0, spot: r.spot, icon: d.ic, label: item.label, bedId: bed?.id };
     s.path = r.path;
-    t.cur = { kind: 'partner', leaderId: s.id, phase: 'wait', icon: d.icon, label: d.label + ' con ' + s.name };
+    t.cur = { kind: 'partner', leaderId: s.id, phase: 'wait', icon: d.ic, label: d.label + ' con ' + s.name };
     if (bed) {
       bed.users.push(s.id, t.id);
       const r2 = nearestSpot(state, t, objTiles(bed));
@@ -523,11 +540,11 @@ function failures(state, s) {
     toast(`¡${s.name} no ha llegado al váter a tiempo! 😳`, 'bad', s.id);
   } else if (s.needs.energia <= 0) {
     interrupt(state, s); s.queue = [];
-    s.cur = { kind: 'ko', t: 0, dur: 240, sleep: true, icon: '💤', label: 'Dormido en el suelo' }; s.sleeping = true;
+    s.cur = { kind: 'ko', t: 0, dur: 240, sleep: true, icon: 'moon', label: 'Dormido/a en el suelo' }; s.sleeping = true;
     addMoodlet(s, 'suelo'); toast(`${s.name} se ha quedado dormido/a en el suelo de agotamiento`, 'bad', s.id);
   } else if (s.needs.hambre <= 0) {
     interrupt(state, s); s.queue = [];
-    s.cur = { kind: 'ko', t: 0, dur: 120, icon: '😵', label: 'Desmayado/a' }; s.needs.hambre = 25;
+    s.cur = { kind: 'ko', t: 0, dur: 120, icon: 'alert', label: 'Desmayado/a' }; s.needs.hambre = 25;
     addMoodlet(s, 'desmayo'); toast(`¡${s.name} se ha desmayado de hambre!`, 'bad', s.id);
   }
 }
@@ -631,6 +648,7 @@ function resolveSocial(state, a, t, id) {
     if (a.needs.higiene < 15) chance -= 0.2;
     if (d.romantic && t.partner && t.partner !== a.id) chance -= 0.45;
     if (d.romantic && rel.a < 0) chance -= 0.3;
+    if (d.romantic && !attractedTo(t, a)) chance -= 0.75;
   }
   if (d.bad) chance = 1;
   const ok = Math.random() < chance;
@@ -646,14 +664,14 @@ function resolveSocial(state, a, t, id) {
     if (id === 'discutir') { addMoodlet(a, 'discusion'); addMoodlet(t, 'discusion'); }
     if (d.resolves) { resolveWorry(state, a, d.resolves); resolveWorry(state, t, d.resolves); }
     special(state, a, t, d.special);
-    a.bubble = { icon: showHeart ? '❤️' : d.bad ? '💢' : '😊', until: state.time + 25 };
-    t.bubble = { icon: showHeart ? '❤️' : d.bad ? '💢' : '😊', until: state.time + 25 };
+    a.bubble = { icon: showHeart ? 'heart' : d.bad ? 'zap' : 'smile', until: state.time + 25 };
+    t.bubble = { icon: showHeart ? 'heart' : d.bad ? 'zap' : 'smile', until: state.time + 25 };
     if (showHeart) emit('hearts', { x: (a.x + t.x) / 2, y: (a.y + t.y) / 2 });
   } else {
     setRel(state, a, t, -4, d.romantic ? -4 : 0);
     addMoodlet(a, 'rechazo');
-    a.bubble = { icon: '😣', until: state.time + 25 }; t.bubble = { icon: '🙄', until: state.time + 25 };
-    if (a.home || t.home) toast(`A ${t.name} no le ha gustado: ${d.label.toLowerCase()}`, 'warn', a.id);
+    a.bubble = { icon: 'frown', until: state.time + 25 }; t.bubble = { icon: 'meh', until: state.time + 25 };
+    if (a.home || t.home) toast(d.romantic && !attractedTo(t, a) ? `A ${t.name} no le atrae ${a.name} de esa forma, pero no pasa nada` : `A ${t.name} no le ha gustado: ${d.label.toLowerCase()}`, 'warn', a.id);
   }
 }
 
@@ -670,8 +688,9 @@ function special(state, a, t, sp) {
     a.partner = t.partner = null; a.married = t.married = false; addMoodlet(a, 'ruptura'); addMoodlet(t, 'ruptura');
     toast(`💔 ${a.name} y ${t.name} lo han dejado`, 'bad', a.id);
   } else if (sp === 'embarazo') {
-    if (a.gender === t.gender) { toast(`Para tener un hijo, ${a.name} y ${t.name} pueden adoptar por teléfono`, 'info', a.id); return; }
-    const mother = a.gender === 'f' ? a : t; const father = mother === a ? t : a;
+    const pair = conceptionPair(a, t);
+    if (!pair) { toast(`${a.name} y ${t.name} pueden adoptar desde el teléfono`, 'info', a.id); return; }
+    const [mother, father] = pair;
     if (Math.random() < 0.6) {
       mother.pregnant = { due: state.time + 2 * 1440, father: father.id };
       addMoodlet(mother, 'embarazo');
@@ -753,7 +772,7 @@ function tryNeed(state, s, n) {
 function npcThink(state, s) {
   if (state.time >= s.visitUntil || s.needs.energia < 15) {
     s.queue = []; const p = pathTo(state, s, EXIT.x, EXIT.y);
-    s.cur = { kind: 'leave', to: 'fuera', icon: '👋', label: 'Se va a casa' }; s.path = p || [];
+    s.cur = { kind: 'leave', to: 'fuera', icon: 'logout', label: 'Se va a casa' }; s.path = p || [];
     return;
   }
   const r = Math.random();
@@ -762,7 +781,7 @@ function npcThink(state, s) {
     const h = pick(hosts); const rel = getRel(s, h);
     let opts = ['charlar', 'charlar', 'chiste', 'halagar'];
     if (rel.a > 35) opts.push('abrazar');
-    if (isAdult(s) && isAdult(h) && !related(s, h) && (!h.partner || h.partner === s.id) && rel.a > 25) opts.push('coquetear');
+    if (isAdult(s) && isAdult(h) && !related(s, h) && attractedTo(s, h) && (!h.partner || h.partner === s.id) && rel.a > 25) opts.push('coquetear');
     if (rel.r > 45 && h.partner === s.id) opts.push('besar');
     if (rel.a < -30) opts.push('discutir');
     const id = pick(opts);
@@ -809,7 +828,7 @@ function removeFromHousehold(state, s) {
   if (state.active === s.id) state.active = state.household[0];
 }
 function makeBaby(state, mother, father) {
-  const g = Math.random() < 0.5 ? 'f' : 'm';
+  const g = pick(['f', 'm', 'f', 'm', 'x']);
   const look = randomLook(g);
   if (mother && father) {
     look.skin = Math.random() < 0.5 ? mother.look.skin : father.look.skin;
@@ -822,6 +841,13 @@ function makeBaby(state, mother, father) {
   for (const p of householdSims(state)) if (p !== b) setRel(state, p, b, b.parents.includes(p.id) ? 50 : 30, 0, true);
   for (const p of householdSims(state)) { if (isAdult(p)) { addMoodlet(p, 'nacimiento'); resolveWorry(state, p, 'quiere_hijo'); } }
   return b;
+}
+// Quién gesta y quién aporta: cualquier pareja puede, según lo que se haya elegido para cada persona
+function conceptionPair(a, b) {
+  const opts = [];
+  if (a.canCarry && b.canSire) opts.push([a, b]);
+  if (b.canCarry && a.canSire) opts.push([b, a]);
+  return opts.length ? pick(opts) : null;
 }
 export function adoptBaby(state) {
   if (state.money < 1000) return toast('No hay dinero suficiente para adoptar', 'warn');
@@ -854,7 +880,7 @@ function schedule(state, s) {
     }
     if (h >= sch.start && h < sch.end - 2 && s.workedDay !== day && s.skipDay !== day && s.cur?.kind !== 'ko' && s.cur?.kind !== 'leave') {
       interrupt(state, s); s.queue = [];
-      s.cur = { kind: 'leave', to: s.age === 'nino' ? 'escuela' : 'trabajo', late: h > sch.start + 0.75, icon: s.age === 'nino' ? '🎒' : '💼', label: 'Ir a ' + what };
+      s.cur = { kind: 'leave', to: s.age === 'nino' ? 'escuela' : 'trabajo', late: h > sch.start + 0.75, icon: s.age === 'nino' ? 'backpack' : 'briefcase', label: 'Ir a ' + what };
       s.path = pathTo(state, s, EXIT.x, EXIT.y) || [];
       s.workedDay = day;
     }

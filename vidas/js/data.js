@@ -17,16 +17,16 @@ export const DECAY = { hambre: 5, energia: 4, higiene: 3, diversion: 5, social: 
 export const BABY_DECAY = { hambre: 8, energia: 4, higiene: 6, social: 6 };
 
 export const TRAITS = {
-  gloton: { label: 'Glotón', desc: 'Le entra hambre más a menudo', decay: { hambre: 1.4 } },
-  perezoso: { label: 'Perezoso', desc: 'Se cansa antes y rinde menos', decay: { energia: 1.3 }, work: 0.8 },
-  pulcro: { label: 'Pulcro', desc: 'Necesita ducharse más', decay: { higiene: 1.4 } },
+  gloton: { label: 'De buen comer', desc: 'Le entra hambre más a menudo', decay: { hambre: 1.4 } },
+  perezoso: { label: 'Perezoso/a', desc: 'Se cansa antes y rinde menos', decay: { energia: 1.3 }, work: 0.8 },
+  pulcro: { label: 'Pulcro/a', desc: 'Necesita ducharse más', decay: { higiene: 1.4 } },
   sociable: { label: 'Sociable', desc: 'Necesita gente, cae bien', decay: { social: 1.4 }, social: 1.25 },
-  solitario: { label: 'Solitario', desc: 'Apenas necesita compañía', decay: { social: 0.6 }, social: 0.85 },
-  jugueton: { label: 'Juguetón', desc: 'Se aburre rápido, gran humor', decay: { diversion: 1.4 }, joke: 1.3 },
-  romantico: { label: 'Romántico', desc: 'Liga con facilidad', romance: 1.5 },
-  ambicioso: { label: 'Ambicioso', desc: 'Rinde más en el trabajo', work: 1.3 },
+  solitario: { label: 'Solitario/a', desc: 'Apenas necesita compañía', decay: { social: 0.6 }, social: 0.85 },
+  jugueton: { label: 'Bromista', desc: 'Se aburre rápido, gran humor', decay: { diversion: 1.4 }, joke: 1.3 },
+  romantico: { label: 'Romántico/a', desc: 'Liga con facilidad', romance: 1.5 },
+  ambicioso: { label: 'Ambicioso/a', desc: 'Rinde más en el trabajo', work: 1.3 },
   alegre: { label: 'Alegre', desc: 'Siempre de buen humor', mood: 10 },
-  grunon: { label: 'Gruñón', desc: 'Mal humor y peor trato', mood: -6, social: 0.85 },
+  grunon: { label: 'Cascarrabias', desc: 'Mal humor y peor trato', mood: -6, social: 0.85 },
 };
 
 export const AGES = {
@@ -183,3 +183,35 @@ export const WORRIES = {
 };
 
 export const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+// ---------- Identidad y diversidad ----------
+export const GENDERS = {
+  f: { label: 'Mujer' },
+  m: { label: 'Hombre' },
+  x: { label: 'No binarie' },
+};
+export const NAMES_X = ['Alex', 'Ariel', 'Sasha', 'Noa', 'Andrea', 'Cris', 'Dani', 'Eli', 'Gael', 'Izan', 'Mar', 'Río', 'Sol', 'Uma', 'Zoe'];
+export const BODY_STYLES = { recto: 'Recta', vestido: 'Con vestido' };
+
+// Concordancia de género en los textos: "agotado/a" → agotado | agotada | agotade
+export function inflect(text, s) {
+  if (!s || !text) return text;
+  const g = s.gender;
+  return String(text)
+    .replace(/([A-Za-zÁÉÍÓÚáéíóúñÑ]+)o\/a\b/g, (_, st) => st + (g === 'f' ? 'a' : g === 'x' ? 'e' : 'o'))
+    .replace(/([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\/a\b/g, (_, st) => {
+      if (g === 'm') return st;
+      if (st.endsWith('e')) return g === 'f' ? st.slice(0, -1) + 'a' : st;
+      return st + (g === 'f' ? 'a' : 'e');
+    });
+}
+export const gx = (s, m, f, x) => (s?.gender === 'f' ? f : s?.gender === 'x' ? x : m);
+
+// Iconos (ver icons.js) para acciones e interacciones
+export const ACTION_IC = { picar: 'food', cocinar: 'food', dormir: 'moon', relajarse: 'sofa', siesta: 'moon', vater: 'toilet', ducha: 'drop', tele: 'tv', bailar: 'music', leer: 'book', jugarpc: 'game', buscartrabajo: 'briefcase', deberes: 'pencil', juguetes: 'ball', invitar: 'phone', pizza: 'pizza', adoptar: 'baby', regar: 'leaf', pagar: 'receipt' };
+export const SOCIAL_IC = { charlar: 'chat', chiste: 'smile', halagar: 'star', abrazar: 'users', desahogarse: 'cloud', discutir: 'zap', coquetear: 'sparkle', besar: 'heart', pedirsalir: 'heart', casarse: 'ring', romper: 'heartbreak', intimidad: 'hearts', bebe: 'baby', mudarse: 'home', consolar: 'users', jugarnino: 'ball', despedir: 'logout', biberon: 'bottle', panal: 'drop', acunar: 'heart' };
+for (const [k, v] of Object.entries(ACTION_IC)) ACTIONS[k].ic = v;
+for (const [k, v] of Object.entries(SOCIAL_IC)) SOCIALS[k].ic = v;
+export const OBJ_IC = { nevera: 'fridge', cocina: 'food', mesa: 'table', cama: 'bed', camita: 'bed', cuna: 'baby', vater: 'toilet', ducha: 'drop', sofa: 'sofa', tele: 'tv', equipo: 'music', estanteria: 'book', ordenador: 'monitor', juguetes: 'ball', telefono: 'phone', planta: 'leaf', lampara: 'lamp', cuadro: 'rug', arbol: 'tree', buzon: 'receipt' };
+export const NEED_IC = { hambre: 'food', energia: 'moon', higiene: 'drop', diversion: 'game', social: 'chat', vejiga: 'toilet' };
+export const NEED_COLOR = { hambre: '#f08a3c', energia: '#6d6ae0', higiene: '#2fa8e0', diversion: '#e0559a', social: '#2fb37a', vejiga: '#d9a520' };

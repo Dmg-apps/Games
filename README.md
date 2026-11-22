@@ -1,6 +1,6 @@
 # Vidas
 
-Simulador de vida para el móvil (PWA). Crea una familia de hasta 4 miembros, atiende sus necesidades, sus preocupaciones y a sus bebés, trabaja, decora la casa y forma relaciones.
+Simulador de vida para el móvil (PWA), inclusivo: cualquier persona puede amar a quien quiera y formar una familia. Crea una familia de hasta 4 miembros, atiende sus necesidades, sus preocupaciones y a sus bebés, trabaja, decora la casa y forma relaciones.
 
 ## Probarlo
 - En local: `cd vidas && python3 -m http.server 8000` y abre `http://localhost:8000`.
