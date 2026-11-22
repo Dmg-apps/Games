@@ -33,10 +33,16 @@ export class UI {
     $('#fade').innerHTML = icon('hearts');
     document.addEventListener('pointerdown', (e) => { if (!$('#pie').hidden && !e.target.closest('#pie')) this.hidePie(); }, true);
     window.addEventListener('resize', () => this.movePill());
+    if (game.is3D) {
+      const cc = document.createElement('div'); cc.id = 'camctl'; cc.hidden = true;
+      cc.innerHTML = `<button class="glass" data-a="1" aria-label="Girar a la izquierda">${icon('rotate')}</button><button class="glass" data-a="-1" aria-label="Girar a la derecha" style="transform:scaleX(-1)">${icon('rotate')}</button>`;
+      cc.onclick = (e) => { const b = e.target.closest('button'); if (b) this.g.renderer.spin(+b.dataset.a * Math.PI / 4); };
+      document.body.appendChild(cc);
+    }
   }
   get state() { return this.g.state; }
   get active() { return this.state?.sims[this.state.active]; }
-  showHud(on) { $('#top').hidden = !on; $('#bottom').hidden = !on; if (on) requestAnimationFrame(() => this.movePill()); }
+  showHud(on) { $('#top').hidden = !on; $('#bottom').hidden = !on; if ($('#camctl')) $('#camctl').hidden = !on; if (on) requestAnimationFrame(() => this.movePill()); }
 
   // ---------- HUD ----------
   update() {

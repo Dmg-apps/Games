@@ -1,6 +1,7 @@
 import * as Sim from './sim.js';
 import { OBJECTS, OBJ_IC, SOCIALS, GENDERS } from './data.js';
 import { IsoRenderer } from './render.js';
+import { Renderer3D, webglAvailable } from './render3d.js';
 import { UI } from './ui.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
@@ -10,7 +11,10 @@ const SPEEDS = [0, 1, 3, 10]; // minutos de juego por segundo real
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
-    this.renderer = new IsoRenderer(this.canvas);
+    // 3D si el móvil lo admite; si no, la vista isométrica 2D
+    try { this.renderer = webglAvailable() ? new Renderer3D(this.canvas) : new IsoRenderer(this.canvas); }
+    catch (e) { console.warn('Sin 3D:', e); this.renderer = new IsoRenderer(this.canvas); }
+    this.is3D = this.renderer instanceof Renderer3D;
     this.ui = new UI(this);
     this.view = { build: false, ghost: null, selected: null, active: null };
     this.state = null;
@@ -215,13 +219,13 @@ class Game {
 
   // ---------- entrada táctil ----------
   setupInput() {
-    const c = this.canvas; const ptrs = new Map(); let moved = false, pinchD = 0, start = null;
+    const c = this.canvas; const ptrs = new Map(); let moved = false, pinchD = 0, pinchA = null, start = null;
     let drag = null; // arrastre de un mueble en modo construcción
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; drag = this.view.build ? this.dragTarget(e.clientX, e.clientY) : null; }
       if (ptrs.size === 2) drag = null;
-      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); moved = true; }
+      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); pinchA = Math.atan2(b.y - a.y, b.x - a.x); moved = true; }
     });
     c.addEventListener('pointermove', (e) => {
       const p = ptrs.get(e.pointerId); if (!p) return;
@@ -235,6 +239,9 @@ class Game {
         const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (pinchD) this.renderer.zoomAt(d / pinchD, (a.x + b.x) / 2, (a.y + b.y) / 2);
         pinchD = d;
+        const ang = Math.atan2(b.y - a.y, b.x - a.x); // girar con dos dedos (3D)
+        if (pinchA !== null && this.renderer.rotate) { let da = ang - pinchA; da = Math.atan2(Math.sin(da), Math.cos(da)); this.renderer.rotate(-da); }
+        pinchA = ang;
       }
     });
     const up = (e) => {
@@ -242,7 +249,7 @@ class Game {
       ptrs.delete(e.pointerId);
       if (ptrs.size === 0 && moved && drag) { this.endDrag(); drag = null; }
       if (ptrs.size === 0 && !moved && e.type === 'pointerup') this.tap(e.clientX, e.clientY);
-      if (ptrs.size < 2) pinchD = 0;
+      if (ptrs.size < 2) { pinchD = 0; pinchA = null; }
     };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
     c.addEventListener('wheel', (e) => { e.preventDefault(); this.renderer.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); }, { passive: false });
