@@ -7,6 +7,7 @@ import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
 import { icon } from './icons.js';
 import * as Cloud from './cloud.js';
+import * as Notify from './notify.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -169,7 +170,6 @@ export class UI {
     if (name === 'menu') this.renderMenu();
   }
   closePanel() {
-    if (this.panel === 'build' && !this.g.view.ghost) this.g.exitBuild();
     this.hideSheetOnly();
     this.setTab(this.g.view.build ? 'build' : null);
   }
@@ -238,7 +238,7 @@ export class UI {
     const sig = s.id + others.map((o) => o.id + o.location + Math.round(Sim.getRel(s, o).a / 5) + Math.round(Sim.getRel(s, o).r / 5) + Sim.relLabel(st, s, o)).join();
     if (!force && sig === this.sig) return;
     this.sig = sig;
-    body.innerHTML = `<p class="hint" style="margin-top:0">Las relaciones de <b>${esc(s.name)}</b>. Invita a gente desde el teléfono. Aquí cada cual ama a quien quiera.</p>`;
+    body.innerHTML = `<p class="hint" style="margin-top:0">Las relaciones de <b>${esc(s.name)}</b>. Invita a gente desde el teléfono.</p>`;
     for (const o of others) {
       const r = Sim.getRel(s, o);
       const row = document.createElement('div'); row.className = 'relrow';
@@ -302,15 +302,25 @@ export class UI {
       <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="baja">Baja · estate pendiente</button><button data-v="normal">Normal</button></div></div>
       <div class="field"><label>Envejecimiento</label><div class="seg" id="age"><button data-v="1">Activado</button><button data-v="0">Desactivado</button></div></div>
       <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y las necesidades nunca llegan a cero.</p>
+      <div class="sec">${icon('bell')} Notificaciones</div><div id="notif"></div>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloud"></div>
       <div class="sec">Partida</div>
       <div class="row"><button class="btn alt" id="msave">${icon('save')} Guardar</button><button class="btn red" id="mnew">${icon('trash')} Nueva</button></div>
       <div class="sec">Cómo se juega</div>
-      <p class="hint">Toca a alguien de tu familia (abajo) para controlarle. Toca muebles, personas o el suelo para darle órdenes. Vigila sus necesidades, sus preocupaciones y a los bebés. Trabaja para ganar dinero, paga las facturas en el buzón, invita a gente por teléfono, haz amistades, enamórate de quien quieras y forma una familia de hasta 4.</p>`;
+      <p class="hint">Toca a alguien de tu familia (abajo) para controlarle. Toca muebles, personas o el suelo para darle órdenes. Vigila sus necesidades, sus preocupaciones y a los bebés. Trabaja para ganar dinero, paga las facturas en el buzón, invita a gente por teléfono, haz amistades, enamórate y forma una familia de hasta 4.</p>`;
     const seg = (id, val, fn) => { const el = body.querySelector(id); el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === val)); el.onclick = (e) => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); this.renderMenu(); } }; };
     seg('#aut', st.settings.autonomy, (v) => (st.settings.autonomy = v));
     seg('#age', st.settings.aging ? '1' : '0', (v) => (st.settings.aging = v === '1'));
     this.renderCloud(body.querySelector('#cloud'));
+    const nf = body.querySelector('#notif');
+    if (!Notify.supported()) nf.innerHTML = `<p class="hint">Este navegador no admite notificaciones.</p>`;
+    else if (Notify.enabled()) {
+      nf.innerHTML = `<div class="card"><div class="h"><span class="tilebox" style="background:#e3f7ee;color:#127a52">${icon('bell')}</span><div><b>Activadas</b><div class="hint">${Cloud.session() ? 'Te avisaremos aunque cierres la app.' : 'Inicia sesión en la nube para recibirlas también con la app cerrada.'}</div></div></div></div><div class="row" style="margin-top:8px"><button class="btn alt" id="noff">Desactivar</button></div>`;
+      nf.querySelector('#noff').onclick = () => { Notify.disable(); this.renderMenu(); };
+    } else {
+      nf.innerHTML = `<p class="hint" style="margin-top:0">Te avisa cuando tu familia te necesita: hambre, bebés llorando, facturas, nacimientos…</p><button class="btn coral" id="non" style="width:100%">${icon('bell')} Activar notificaciones</button>`;
+      nf.querySelector('#non').onclick = () => this.g.enableNotifications();
+    }
     body.querySelector('#msave').onclick = () => { this.g.save(); this.toast('Partida guardada', 'good'); };
     body.querySelector('#mnew').onclick = () => this.confirm('Se borrará la partida actual. ¿Empezar de nuevo?', () => this.g.newGame());
   }
@@ -411,7 +421,7 @@ export class UI {
   // ---------- pantalla de título ----------
   showTitle(hasSave, onContinue, onNew, cloudFamily) {
     const t = $('#title'); t.hidden = false; t.classList.remove('out');
-    t.innerHTML = `<div class="logo"><div class="mark">${icon('home')}</div><h1>Vidas</h1><p>Cuida de tu familia. Ama a quien quieras.</p>
+    t.innerHTML = `<div class="logo"><div class="mark">${icon('home')}</div><h1>Vidas</h1><p>Cuida de tu familia, día a día.</p>
       <div class="pride">${PRIDE.map((c) => `<i style="background:${c}"></i>`).join('')}</div></div>
       <div class="acts">${hasSave ? `<button class="btn coral" id="tcont">${icon(cloudFamily ? 'cloud' : 'play')} Continuar${cloudFamily ? ` · familia ${esc(cloudFamily)}` : ''}</button>` : ''}<button class="btn ${hasSave ? 'ghost' : 'coral'}" id="tnew">${icon('plus')} Nueva familia</button></div>`;
     const hide = () => { t.classList.add('out'); setTimeout(() => (t.hidden = true), 400); };

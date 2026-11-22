@@ -1,0 +1,28 @@
+name: Notificaciones de Vidas
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: notifier
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: notifier/package-lock.json
+      - run: npm ci
+      - run: node send.mjs
+        env:
+          FIREBASE_DB_URL: https://vidas-d15a9-default-rtdb.europe-west1.firebasedatabase.app
+          VAPID_PUBLIC_KEY: BL95wvJEdAE3ouUF66NQDygX0t3_JD7a63j_oYS8nN8RacaVT3NaWhL01IeD9FCsOdgDXNN4isVh6nHuHjb-k-E
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

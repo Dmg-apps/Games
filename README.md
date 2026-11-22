@@ -30,3 +30,11 @@ Authentication → Correo/contraseña y pon estas reglas en Realtime Database:
 }
 ```
 También funciona con Firestore si se rellena `projectId` en vez de `databaseURL`.
+
+## Notificaciones
+- Con la app abierta o en segundo plano: avisos locales.
+- Con la app cerrada: al cerrarse, la app calcula qué irá pasando y deja una cola de avisos en
+  `partidas/<uid>/push`. El workflow `notify.yml` (cada 30 min) los envía con Web Push.
+  Necesita dos secretos en GitHub (Settings → Secrets and variables → Actions):
+  `FIREBASE_SERVICE_ACCOUNT` (JSON de la cuenta de servicio de Firebase) y `VAPID_PRIVATE_KEY`.
+- En iPhone solo funcionan con la app añadida a la pantalla de inicio (iOS 16.4 o superior).

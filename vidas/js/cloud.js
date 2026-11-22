@@ -62,6 +62,7 @@ async function token() {
   if (!r.ok) { if (r.status === 400) signOut(); return null; }
   return saveSession(await r.json(), s.email);
 }
+export const freshToken = () => token();
 const docUrl = (uid) => `https://firestore.googleapis.com/v1/projects/${CLOUD.projectId}/databases/(default)/documents/partidas/${uid}`;
 
 // Sube la partida. Si no hay conexión, queda marcada como pendiente.
@@ -72,7 +73,7 @@ export async function push(state) {
   try {
     const s = await token(); if (!s) return { ok: false, reason: 'auth' };
     if (useRTDB()) {
-      const r = await fetch(rtdbUrl(s.uid, s.idToken), { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: JSON.stringify(state), savedAt: state.lastSaved || Date.now(), family: state.surname || '' }) });
+      const r = await fetch(rtdbUrl(s.uid, s.idToken), { method: 'PATCH', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: JSON.stringify(state), savedAt: state.lastSaved || Date.now(), family: state.surname || '' }) });
       if (!r.ok) return { ok: false, reason: 'server' };
       setMeta({ pending: false, syncedAt: Date.now() });
       return { ok: true };

@@ -3,6 +3,7 @@ import { OBJECTS, OBJ_IC, SOCIALS, GENDERS } from './data.js';
 import { IsoRenderer } from './render.js';
 import { UI } from './ui.js';
 import * as Cloud from './cloud.js';
+import * as Notify from './notify.js';
 
 const SPEEDS = [0, 1, 3, 10]; // minutos de juego por segundo real
 
@@ -21,8 +22,8 @@ class Game {
     this.setupInput();
     document.addEventListener('visibilitychange', () => {
       if (!this.state) return;
-      if (document.hidden) this.save(true);
-      else this.resumeFromBackground();
+      if (document.hidden) { this.save(true); this.scheduleNotifications(); }
+      else { Notify.clearQueue(); this.resumeFromBackground(); }
     });
     window.addEventListener('pagehide', () => this.save());
 
@@ -77,8 +78,7 @@ class Game {
       `<ul>${u.li('user', 'Toca a alguien de tu familia (abajo) para controlarle.')}
       ${u.li('pin', 'Toca muebles, personas o el suelo para darle órdenes.')}
       ${u.li('alert', 'Tienen <b>poca autonomía</b>: si no les atiendes, lo pasarán mal. Puedes cambiarlo en el Menú.')}
-      ${u.li('phone', 'Busca trabajo en el teléfono, paga las facturas en el buzón e invita a gente.')}
-      ${u.li('heart', 'Aquí cada cual ama a quien quiera.')}</ul>`, 'A jugar');
+      ${u.li('phone', 'Busca trabajo en el teléfono, paga las facturas en el buzón e invita a gente.')}</ul>`, 'A jugar');
   }
   afterStart() {
     this.view.active = this.state.active;
@@ -112,6 +112,35 @@ class Game {
           [['La de la nube', () => { Sim.save(remote.state); this.exitBuild(); this.ui.closePanel(); this.loadState(Sim.load()); }], ['La de este móvil', () => this.cloudPush(true)]]);
       } else { await this.cloudPush(true); }
     } catch (e) { this.ui.toast(e.message, 'bad'); }
+    if (this.ui.panel === 'menu') this.ui.renderMenu();
+  }
+  // Calcula qué pasará con la app cerrada y deja los avisos en la nube para enviarlos a su hora
+  scheduleNotifications() {
+    if (!this.state || !Notify.enabled() || !Cloud.session()) return;
+    const pending = Sim.drainEvents(); const keepTime = globalThis.__simTime;
+    const queue = []; const seen = new Set(); const now = Date.now();
+    let clone = JSON.parse(JSON.stringify(this.state)); let elapsed = 0;
+    const add = (h, title, body) => { const key = title + body; if (seen.has(key)) return; seen.add(key); queue.push({ at: now + h * 3600e3, title, body }); };
+    for (const h of [0.5, 1, 2, 4, 8, 12, 24]) {
+      const sum = Sim.offlineProgress(clone, (h - elapsed) * 3600e3); elapsed = h;
+      if (!sum) continue;
+      for (const l of sum.log) if (!/facturas pendientes/.test(l) || h >= 4) add(h, `Familia ${clone.surname}`, l.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim());
+      for (const s of Sim.householdSims(clone)) {
+        const low = Object.entries(s.needs).filter(([, v]) => v < 30).map(([n]) => n);
+        if (s.age === 'bebe' && low.length) add(h, `${s.name} te necesita`, 'El bebé está llorando y necesita cuidados.');
+        else if (low.length >= 2) add(h, `${s.name} te necesita`, `Tiene ${low.map((n) => ({ hambre: 'hambre', energia: 'sueño', higiene: 'ganas de ducharse', diversion: 'aburrimiento', social: 'ganas de compañía', vejiga: 'ganas de ir al baño' }[n])).join(' y ')}.`);
+      }
+    }
+    add(24, `Familia ${this.state.surname}`, 'Te echan de menos. ¿Pasas a verles?');
+    Sim.drainEvents(); globalThis.__simTime = keepTime;
+    for (const ev of pending) this.handleEvent(ev);
+    Notify.uploadQueue(queue.slice(0, 8));
+  }
+  async enableNotifications() {
+    if (Notify.needsInstall()) return this.ui.info('Añádela a la pantalla de inicio', '<p>En iPhone las notificaciones solo funcionan si abres Vidas desde la pantalla de inicio: en Safari pulsa <b>Compartir → Añadir a pantalla de inicio</b> y ábrela desde ahí.</p>');
+    const r = await Notify.enable();
+    if (!r.ok) this.ui.toast(r.reason === 'denied' ? 'Has bloqueado las notificaciones. Actívalas en los ajustes del móvil.' : 'Este navegador no admite notificaciones', 'warn');
+    else this.ui.toast(r.push ? 'Notificaciones activadas, también con la app cerrada' : Cloud.session() ? 'Notificaciones activadas con la app abierta' : 'Activadas. Inicia sesión en la nube para recibirlas también con la app cerrada', 'good');
     if (this.ui.panel === 'menu') this.ui.renderMenu();
   }
   cloudLogout() { Cloud.signOut(); this.ui.toast('Sesión cerrada. La partida sigue en este móvil.', 'info'); this.ui.renderMenu(); }
@@ -187,9 +216,11 @@ class Game {
   // ---------- entrada táctil ----------
   setupInput() {
     const c = this.canvas; const ptrs = new Map(); let moved = false, pinchD = 0, start = null;
+    let drag = null; // arrastre de un mueble en modo construcción
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; }
+      if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; drag = this.view.build ? this.dragTarget(e.clientX, e.clientY) : null; }
+      if (ptrs.size === 2) drag = null;
       if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); moved = true; }
     });
     c.addEventListener('pointermove', (e) => {
@@ -197,8 +228,9 @@ class Game {
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
       if (ptrs.size === 1) {
-        if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 9) moved = true;
-        if (moved) this.renderer.pan(dx, dy);
+        if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 9) { moved = true; if (drag) this.beginDrag(drag); }
+        if (moved && drag) this.dragTo(e.clientX, e.clientY, drag);
+        else if (moved) this.renderer.pan(dx, dy);
       } else if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (pinchD) this.renderer.zoomAt(d / pinchD, (a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -208,11 +240,55 @@ class Game {
     const up = (e) => {
       if (!ptrs.has(e.pointerId)) return;
       ptrs.delete(e.pointerId);
+      if (ptrs.size === 0 && moved && drag) { this.endDrag(); drag = null; }
       if (ptrs.size === 0 && !moved && e.type === 'pointerup') this.tap(e.clientX, e.clientY);
       if (ptrs.size < 2) pinchD = 0;
     };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
     c.addEventListener('wheel', (e) => { e.preventDefault(); this.renderer.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); }, { passive: false });
+  }
+
+  // ---------- arrastrar muebles ----------
+  dragTarget(x, y) {
+    const st = this.state; const g = this.view.ghost;
+    const t = this.renderer.screenToTile(x, y);
+    if (g) {
+      const f = Sim.footprint(g.type, g.rot);
+      if (t.x >= g.x && t.x < g.x + f.w && t.y >= g.y && t.y < g.y + f.h) return { ghost: true, ox: t.x - g.x, oy: t.y - g.y };
+      return null;
+    }
+    const o = this.renderer.pickObject(st, x, y) || Sim.objectAt(st, t.x, t.y);
+    if (!o || OBJECTS[o.type].fixed) return null;
+    return { obj: o.id, ox: Math.max(0, t.x - o.x), oy: Math.max(0, t.y - o.y) };
+  }
+  beginDrag(d) {
+    if (d.obj) { this.view.selected = d.obj; this.moveSelected(); }
+    if (navigator.vibrate) navigator.vibrate(12);
+  }
+  dragTo(x, y, d) {
+    const g = this.view.ghost; if (!g) return;
+    const t = this.renderer.screenToTile(x, y - 20); // un poco por encima del dedo para verlo
+    const f = Sim.footprint(g.type, g.rot);
+    const nx = Math.max(0, Math.min(Sim.GRID - f.w, t.x - Math.min(d.ox, f.w - 1))), ny = Math.max(0, Math.min(Sim.GRID - f.h, t.y - Math.min(d.oy, f.h - 1)));
+    if (nx !== g.x || ny !== g.y) { g.x = nx; g.y = ny; this.validateGhost(); }
+  }
+  endDrag() {
+    const g = this.view.ghost; if (!g) return;
+    if (g.mode === 'move' && g.ok) this.confirmGhost();
+    else this.ui.renderBuildBar();
+  }
+  // Ir andando hasta una casilla, al momento
+  walkTo(me, x, y) {
+    const st = this.state;
+    if (me.cur && !['ko', 'leave', 'partner'].includes(me.cur.kind)) Sim.cancelItem(st, me, -1);
+    me.queue = me.queue.filter((q) => q.kind !== 'go');
+    Sim.queueGo(st, me, x, y);
+    if (me.queue.length > 1) me.queue.unshift(me.queue.pop());
+    this.renderer.addMarker(x, y);
+    this.ui.update();
+  }
+  editObject(o) {
+    this.ui.closePanel(); this.enterBuild(); this.view.selected = o.id; this.moveSelected();
   }
 
   tap(x, y) {
@@ -253,11 +329,12 @@ class Game {
     if (o && !OBJECTS[o.type].walkable) {
       if (!needMe()) return;
       const opts = Sim.objectActions(st, me, o).map((a) => ({ ...a, run: () => { Sim.queueObject(st, me, a.id, o.id); this.ui.update(); } }));
+      if (!OBJECTS[o.type].fixed) opts.push({ icon: 'move', label: 'Mover este mueble', cls: 'main', run: () => this.editObject(o) });
       this.ui.showPie(x, y, { icon: OBJ_IC[o.type], title: OBJECTS[o.type].name, sub: me.name }, opts);
       return;
     }
     if (!needMe()) return;
-    this.ui.showPie(x, y, { icon: 'pin', title: 'Suelo', sub: me.name }, [{ icon: 'pin', label: 'Ir aquí', run: () => { Sim.queueGo(st, me, t.x, t.y); this.ui.update(); } }]);
+    this.walkTo(me, t.x, t.y);
   }
 
   // ---------- bucle ----------
@@ -281,7 +358,10 @@ class Game {
     requestAnimationFrame((tt) => this.loop(tt));
   }
   handleEvent(ev) {
-    if (ev.type === 'toast') this.ui.toast(ev.msg, ev.kind, ev.simId);
+    if (ev.type === 'toast') {
+      this.ui.toast(ev.msg, ev.kind, ev.simId);
+      if (ev.kind === 'bad' || ev.kind === 'warn') Notify.local(`Familia ${this.state?.surname || ''}`, ev.msg.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim(), ev.simId || ev.kind);
+    }
     else if (ev.type === 'fade') this.ui.fade();
     else if (ev.type === 'hearts') this.renderer.addHearts(ev.x, ev.y);
     else if (ev.type === 'birth') this.ui.nameBaby(ev.babyId, ev.adopted);

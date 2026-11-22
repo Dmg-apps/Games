@@ -81,6 +81,15 @@ export class IsoRenderer {
     const p = this.iso(before.x, before.y); this.cam.x += sx - p.x; this.cam.y += sy - p.y; this.clampCam();
   }
   clampCam() { const lim = GRID * TW * this.cam.zoom * 0.6; this.cam.x = Math.max(-lim, Math.min(lim, this.cam.x)); this.cam.y = Math.max(-lim, Math.min(lim, this.cam.y)); }
+  addMarker(x, y) { this.marker = { x, y, t: performance.now() }; }
+  drawMarker() {
+    const m = this.marker; if (!m) return;
+    const age = (performance.now() - m.t) / 1000; if (age > 0.7) { this.marker = null; return; }
+    const ctx = this.ctx, z = this.cam.zoom, p = this.iso(m.x + 0.5, m.y + 0.5);
+    const k = 1 - Math.pow(1 - age / 0.7, 3);
+    ctx.strokeStyle = `rgba(37,196,143,${1 - age / 0.7})`; ctx.lineWidth = 3 * z;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, (8 + 18 * k) * z, (4 + 9 * k) * z, 0, 0, 7); ctx.stroke();
+  }
   addHearts(x, y) { for (let i = 0; i < 7; i++) this.hearts.push({ x: x + 0.5, y: y + 0.5, t: -i * 0.12, dx: (Math.random() - 0.5) * 34, s: 0.7 + Math.random() * 0.5 }); }
 
   // ---------- selección ----------
@@ -99,10 +108,14 @@ export class IsoRenderer {
     });
     for (const o of objs) {
       const def = OBJECTS[o.type]; if (def.walkable) continue;
-      const f = footprint(o.type, o.rot); const hmax = Math.max(...def.boxes.map((b) => b[4] + b[5]));
-      for (let z = 0; z <= hmax; z += 4) {
-        const w = this.screenToWorld(sx, sy + z * this.cam.zoom);
-        if (w.x >= o.x && w.x < o.x + f.w && w.y >= o.y && w.y < o.y + f.h) return o;
+      // prueba contra el volumen real de cada caja (no contra un bloque alto), con un pequeño margen
+      for (const b0 of def.boxes) {
+        const [bx, bz, bw, bd, z0, h] = rotateBox(b0, o.rot, def.w, def.h);
+        const m = 0.08;
+        for (let z = z0; z <= z0 + h; z += 3) {
+          const w = this.screenToWorld(sx, sy + z * this.cam.zoom);
+          if (w.x >= o.x + bx - m && w.x < o.x + bx + bw + m && w.y >= o.y + bz - m && w.y < o.y + bz + bd + m) return o;
+        }
       }
     }
     return null;
@@ -111,7 +124,7 @@ export class IsoRenderer {
     let z = 0;
     if (s.age === 'bebe') z = s.cribId ? 10 : 0;
     else if (this.isLying(state, s)) z = 18;
-    else if (this.isSitting(state, s)) z = 10;
+    else if (this.isSitting(state, s)) z = s.cur.act === 'vater' ? 15 : 10;
     return this.iso(s.x + 0.5, s.y + 0.5, z);
   }
   isLying(state, s) {
@@ -120,7 +133,7 @@ export class IsoRenderer {
     if (c.kind === 'obj' && c.phase === 'do' && c.onObj && (c.act === 'dormir' || c.act === 'siesta')) return true;
     return (c.kind === 'soc' || c.kind === 'partner') && c.bedId && c.phase === 'do';
   }
-  isSitting(state, s) { const c = s.cur; return c && c.kind === 'obj' && c.phase === 'do' && c.onObj && c.act === 'relajarse'; }
+  isSitting(state, s) { const c = s.cur; return c && c.kind === 'obj' && c.phase === 'do' && c.onObj && (c.act === 'relajarse' || c.act === 'vater'); }
 
   // ---------- fotograma ----------
   render(state, view) {
@@ -146,6 +159,7 @@ export class IsoRenderer {
     // sombras de muebles
     for (const o of state.objects) if (!OBJECTS[o.type].walkable) this.objShadow(o);
     for (const o of state.objects) if (OBJECTS[o.type].walkable) this.drawObject(state, o, 1, view);
+    this.drawMarker();
     // profundidad
     const items = [];
     for (const o of state.objects) {
@@ -352,8 +366,15 @@ export class IsoRenderer {
       .sort((a, b) => (a[0] + a[2] / 2 + a[1] + a[3] / 2) - (b[0] + b[2] / 2 + b[1] + b[3] / 2) || a[4] - b[4]);
     for (const b of boxes) {
       let col = b[6];
-      if (col === '#1a1a22') col = def.power && !state.powerOff && o.users.length ? '#5aa8e8' : '#1f2230';
+      const on = def.power && !state.powerOff && o.users.some((u) => state.sims[u]?.cur?.phase === 'do');
+      if (col === '#1a1a22') col = on ? ['#5aa8e8', '#7dd3a8', '#e8a85a', '#a87de8'][Math.floor(performance.now() / 700 + o.x) % 4] : '#1f2230';
+      if (col === '#1e1e26' && on) col = '#6ab4ff';
       this.box(o.x + b[0], o.y + b[1], b[2], b[3], b[4], b[5], col);
+    }
+    if (o.type === 'cocina' && o.users.some((u) => state.sims[u]?.cur?.phase === 'do')) {
+      const t = performance.now() / 1000; const f = this.iso(o.x + 0.32, o.y + 0.32, 40 + Math.sin(t * 20) * 1.5); const z = this.cam.zoom;
+      ctx.fillStyle = 'rgba(255,140,40,0.85)'; ctx.beginPath(); ctx.ellipse(f.x, f.y, 5 * z, 3.5 * z, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,220,90,0.9)'; ctx.beginPath(); ctx.ellipse(f.x, f.y - 1 * z, 2.5 * z, 2 * z, 0, 0, 7); ctx.fill();
     }
     if (o.type === 'buzon' && state.bills.length) {
       const p = this.iso(o.x + 0.5, o.y + 0.5, 66); const z = this.cam.zoom;
@@ -387,46 +408,190 @@ export class IsoRenderer {
 
     const walking = s.path && s.path.length > 0;
     const sw = walking ? Math.sin(now * 11) : 0;
-    const bob = walking ? Math.abs(sw) * 2 * k : Math.sin(now * 2 + s.x) * 0.4 * k;
-    const sit = this.isSitting(state, s);
+    const pose = this.poseOf(state, s, now);
+    const face = this.facing(state, s);
+    const fdir = face.dir;
+    const bob = walking ? Math.abs(sw) * 2 * k : pose.bounce ? Math.abs(Math.sin(now * 7)) * 3 * k : Math.sin(now * 2 + s.x) * 0.4 * k;
+    const sit = pose.sit;
     const by = p.y - bob;
-    ctx.lineJoin = 'round'; ctx.lineWidth = 1.3 * z; ctx.strokeStyle = OUTLINE;
+    const shower = pose.id === 'ducha';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 1.3 * z; ctx.strokeStyle = OUTLINE;
     // piernas y zapatos
     if (!sit) {
-      ctx.fillStyle = L.pants;
+      ctx.fillStyle = shower ? L.skin : L.pants;
       this.rr(p.x - 6 * k + sw * 2.5 * k, by - 14 * k, 5 * k, 13 * k, 2 * k, true);
       this.rr(p.x + 1 * k - sw * 2.5 * k, by - 14 * k, 5 * k, 13 * k, 2 * k, true);
-      ctx.fillStyle = '#3b2b25';
+      ctx.fillStyle = shower ? L.skin : '#3b2b25';
       this.ell(p.x - 3.5 * k + sw * 2.5 * k, by - 1.2 * k, 3.6 * k, 2 * k, true);
       this.ell(p.x + 3.5 * k - sw * 2.5 * k, by - 1.2 * k, 3.6 * k, 2 * k, true);
-    } else { ctx.fillStyle = L.pants; this.rr(p.x - 7 * k, by - 17 * k, 14 * k, 6 * k, 3 * k, true); }
-    // pelo largo por detrás
-    if (L.hair === 1) { ctx.fillStyle = shade(L.hairColor, 0.1); this.rr(p.x - 11 * k, by - 46 * k, 22 * k, 24 * k, 8 * k, true); }
+    } else {
+      ctx.fillStyle = L.pants; this.rr(p.x - 7 * k + fdir * 2 * k, by - 17 * k, 14 * k, 6 * k, 3 * k, true);
+      ctx.fillStyle = L.pants; this.rr(p.x - 6 * k + fdir * 6 * k, by - 13 * k, 5 * k, 10 * k, 2 * k, true); this.rr(p.x + 1 * k + fdir * 6 * k, by - 13 * k, 5 * k, 10 * k, 2 * k, true);
+      ctx.fillStyle = '#3b2b25'; this.ell(p.x - 3.5 * k + fdir * 7 * k, by - 2 * k, 3.4 * k, 1.9 * k, true); this.ell(p.x + 3.5 * k + fdir * 7 * k, by - 2 * k, 3.4 * k, 1.9 * k, true);
+    }
+    const hy = by - 41 * k;
+    // pelo largo por detrás (de espaldas se dibuja después)
+    if (L.hair === 1 && !face.back) { ctx.fillStyle = shade(L.hairColor, 0.1); this.rr(p.x - 11 * k, by - 46 * k, 22 * k, 24 * k, 8 * k, true); }
+    // de espaldas, lo que sostiene queda detrás del cuerpo
+    if (face.back) this.drawProp(pose, p.x, by, k, fdir, now, L);
     // cuerpo
-    ctx.fillStyle = L.shirt;
-    if (L.body === 'vestido') {
+    ctx.fillStyle = shower ? L.skin : L.shirt;
+    if (L.body === 'vestido' && !shower) {
       ctx.beginPath(); ctx.moveTo(p.x - 6.5 * k, by - 31 * k); ctx.lineTo(p.x + 6.5 * k, by - 31 * k);
       ctx.quadraticCurveTo(p.x + 10 * k, by - 18 * k, p.x + 11 * k, by - 11 * k); ctx.lineTo(p.x - 11 * k, by - 11 * k);
       ctx.quadraticCurveTo(p.x - 10 * k, by - 18 * k, p.x - 6.5 * k, by - 31 * k); ctx.closePath(); ctx.fill(); ctx.stroke();
     } else this.rr(p.x - 8 * k, by - 31 * k, 16 * k, 19 * k, 5 * k, true);
-    if (s.pregnant) { this.ell(p.x + 2.5 * dir * k, by - 18 * k, 7.5 * k, 6.5 * k, true); }
-    // sombreado lateral
+    if (s.pregnant) { this.ell(p.x + 2.5 * fdir * k, by - 18 * k, 7.5 * k, 6.5 * k, true); }
     ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(p.x + 2 * k, by - 30 * k, 5.5 * k, 17 * k);
-    // brazos y manos
-    const arm = walking ? sw * 2.5 * k : 0;
-    ctx.fillStyle = L.shirt;
-    this.rr(p.x - 11.5 * k, by - 30 * k + arm, 4.5 * k, 11 * k, 2.2 * k, true);
-    this.rr(p.x + 7 * k, by - 30 * k - arm, 4.5 * k, 11 * k, 2.2 * k, true);
-    ctx.fillStyle = L.skin;
-    this.circ(p.x - 9.3 * k, by - 18 * k + arm, 2.6 * k, true);
-    this.circ(p.x + 9.3 * k, by - 18 * k - arm, 2.6 * k, true);
+    // brazos (hombro → mano) y manos
+    const arm = walking ? sw * 2.5 : 0;
+    const hands = pose.hands || [[-9.3, -18 + arm], [9.3, -18 - arm]];
+    const shoulders = [[-7.5, -28.5], [7.5, -28.5]];
+    for (let i = 0; i < 2; i++) {
+      const [sx, sy] = shoulders[i], [hx, hy2] = hands[i];
+      const ax = p.x + sx * k, ay = by + sy * k, bx = p.x + hx * k, byy = by + hy2 * k;
+      ctx.lineWidth = 6.2 * k; ctx.strokeStyle = OUTLINE; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, byy); ctx.stroke();
+      ctx.lineWidth = 4.2 * k; ctx.strokeStyle = shower ? L.skin : L.shirt; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, byy); ctx.stroke();
+    }
+    ctx.lineWidth = 1.3 * z; ctx.strokeStyle = OUTLINE; ctx.fillStyle = L.skin;
+    for (const [hx, hy2] of hands) this.circ(p.x + hx * k, by + hy2 * k, 2.6 * k, true);
+    if (pose.id === 'vater') { // taza del váter por delante, con su pie hasta el suelo
+      const fy = p.y + 15 * this.cam.zoom; // suelo real (el personaje está elevado al sentarse)
+      ctx.fillStyle = '#eef1f4'; ctx.strokeStyle = 'rgba(48,32,24,0.45)'; ctx.lineWidth = 1.2 * z;
+      ctx.beginPath(); ctx.moveTo(p.x - 6 * k, fy - 1 * k); ctx.lineTo(p.x - 8 * k, by - 9 * k); ctx.lineTo(p.x + 8 * k, by - 9 * k); ctx.lineTo(p.x + 6 * k, fy - 1 * k); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#f7f9fb'; ctx.beginPath(); ctx.moveTo(p.x - 12 * k, by - 12 * k); ctx.quadraticCurveTo(p.x, by + 1 * k, p.x + 12 * k, by - 12 * k); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e3e8ed'; this.ell(p.x, by - 12 * k, 12 * k, 3.6 * k, true);
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.3 * z;
+    }
     // cabeza
-    const hy = by - 41 * k;
-    this.circ(p.x, hy, 11 * k, true);
-    this.hairFront(L, p.x, hy, k);
-    const ex = dir * 1.3 * k;
-    this.face(p.x + ex, hy + 1.5 * k, k, blink || s.sleeping, s.mood);
+    ctx.fillStyle = L.skin; this.circ(p.x, hy, 11 * k, true);
+    if (face.back) {
+      if (L.hair !== 3) { ctx.fillStyle = L.hairColor; this.circ(p.x, hy - 0.5 * k, 11.4 * k, true); }
+      if (L.hair === 1) { ctx.fillStyle = L.hairColor; this.rr(p.x - 10 * k, hy, 20 * k, 16 * k, 7 * k, true); }
+      if (L.hair === 2) this.circ(p.x, hy - 12 * k, 5.5 * k, true);
+    } else {
+      this.hairFront(L, p.x, hy, k);
+      const ex = fdir * 1.3 * k;
+      this.face(p.x + ex, hy + 1.5 * k, k, blink || s.sleeping || pose.eyesClosed, pose.mood ?? s.mood, pose.talk ? Math.sin(now * 14) > 0 : pose.chew ? Math.sin(now * 9) > 0.3 : false);
+      this.drawProp(pose, p.x, by, k, fdir, now, L);
+    }
+    if (shower) this.showerFx(p, by, k, z, now);
     this.nameTag(s, p, view, z, active);
+  }
+
+  // Hacia dónde mira: dir = izquierda/derecha en pantalla; back = de espaldas a la cámara
+  facing(state, s) {
+    const c = s.cur; let tx = null, ty = null;
+    if (c && c.phase === 'do') {
+      if (c.kind === 'obj' && !c.onObj) { const o = state.objects.find((q) => q.id === c.objId); if (o) { const f = footprint(o.type, o.rot); tx = o.x + f.w / 2 - 0.5; ty = o.y + f.h / 2 - 0.5; } }
+      if (c.kind === 'soc' || c.kind === 'partner') { const t = state.sims[c.kind === 'soc' ? c.targetId : c.leaderId]; if (t) { tx = t.x; ty = t.y; } }
+    } else if (s.path && s.path.length) { tx = s.path[0].x; ty = s.path[0].y; }
+    if (tx === null) return { dir: s.dir || 1, back: false };
+    const dx = tx - s.x, dy = ty - s.y;
+    const dir = dx - dy >= 0 ? 1 : -1; s.dir = dir;
+    return { dir, back: dx + dy < -0.35 };
+  }
+
+  // Postura según lo que esté haciendo
+  poseOf(state, s, now) {
+    const c = s.cur; const P = { id: null, sit: false };
+    if (!c || c.phase !== 'do') return P;
+    const d = s.dir || 1; const cyc = (now * 1.1) % 1;
+    if (c.kind === 'soc' || c.kind === 'partner') {
+      const act = c.kind === 'soc' ? c.act : state.sims[c.leaderId]?.cur?.act;
+      if (act === 'abrazar' || act === 'consolar' || act === 'acunar') return { id: 'hug', hands: [[d * 6 - 5, -24], [d * 6 + 5, -24]] };
+      if (act === 'discutir') return { id: 'argue', talk: true, mood: 20, hands: [[-11, -30 + Math.sin(now * 12) * 3], [11, -30 - Math.sin(now * 12) * 3]] };
+      if (act === 'biberon') return { id: 'bottle', hands: [[d * 5 - 3, -22], [d * 8, -24]], prop: 'bottle' };
+      if (act === 'bailar') return { id: 'dance', bounce: true };
+      return { id: 'talk', talk: true, hands: [[-9.3, -18], [d * 11, -24 + Math.sin(now * 5) * 3]] };
+    }
+    switch (c.act) {
+      case 'ducha': return { id: 'ducha', eyesClosed: true, hands: [[-6, -38], [6, -38]] };
+      case 'vater': return { id: 'vater', sit: true, hands: [[-10, -20], [10, -20]], mood: 60 };
+      case 'relajarse': return { id: 'sofa', sit: true, hands: [[-9, -17], [9, -17]] };
+      case 'picar': case 'pizza': {
+        const atMouth = cyc < 0.45;
+        return { id: 'eat', chew: !atMouth, hands: [[d * 3 - 5, -21], atMouth ? [d * 4, -35] : [d * 6, -22]], prop: c.act === 'pizza' ? 'slice' : 'plate' };
+      }
+      case 'cocinar': {
+        if (c.t < 30) return { id: 'cook', hands: [[d * 9, -21 + Math.sin(now * 6) * 1.5], [d * 2 - 6, -20]], prop: 'pan' };
+        const atMouth = cyc < 0.45;
+        return { id: 'eat', chew: !atMouth, hands: [[d * 3 - 5, -21], atMouth ? [d * 4, -35] : [d * 6, -22]], prop: 'plate' };
+      }
+      case 'jugarpc': case 'deberes': case 'buscartrabajo': {
+        const o = state.objects.find((q) => q.id === c.objId);
+        if (o && o.type === 'telefono') return { id: 'phone', talk: true, hands: [[-9.3, -18], [d * 7, -38]], prop: 'phone' };
+        const j = Math.sin(now * 18) * 1.2;
+        return { id: 'type', hands: [[d * 7 - 4, -22 + j], [d * 7 + 4, -22 - j]] };
+      }
+      case 'invitar': case 'adoptar': return { id: 'phone', talk: true, hands: [[-9.3, -18], [d * 7, -38]], prop: 'phone' };
+      case 'leer': return { id: 'read', hands: [[d * 6 - 4, -25], [d * 6 + 4, -25]], prop: 'book' };
+      case 'tele': return { id: 'tv', hands: [[-9.3, -18], [9.3, -18]], mood: 75 };
+      case 'bailar': { const a = Math.sin(now * 7); return { id: 'dance', bounce: true, mood: 90, hands: [[-11, -34 + a * 6], [11, -34 - a * 6]] }; }
+      case 'juguetes': return { id: 'toys', bounce: true, mood: 90, hands: [[d * 7 - 4, -20], [d * 7 + 6, -24 + Math.sin(now * 6) * 3]], prop: 'toy' };
+      case 'regar': return { id: 'water', hands: [[-9.3, -18], [d * 11, -22]], prop: 'can' };
+      default: return P;
+    }
+  }
+
+  drawProp(pose, x, by, k, d, now, L) {
+    const ctx = this.ctx; if (!pose.prop) return;
+    const h = pose.hands; ctx.lineWidth = 1.1 * this.cam.zoom; ctx.strokeStyle = OUTLINE;
+    const at = (i) => [x + h[i][0] * k, by + h[i][1] * k];
+    if (pose.prop === 'plate') {
+      const [px, py] = at(0); ctx.fillStyle = '#fff'; this.ell(px + d * 3 * k, py - 1 * k, 6 * k, 2.4 * k, true);
+      ctx.fillStyle = '#e8a84a'; this.ell(px + d * 2 * k, py - 2.4 * k, 2.4 * k, 1.4 * k); ctx.fillStyle = '#6ab04c'; this.ell(px + d * 4.5 * k, py - 2.2 * k, 1.8 * k, 1.1 * k);
+    } else if (pose.prop === 'slice') {
+      const [px, py] = at(1); ctx.fillStyle = '#f2c14e'; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + d * 7 * k, py - 3 * k); ctx.lineTo(px + d * 6 * k, py + 3 * k); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#d0453a'; this.circ(px + d * 4.5 * k, py, 1 * k);
+    } else if (pose.prop === 'pan') {
+      const [px, py] = at(0); ctx.strokeStyle = '#333'; ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + d * 5 * k, py - 1 * k); ctx.stroke();
+      ctx.fillStyle = '#2d2d33'; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; this.ell(px + d * 10 * k, py - 1 * k, 6 * k, 2.6 * k, true);
+      ctx.fillStyle = '#f3c26b'; this.ell(px + d * 10 * k, py - 1.6 * k, 3.5 * k, 1.4 * k);
+      this.steam(px + d * 10 * k, py - 5 * k, k, now);
+    } else if (pose.prop === 'phone') {
+      const [px, py] = at(1); ctx.fillStyle = '#222'; this.rr(px - 1.5 * k, py - 4 * k, 3 * k, 6.5 * k, 1 * k, false);
+    } else if (pose.prop === 'book') {
+      const [ax, ay] = at(0), [bx] = at(1); ctx.fillStyle = '#c0504d'; this.rr(Math.min(ax, bx) - 2 * k, ay - 5 * k, Math.abs(bx - ax) + 4 * k, 7 * k, 1 * k, true);
+      ctx.fillStyle = '#fff'; ctx.fillRect((ax + bx) / 2 - 0.4 * k, ay - 4.5 * k, 0.8 * k, 6 * k);
+    } else if (pose.prop === 'can') {
+      const [px, py] = at(1); ctx.fillStyle = '#4caf6a'; this.rr(px - 1 * k, py - 3 * k, 6 * k, 5 * k, 1.5 * k, true);
+      ctx.strokeStyle = '#3a8a52'; ctx.lineWidth = 1.4 * k; ctx.beginPath(); ctx.moveTo(px + 5 * k, py - 1 * k); ctx.lineTo(px + d * 10 * k, py - 4 * k); ctx.stroke();
+      ctx.fillStyle = '#7cc6ff'; for (let i = 0; i < 3; i++) { const t = (now * 2 + i / 3) % 1; this.circ(px + d * (10 + t * 2) * k, py - 4 * k + t * 14 * k, 1 * k); }
+    } else if (pose.prop === 'bottle') {
+      const [px, py] = at(1); ctx.fillStyle = '#f4f4f4'; this.rr(px - 1.5 * k, py - 5 * k, 3.5 * k, 7 * k, 1.2 * k, true); ctx.fillStyle = '#ffb3c7'; this.rr(px - 1 * k, py - 7 * k, 2.5 * k, 2.5 * k, 1 * k);
+    } else if (pose.prop === 'toy') {
+      const [px, py] = at(1); ctx.fillStyle = '#e05050'; this.circ(px, py - 3 * k, 3 * k, true); ctx.fillStyle = '#ffd45c'; this.circ(px - 1 * k, py - 4 * k, 1 * k);
+    }
+  }
+  steam(x, y, k, now) {
+    const ctx = this.ctx;
+    for (let i = 0; i < 3; i++) {
+      const t = (now * 0.8 + i / 3) % 1;
+      ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - t)})`;
+      this.circ(x + Math.sin(t * 6 + i) * 3 * k, y - t * 16 * k, (2 + t * 3) * k);
+    }
+  }
+  // Ducha: agua cayendo, vapor y cristal empañado que tapa el cuerpo
+  showerFx(p, by, k, z, now) {
+    const ctx = this.ctx;
+    ctx.strokeStyle = 'rgba(160,210,255,0.75)'; ctx.lineWidth = 1.2 * z;
+    for (let i = 0; i < 9; i++) {
+      const x = p.x + (i - 4) * 2.2 * k + Math.sin(i) * k; const off = ((now * 3 + i * 0.37) % 1) * 18 * k;
+      ctx.beginPath(); ctx.moveTo(x, by - 62 * k + off); ctx.lineTo(x, by - 54 * k + off); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, by - 40 * k + off); ctx.lineTo(x, by - 33 * k + off); ctx.stroke();
+    }
+    for (let i = 0; i < 5; i++) {
+      const t = (now * 0.35 + i / 5) % 1;
+      ctx.fillStyle = `rgba(255,255,255,${0.35 * Math.sin(t * Math.PI)})`;
+      this.circ(p.x + Math.sin(i * 2 + t * 4) * 9 * k, by - 30 * k - t * 40 * k, (5 + t * 6) * k);
+    }
+    const g = ctx.createLinearGradient(0, by - 30 * k, 0, by);
+    g.addColorStop(0, 'rgba(230,242,250,0.25)'); g.addColorStop(0.25, 'rgba(230,242,250,0.88)'); g.addColorStop(1, 'rgba(225,238,248,0.95)');
+    ctx.fillStyle = g; ctx.strokeStyle = 'rgba(150,190,215,0.8)'; ctx.lineWidth = 1;
+    this.rr(p.x - 15 * k, by - 30 * k, 30 * k, 31 * k, 4 * k, true);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5 * z;
+    ctx.beginPath(); ctx.moveTo(p.x - 10 * k, by - 22 * k); ctx.lineTo(p.x - 4 * k, by - 28 * k); ctx.stroke();
   }
   drawBaby(s, p, k, view, now) {
     const ctx = this.ctx, L = s.look, z = this.cam.zoom;
@@ -460,7 +625,7 @@ export class IsoRenderer {
     ctx.beginPath(); ctx.arc(x, y - 1 * k, 9 * k, Math.PI * 1.25, Math.PI * 1.5); ctx.stroke();
     ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.3 * this.cam.zoom;
   }
-  face(x, y, k, closed, mood) {
+  face(x, y, k, closed, mood, open = false) {
     const ctx = this.ctx; ctx.fillStyle = '#2a1d1a'; ctx.strokeStyle = '#2a1d1a';
     if (closed) {
       ctx.lineWidth = Math.max(1, 1.2 * k); ctx.beginPath();
@@ -471,7 +636,8 @@ export class IsoRenderer {
     }
     ctx.fillStyle = 'rgba(255,120,120,0.28)'; ctx.beginPath(); ctx.arc(x - 6.5 * k, y + 3 * k, 2 * k, 0, 7); ctx.arc(x + 6.5 * k, y + 3 * k, 2 * k, 0, 7); ctx.fill();
     ctx.strokeStyle = '#7a3a33'; ctx.lineWidth = Math.max(1, 1.2 * k); ctx.beginPath();
-    if (mood >= 60) ctx.arc(x, y + 3.2 * k, 2.6 * k, 0.25, Math.PI - 0.25);
+    if (open) { ctx.stroke(); ctx.fillStyle = '#7a3a33'; ctx.beginPath(); ctx.ellipse(x, y + 5 * k, 2 * k, 1.6 * k, 0, 0, 7); ctx.fill(); ctx.beginPath(); }
+    else if (mood >= 60) ctx.arc(x, y + 3.2 * k, 2.6 * k, 0.25, Math.PI - 0.25);
     else if (mood >= 35) { ctx.moveTo(x - 2 * k, y + 5 * k); ctx.lineTo(x + 2 * k, y + 5 * k); }
     else ctx.arc(x, y + 7.2 * k, 2.6 * k, Math.PI + 0.35, -0.35);
     ctx.stroke(); ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.3 * this.cam.zoom;
