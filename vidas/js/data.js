@@ -215,3 +215,26 @@ for (const [k, v] of Object.entries(SOCIAL_IC)) SOCIALS[k].ic = v;
 export const OBJ_IC = { nevera: 'fridge', cocina: 'food', mesa: 'table', cama: 'bed', camita: 'bed', cuna: 'baby', vater: 'toilet', ducha: 'drop', sofa: 'sofa', tele: 'tv', equipo: 'music', estanteria: 'book', ordenador: 'monitor', juguetes: 'ball', telefono: 'phone', planta: 'leaf', lampara: 'lamp', cuadro: 'rug', arbol: 'tree', buzon: 'receipt' };
 export const NEED_IC = { hambre: 'food', energia: 'moon', higiene: 'drop', diversion: 'game', social: 'chat', vejiga: 'toilet' };
 export const NEED_COLOR = { hambre: '#f08a3c', energia: '#6d6ae0', higiene: '#2fa8e0', diversion: '#e0559a', social: '#2fb37a', vejiga: '#d9a520' };
+
+// ---------- Estilos de casa ----------
+export const FLOOR_STYLES = [
+  { id: 'roble', name: 'Roble', type: 'madera', a: '#d7a873', b: '#cf9d68' },
+  { id: 'nogal', name: 'Nogal', type: 'madera', a: '#9a6844', b: '#8f5f3c' },
+  { id: 'gris', name: 'Madera gris', type: 'madera', a: '#bdb5aa', b: '#b2aa9e' },
+  { id: 'clara', name: 'Baldosa clara', type: 'baldosa', a: '#f1ede6', b: '#ddd6ca' },
+  { id: 'barro', name: 'Barro', type: 'baldosa', a: '#cc7a52', b: '#bd6d45' },
+  { id: 'ajedrez', name: 'Ajedrez', type: 'baldosa', a: '#eef1f4', b: '#4a5060' },
+  { id: 'verde', name: 'Moqueta verde', type: 'moqueta', a: '#a9c6a1', b: '#a2bf9a' },
+  { id: 'lila', name: 'Moqueta lila', type: 'moqueta', a: '#c8b3d8', b: '#c0abd0' },
+  { id: 'azul', name: 'Moqueta azul', type: 'moqueta', a: '#a3bcd9', b: '#9bb4d1' },
+];
+export const WALL_COLORS = ['#f3e7d6', '#e7f0e8', '#e4edf7', '#f7e2df', '#f5eed6', '#ebe2f4', '#dce9e6', '#faf7f1', '#f0d9c4', '#d9e4ef'];
+export const WALL_PATTERNS = { liso: 'Lisa', rayas: 'Rayas', topos: 'Topos', rombos: 'Rombos' };
+export const TINTS = ['#5a7ab0', '#b0605a', '#5aa070', '#c9a04a', '#8a6ab0', '#4a8a90', '#d07a9a', '#6f6f78', '#e08a4a', '#3f5a8a'];
+// Colores que se pueden personalizar en cada mueble (el primero es el principal)
+OBJECTS.sofa.tint = ['#5a7ab0', '#4a6aa0'];
+OBJECTS.cama.tint = ['#6a8fd0'];
+OBJECTS.camita.tint = ['#e07a7a'];
+OBJECTS.cuadro.tint = ['#b05a5a', '#d08a6a'];
+OBJECTS.juguetes.tint = ['#e8c04a'];
+CATEGORIES.push('Estilo');

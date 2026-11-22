@@ -1,7 +1,7 @@
 // Interfaz DOM: HUD, paneles, menús contextuales, modales y creador de personajes.
 import {
   NEEDS, BABY_NEEDS, NEED_INFO, NEED_IC, NEED_COLOR, TRAITS, AGES, OBJECTS, OBJ_IC, CATEGORIES, CAREERS, SCHOOL, MOODLETS, WORRIES,
-  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect,
+  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS,
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
@@ -258,6 +258,7 @@ export class UI {
     body.innerHTML = `<div class="tabs">${CATEGORIES.map((c) => `<button data-c="${c}" class="${c === cat ? 'on' : ''}">${c}</button>`).join('')}</div><div class="grid"></div><p class="hint">Toca un mueble de la casa para moverlo o venderlo. El tiempo se para mientras construyes.</p>`;
     body.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) this.renderBuild(b.dataset.c); };
     const grid = body.querySelector('.grid');
+    if (cat === 'Estilo') return this.renderStyle(body, grid);
     for (const [id, d] of Object.entries(OBJECTS)) {
       if (d.cat !== cat) continue;
       const b = document.createElement('button'); b.className = 'item'; b.disabled = st.money < d.price;
@@ -265,6 +266,23 @@ export class UI {
       b.onclick = () => { this.hideSheetOnly(); this.g.startPlacing(id); };
       grid.appendChild(b);
     }
+  }
+  renderStyle(body, grid) {
+    const st = this.state; const H = st.house || {}; const cur = H.floor || 'roble'; const wall = H.wall || { color: '#f3e7d6', pattern: 'rayas' };
+    body.querySelector('.hint').textContent = 'Cambia el suelo y las paredes de toda la casa.';
+    const sec = (t) => { const h = document.createElement('div'); h.className = 'sec'; h.style.gridColumn = '1 / -1'; h.textContent = t; grid.appendChild(h); };
+    const item = (html, on, price, fn) => {
+      const b = document.createElement('button'); b.className = 'item'; if (on) b.style.boxShadow = '0 0 0 2px var(--ink)';
+      b.innerHTML = html + (on ? '<span class="d">Actual</span>' : `<span class="p">${price} €</span>`);
+      b.disabled = !on && st.money < price; b.onclick = () => { if (!on && fn()) { this.renderBuild('Estilo'); this.update(); } };
+      grid.appendChild(b);
+    };
+    sec('Suelo');
+    for (const f of FLOOR_STYLES) item(`<span class="tilebox" style="background:${f.type === 'baldosa' ? `repeating-conic-gradient(${f.a} 0 25%, ${f.b} 0 50%) 0 0/20px 20px` : f.type === 'madera' ? `repeating-linear-gradient(90deg, ${f.a} 0 10px, ${f.b} 10px 11px)` : f.a}"></span>${f.name}`, f.id === cur, 300, () => Sim.setHouseStyle(st, { floor: f.id }, 300));
+    sec('Color de las paredes');
+    for (const c of WALL_COLORS) item(`<span class="tilebox" style="background:${c}"></span>`, c === wall.color, 200, () => Sim.setHouseStyle(st, { wall: { color: c } }, 200));
+    sec('Papel pintado');
+    for (const [k, l] of Object.entries(WALL_PATTERNS)) item(`<span class="tilebox" style="background:${wall.color};font-size:12px;color:var(--ink-2)">${{ liso: '', rayas: '┃┃┃', topos: '•••', rombos: '◇◇' }[k]}</span>${l}`, k === wall.pattern, 150, () => Sim.setHouseStyle(st, { wall: { pattern: k } }, 150));
   }
   renderBuildBar() {
     const v = this.g.view; const bar = $('#buildbar');
@@ -281,6 +299,7 @@ export class UI {
       const d = OBJECTS[o.type];
       info = `${icon(OBJ_IC[o.type] || 'box')} <b>${d.name}</b>`;
       acts = [btn('move', 'Mover', () => this.g.moveSelected())];
+      if (d.tint) acts.push(btn('sparkle', 'Color', () => { Sim.recolorObject(this.state, o); }));
       if (!d.fixed) acts.push(btn('coin', `Vender · ${Math.round(d.price * 0.7)} €`, () => this.g.sellSelected(), 'red'));
       acts.push(btn('x', '', () => { v.selected = null; this.renderBuildBar(); }));
     } else {

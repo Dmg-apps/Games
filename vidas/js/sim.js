@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -61,10 +61,71 @@ export function makeSim(state, def) {
   return sim;
 }
 
-const STARTER = [
-  ['cama', 1, 1, 0], ['nevera', 6, 0, 0], ['cocina', 7, 0, 0], ['mesa', 6, 3, 0], ['vater', 0, 8, 0],
-  ['ducha', 0, 6, 0], ['sofa', 3, 7, 0], ['tele', 4, 5, 0], ['telefono', 9, 0, 0], ['buzon', 11, 3, 0], ['planta', 9, 9, 0],
-];
+// Tamaño interior de la casa (varía por partida; las antiguas eran de 10×10)
+export const houseDims = (state) => ({ w: state?.house?.w || HOUSE, h: state?.house?.h || HOUSE });
+
+// Casa aleatoria: tamaño, suelo, paredes, ventanas y muebles colocados de forma distinta
+export function randomHouse() {
+  const w = pick([8, 9, 9, 10, 10]), h = pick([8, 9, 9, 10, 10]);
+  const wins = [];
+  for (let i = 0; i < pick([1, 2, 2]); i++) wins.push({ axis: 'x', pos: 1 + Math.random() * (w - 3) });
+  for (let i = 0; i < pick([1, 1, 2]); i++) wins.push({ axis: 'y', pos: 1 + Math.random() * (h - 3) });
+  return {
+    w, h, seed: Math.floor(Math.random() * 1000),
+    floor: pick(FLOOR_STYLES).id,
+    wall: { color: pick(WALL_COLORS), pattern: pick(Object.keys(WALL_PATTERNS)) },
+    windows: wins.filter((a, i) => !wins.some((b, j) => j < i && b.axis === a.axis && Math.abs(b.pos - a.pos) < 1.7)),
+    frame: Math.random() < 0.7,
+  };
+}
+// Coloca los muebles iniciales comprobando que todo queda accesible
+function furnish(state) {
+  const { w, h } = houseDims(state);
+  placeObject(state, 'buzon', 11, 3, 0, true);
+  const againstWall = () => {
+    const opts = [];
+    for (let x = 0; x < w; x++) for (const rot of [0, 1]) opts.push([x, 0, rot]);
+    for (let y = 0; y < h; y++) for (const rot of [0, 1]) opts.push([0, y, rot]);
+    return opts;
+  };
+  const anywhere = (pad = 1) => { const o = []; for (let x = pad; x < w - pad; x++) for (let y = pad; y < h - pad; y++) for (const rot of [0, 1]) o.push([x, y, rot]); return o; };
+  const garden = () => { const o = []; for (let x = 0; x < GRID; x++) for (let y = 0; y < GRID; y++) if ((x >= w || y >= h) && y !== EXIT.y && !(x >= 10 && y >= 2 && y <= 4)) o.push([x, y, 0]); return o; };
+  const tryPlace = (type, opts, near = null) => {
+    let list = opts.sort(() => Math.random() - 0.5);
+    if (near) list = list.sort((a, b) => (Math.abs(a[0] - near.x) + Math.abs(a[1] - near.y)) - (Math.abs(b[0] - near.x) + Math.abs(b[1] - near.y)));
+    for (const [x, y, rot] of list) {
+      if (!canPlace(state, type, x, y, rot)) continue;
+      const o = placeObject(state, type, x, y, rot, true);
+      if (allReachable(state)) return o;
+      state.objects.pop();
+    }
+    return null;
+  };
+  const fridge = tryPlace('nevera', againstWall());
+  tryPlace('cocina', againstWall(), fridge);
+  if (Math.random() < 0.75) tryPlace('mesa', anywhere(), fridge);
+  const shower = tryPlace('ducha', againstWall());
+  tryPlace('vater', againstWall(), shower);
+  tryPlace('cama', againstWall());
+  const sofa = tryPlace('sofa', anywhere());
+  tryPlace('tele', anywhere(), sofa);
+  tryPlace('telefono', againstWall());
+  for (const t of ['planta', 'lampara', 'estanteria', 'cuadro']) if (Math.random() < 0.5) tryPlace(t, t === 'estanteria' ? againstWall() : anywhere(t === 'cuadro' ? 1 : 0));
+  for (let i = 0, n = pick([1, 2, 3]); i < n; i++) tryPlace(pick(['arbol', 'arbol', 'planta']), garden());
+  for (const o of state.objects) { const d = OBJECTS[o.type]; if (d.tint && Math.random() < 0.8) o.tint = pick(TINTS); }
+}
+function allReachable(state) {
+  const { dist, blocked } = bfs(state, EXIT.x, EXIT.y);
+  for (const o of state.objects) {
+    if (OBJECTS[o.type].walkable) continue;
+    const ok = objTiles(o).some((t) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      const nx = t.x + dx, ny = t.y + dy;
+      return nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && !blocked[ny * GRID + nx] && dist[ny * GRID + nx] >= 0;
+    }));
+    if (!ok) return false;
+  }
+  return true;
+}
 
 export function newGame(familyDefs, surname) {
   const state = {
@@ -72,9 +133,11 @@ export function newGame(familyDefs, surname) {
     bills: [], household: [], active: null, sims: {}, objects: [], lastHour: 8, lastDay: 0,
     settings: { autonomy: 'baja', aging: true }, surname: surname || 'Familia',
   };
-  STARTER.forEach(([type, x, y, rot]) => placeObject(state, type, x, y, rot, true));
+  state.house = randomHouse();
+  furnish(state);
   familyDefs.forEach((d, i) => {
-    const s = makeSim(state, { ...d, home: true, x: 4 + i, y: 4, surname });
+    const t = randomFreeTile(state);
+    const s = makeSim(state, { ...d, home: true, x: t.x, y: t.y, surname });
     state.household.push(s.id);
   });
   // parentesco: adultos de la familia inicial son pareja si hay dos y se marca así
@@ -205,6 +268,17 @@ export function moveObject(state, o, x, y, rot) {
   freeObjectUsers(state, o);
   o.x = x; o.y = y; o.rot = rot;
 }
+export function recolorObject(state, o) {
+  const d = OBJECTS[o.type]; if (!d.tint) return;
+  o.tint = TINTS[(TINTS.indexOf(o.tint) + 1) % TINTS.length];
+}
+export function setHouseStyle(state, patch, cost) {
+  if (state.money < cost) { toast('No hay dinero suficiente', 'warn'); return false; }
+  state.house = { ...(state.house || { w: HOUSE, h: HOUSE, wall: { color: '#f3e7d6', pattern: 'rayas' }, floor: 'roble' }) };
+  if (patch.floor) state.house.floor = patch.floor;
+  if (patch.wall) state.house.wall = { ...state.house.wall, ...patch.wall };
+  state.money -= cost; return true;
+}
 export function sellObject(state, o) {
   freeObjectUsers(state, o);
   state.objects = state.objects.filter((p) => p !== o);
@@ -276,7 +350,8 @@ function pathTo(state, sim, x, y) {
 function randomFreeTile(state, inside = true) {
   const blocked = blockedMap(state);
   for (let i = 0; i < 60; i++) {
-    const x = Math.floor(rnd(0, inside ? HOUSE : GRID)), y = Math.floor(rnd(0, inside ? HOUSE : GRID));
+    const { w, h } = houseDims(state);
+    const x = Math.floor(rnd(0, inside ? w : GRID)), y = Math.floor(rnd(0, inside ? h : GRID));
     if (!blocked[y * GRID + x]) return { x, y };
   }
   return { x: 5, y: 5 };

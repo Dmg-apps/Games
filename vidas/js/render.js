@@ -1,7 +1,7 @@
 // Renderizador isométrico 2D en canvas. Solo lee el estado de la simulación.
 // Para pasar a 3D bastaría con otra clase con la misma interfaz:
 // resize(), render(state, view), screenToTile(x, y), pickSim(state, x, y), pickObject(state, x, y), addHearts(x, y), centerOn(x, y)
-import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR } from './data.js';
+import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES } from './data.js';
 import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf } from './sim.js';
 import { iconImage } from './icons.js';
 
@@ -153,6 +153,13 @@ export class IsoRenderer {
     this.drawClouds(night);
     this.island();
     // suelo
+    // estilo de la casa de esta partida (las partidas antiguas usan el de siempre)
+    const H = state.house || {};
+    this.hw = H.w || HOUSE; this.hh = H.h || HOUSE; this.seed = H.seed || 0;
+    this.floor = FLOOR_STYLES.find((f) => f.id === H.floor) || FLOOR_STYLES[0];
+    this.wallStyle = H.wall || { color: '#f3e7d6', pattern: 'rayas' };
+    this.windows = H.windows || [{ axis: 'x', pos: 2.4 }, { axis: 'x', pos: 6.4 }, { axis: 'y', pos: 4 }];
+    this.frame = H.frame ?? true;
     for (let x = 0; x < GRID; x++) for (let y = 0; y < GRID; y++) this.ground(x, y, view.build);
     this.walls(night);
     this.exitMark();
@@ -240,17 +247,24 @@ export class IsoRenderer {
     }
   }
   ground(x, y, build) {
-    const inside = x < HOUSE && y < HOUSE;
-    const path = !inside && y === EXIT.y;
-    const n = hash(x, y);
+    const inside = x < this.hw && y < this.hh;
+    const path = !inside && y === EXIT.y && x >= this.hw;
+    const n = hash(x + this.seed, y);
     if (inside) {
-      const base = mix('#d7a873', '#cf9d68', n);
-      this.tile(x, y, base);
-      // juntas de las tablas
-      const ctx = this.ctx; ctx.strokeStyle = 'rgba(120,70,35,0.22)'; ctx.lineWidth = 1;
-      for (const f of [0.33, 0.66]) { const a = this.iso(x, y + f), b = this.iso(x + 1, y + f); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
-      const off = (y % 2) * 0.5 + 0.25; const a = this.iso(x + off, y), b = this.iso(x + off, y + 0.33);
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const F = this.floor, ctx = this.ctx;
+      if (F.type === 'madera') {
+        this.tile(x, y, mix(F.a, F.b, n));
+        ctx.strokeStyle = 'rgba(80,45,20,0.22)'; ctx.lineWidth = 1;
+        for (const f of [0.33, 0.66]) { const a = this.iso(x, y + f), b = this.iso(x + 1, y + f); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+        const off = (y % 2) * 0.5 + 0.25; const a = this.iso(x + off, y), b = this.iso(x + off, y + 0.33);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      } else if (F.type === 'baldosa') {
+        this.tile(x, y, '#cfc8bc');
+        this.tileInset(x, y, 0.04, (x + y) % 2 ? F.a : F.b);
+      } else {
+        this.tile(x, y, mix(F.a, F.b, n));
+        if (n > 0.5) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; this.tileInset(x, y, 0.3, 'rgba(255,255,255,0.07)'); }
+      }
     } else if (path) {
       this.tile(x, y, '#9fb27d');
       this.tileInset(x, y, 0.12, mix('#d9d2c3', '#cfc6b4', n));
@@ -296,12 +310,22 @@ export class IsoRenderer {
       const p0 = this.iso(x0, y0), p1 = this.iso(x1, y1), q1 = this.iso(x1, y1, WALL), q0 = this.iso(x0, y0, WALL);
       const g = ctx.createLinearGradient(0, q0.y, 0, p0.y); g.addColorStop(0, tint(col, 0.25)); g.addColorStop(1, col);
       this.quad([p0, p1, q1, q0], g);
-      // rayas del papel pintado
-      ctx.strokeStyle = 'rgba(160,120,90,0.08)'; ctx.lineWidth = 3 * this.cam.zoom;
-      const n = Math.abs(x1 - x0 + y1 - y0) * 3;
-      for (let i = 1; i < n; i++) {
-        const t = i / n, a = this.iso(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 8), b = this.iso(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, WALL);
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      // papel pintado
+      const pat = this.wallStyle.pattern, len = Math.abs(x1 - x0 + y1 - y0), at = (t, zz) => this.iso(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, zz);
+      const ink = shade(col, 0.22);
+      if (pat === 'rayas') {
+        ctx.strokeStyle = ink.replace(/[\d.]+\)$/, '0.22)'); ctx.lineWidth = 3 * this.cam.zoom;
+        for (let i = 1; i < len * 3; i++) { const a = at(i / (len * 3), 8), b = at(i / (len * 3), WALL); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      } else if (pat === 'topos') {
+        ctx.fillStyle = ink.replace(/[\d.]+\)$/, '0.3)');
+        for (let i = 1; i < len * 2; i++) for (let j = 0; j < 4; j++) { const q = at((i + (j % 2) * 0.5) / (len * 2), 18 + j * 15); ctx.beginPath(); ctx.arc(q.x, q.y, 1.6 * this.cam.zoom, 0, 7); ctx.fill(); }
+      } else if (pat === 'rombos') {
+        ctx.strokeStyle = ink.replace(/[\d.]+\)$/, '0.22)'); ctx.lineWidth = 1.2 * this.cam.zoom;
+        for (let i = 0; i < len * 2; i++) for (let j = 0; j < 3; j++) {
+          const t0 = i / (len * 2), t1 = (i + 0.5) / (len * 2), t2 = (i + 1) / (len * 2), zb = 14 + j * 20;
+          const a = at(t0, zb + 10), b = at(t1, zb + 20), c = at(t2, zb + 10), d = at(t1, zb);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.stroke();
+        }
       }
       // zócalo
       this.quad([p0, p1, this.iso(x1, y1, 8), this.iso(x0, y0, 8)], '#f7f1e8', 'rgba(120,90,60,0.25)');
@@ -310,18 +334,24 @@ export class IsoRenderer {
       this.quad([q0, q1, this.iso(x1 + dx, y1 + dy, WALL), this.iso(x0 + dx, y0 + dy, WALL)], '#c9b49a');
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(q0.x, q0.y); ctx.lineTo(q1.x, q1.y); ctx.stroke();
     };
-    wall(0, 0, HOUSE, 0, '#f3e7d6');
-    wall(0, 0, 0, HOUSE, '#eadbc6');
+    const W = this.hw, Hh = this.hh, wc = this.wallStyle.color;
+    wall(0, 0, W, 0, wc);
+    wall(0, 0, 0, Hh, shade(wc, 0.05));
     // canto exterior de los muros
-    const e1 = this.iso(HOUSE, 0), e1t = this.iso(HOUSE, 0, WALL), e1b = this.iso(HOUSE, -0.14, WALL), e1c = this.iso(HOUSE, -0.14);
-    this.quad([e1, e1t, e1b, e1c], '#d8c4a8');
-    const e2 = this.iso(0, HOUSE), e2t = this.iso(0, HOUSE, WALL), e2b = this.iso(-0.14, HOUSE, WALL), e2c = this.iso(-0.14, HOUSE);
-    this.quad([e2, e2t, e2b, e2c], '#cbb699');
-    this.window(2.4, 'x', night); this.window(6.4, 'x', night); this.window(4, 'y', night);
-    // marco de foto
-    const fp = [this.iso(0, 7.6, 38), this.iso(0, 8.6, 38), this.iso(0, 8.6, 60), this.iso(0, 7.6, 60)];
-    this.quad(fp, '#8a5a3a'); this.quad([this.iso(0, 7.7, 41), this.iso(0, 8.5, 41), this.iso(0, 8.5, 57), this.iso(0, 7.7, 57)], '#f0c27a');
-    this.quad([this.iso(0, 7.7, 41), this.iso(0, 8.5, 41), this.iso(0, 8.2, 50), this.iso(0, 7.9, 47)], '#6aa36a');
+    const e1 = this.iso(W, 0), e1t = this.iso(W, 0, WALL), e1b = this.iso(W, -0.14, WALL), e1c = this.iso(W, -0.14);
+    this.quad([e1, e1t, e1b, e1c], shade(wc, 0.14));
+    const e2 = this.iso(0, Hh), e2t = this.iso(0, Hh, WALL), e2b = this.iso(-0.14, Hh, WALL), e2c = this.iso(-0.14, Hh);
+    this.quad([e2, e2t, e2b, e2c], shade(wc, 0.2));
+    for (const wnd of this.windows) this.window(Math.min(wnd.pos, (wnd.axis === 'x' ? W : Hh) - 1.5), wnd.axis, night);
+    // cuadro en la pared
+    if (this.frame && Hh >= 8) {
+      const y0 = Hh - 2.4;
+      if (!this.windows.some((w) => w.axis === 'y' && Math.abs(w.pos - y0) < 1.6)) {
+        this.quad([this.iso(0, y0, 38), this.iso(0, y0 + 1, 38), this.iso(0, y0 + 1, 60), this.iso(0, y0, 60)], '#8a5a3a');
+        this.quad([this.iso(0, y0 + 0.1, 41), this.iso(0, y0 + 0.9, 41), this.iso(0, y0 + 0.9, 57), this.iso(0, y0 + 0.1, 57)], '#f0c27a');
+        this.quad([this.iso(0, y0 + 0.1, 41), this.iso(0, y0 + 0.9, 41), this.iso(0, y0 + 0.6, 50), this.iso(0, y0 + 0.3, 47)], '#6aa36a');
+      }
+    }
   }
   window(pos, axis, night) {
     const w = 1.3, P = (t, z) => (axis === 'x' ? this.iso(pos + t, 0, z) : this.iso(0, pos + t, z));
@@ -366,6 +396,7 @@ export class IsoRenderer {
       .sort((a, b) => (a[0] + a[2] / 2 + a[1] + a[3] / 2) - (b[0] + b[2] / 2 + b[1] + b[3] / 2) || a[4] - b[4]);
     for (const b of boxes) {
       let col = b[6];
+      if (o.tint && def.tint) { const ti = def.tint.indexOf(col); if (ti === 0) col = o.tint; else if (ti > 0) col = shade(o.tint, 0.12 * ti); }
       const on = def.power && !state.powerOff && o.users.some((u) => state.sims[u]?.cur?.phase === 'do');
       if (col === '#1a1a22') col = on ? ['#5aa8e8', '#7dd3a8', '#e8a85a', '#a87de8'][Math.floor(performance.now() / 700 + o.x) % 4] : '#1f2230';
       if (col === '#1e1e26' && on) col = '#6ab4ff';
