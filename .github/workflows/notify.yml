@@ -23,6 +23,6 @@ jobs:
       - run: node send.mjs
         env:
           FIREBASE_DB_URL: https://vidas-d15a9-default-rtdb.europe-west1.firebasedatabase.app
-          VAPID_PUBLIC_KEY: BL95wvJEdAE3ouUF66NQDygX0t3_JD7a63j_oYS8nN8RacaVT3NaWhL01IeD9FCsOdgDXNN4isVh6nHuHjb-k-E
+          VAPID_PUBLIC_KEY: BPGojWRGqHJm7AayMiKqdb-FTbi7qKHToQPNS0MR3Iz76MYktQBpTMulLn1mK6pLPbSzBTmJSELueuIPr4HWSa8
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

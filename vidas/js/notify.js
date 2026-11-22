@@ -4,7 +4,7 @@
 import { CLOUD } from './cloud-config.js';
 import * as Cloud from './cloud.js';
 
-export const VAPID_PUBLIC = 'BL95wvJEdAE3ouUF66NQDygX0t3_JD7a63j_oYS8nN8RacaVT3NaWhL01IeD9FCsOdgDXNN4isVh6nHuHjb-k-E';
+export const VAPID_PUBLIC = 'BPGojWRGqHJm7AayMiKqdb-FTbi7qKHToQPNS0MR3Iz76MYktQBpTMulLn1mK6pLPbSzBTmJSELueuIPr4HWSa8';
 const PREF = 'vidas_notify';
 
 export const supported = () => 'Notification' in window && 'serviceWorker' in navigator;
