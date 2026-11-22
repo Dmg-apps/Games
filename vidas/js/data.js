@@ -41,6 +41,8 @@ export const SKINS = ['#f6d7c3', '#eac1a0', '#d29b74', '#a8704a', '#7a4b2c', '#4
 export const HAIR_COLORS = ['#1d1a18', '#4a2f1d', '#8a5a2b', '#d9b26a', '#b5462a', '#9a9a9a', '#5b3fa8', '#2d7a6e'];
 export const CLOTHES = ['#e05a5a', '#e8964a', '#e8cf4a', '#5ab06a', '#4a9ae0', '#6a5ae0', '#c45ab0', '#f2f2f2', '#3a3a44', '#7a5a3a'];
 export const HAIR_STYLES = ['Corto', 'Largo', 'Moño', 'Rapado'];
+export const EYE_STYLES = { redondos: 'Redondos', grandes: 'Grandes', almendrados: 'Almendrados', pestanas: 'Con pestañas' };
+export const EYE_COLORS = ['#4a2e1c', '#7a5230', '#2f6fb0', '#3a8a5a', '#7d8794', '#1d1a18', '#6b8f3a', '#8a5ab0'];
 
 export const NAMES_F = ['Lucía', 'Marta', 'Sofía', 'Carmen', 'Elena', 'Paula', 'Julia', 'Alba', 'Noa', 'Irene', 'Sara', 'Vera', 'Inés', 'Lola', 'Aitana'];
 export const NAMES_M = ['Hugo', 'Mateo', 'Pablo', 'Daniel', 'Álvaro', 'Leo', 'Marcos', 'Javier', 'Bruno', 'Iker', 'Adrián', 'Diego', 'Nico', 'Tomás', 'Unai'];

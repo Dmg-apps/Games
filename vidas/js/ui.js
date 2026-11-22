@@ -1,7 +1,7 @@
 // Interfaz DOM: HUD, paneles, menús contextuales, modales y creador de personajes.
 import {
   NEEDS, BABY_NEEDS, NEED_INFO, NEED_IC, NEED_COLOR, TRAITS, AGES, OBJECTS, OBJ_IC, CATEGORIES, CAREERS, SCHOOL, MOODLETS, WORRIES,
-  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS,
+  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS,
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
@@ -215,8 +215,10 @@ export class UI {
             <div class="row" style="margin-top:8px"><button class="btn alt" id="nskip" ${s.skipDay === Sim.dayOf(st.time) ? 'disabled' : ''}>${icon('moon')} Faltar hoy</button><button class="btn alt" id="nquit">${icon('logout')} Dejarlo</button></div>`;
         } else h += `<p class="hint">Sin trabajo. Usa el ordenador o el teléfono para buscar uno.</p>`;
       }
+      if (s.home) h += `<div class="row" style="margin-top:16px"><button class="btn alt" id="nlook">${icon('sparkle')} Cambiar aspecto</button></div>`;
       body.innerHTML = h;
       drawPortrait(body.querySelector('#np'), s, 60);
+      const lk = body.querySelector('#nlook'); if (lk) lk.onclick = () => this.editLook(s);
       const sk = body.querySelector('#nskip'); if (sk) sk.onclick = () => { Sim.skipToday(st, s); this.toast(`${s.name} se queda hoy en casa (bajará su rendimiento)`, 'warn', s.id); this.sig = ''; };
       const q = body.querySelector('#nquit'); if (q) q.onclick = () => this.confirm(`¿Seguro que ${s.name} deja su trabajo?`, () => { Sim.setJob(st, s, null); this.sig = ''; });
     }
@@ -451,6 +453,50 @@ export class UI {
     };
   }
 
+  // ---------- cambiar el aspecto de alguien de la familia ----------
+  editLook(sim) {
+    const look = { eyes: 'redondos', eyeColor: '#4a2e1c', ...sim.look }; let name = sim.name;
+    const segH = (id, opts) => `<div class="seg" id="${id}">${opts.map(([v, l]) => `<button data-v="${v}">${l}</button>`).join('')}</div>`;
+    const swH = (id, cols) => `<div class="sw" id="${id}">${cols.map((c) => `<button data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</div>`;
+    const render = (scroll = 0) => {
+      const box = this.modal(`<h2>Cambiar aspecto</h2><div class="preview"><canvas id="lp"></canvas></div>
+        <div class="group">
+          <div class="field"><label>Nombre</label><input type="text" id="ln" maxlength="14" value="${esc(name)}" autocomplete="off"></div>
+          <div class="field"><label>Ojos</label>${segH('ley', Object.entries(EYE_STYLES))}</div>
+          <div class="field"><label>Color de ojos</label>${swH('lec', EYE_COLORS)}</div>
+        </div>
+        <div class="group">
+          <div class="field"><label>Peinado</label>${segH('lh', HAIR_STYLES.map((n, i) => [i, n]))}</div>
+          <div class="field"><label>Pelo</label>${swH('lhc', HAIR_COLORS)}</div>
+          <div class="field"><label>Piel</label>${swH('lsk', SKINS)}</div>
+        </div>
+        <div class="group">
+          <div class="field"><label>Silueta</label>${segH('lb', Object.entries(BODY_STYLES))}</div>
+          <div class="field"><label>Parte de arriba</label>${swH('lsh', CLOTHES)}</div>
+          <div class="field"><label>Parte de abajo</label>${swH('lpa', CLOTHES)}</div>
+        </div>
+        <div class="actions"><button class="btn alt" id="lno">Cancelar</button><button class="btn coral" id="lok">${icon('check')} Guardar</button></div>`);
+      box.scrollTop = scroll;
+      drawPortrait(box.querySelector('#lp'), { look, age: sim.age, mood: 80 }, 110);
+      box.querySelector('#ln').oninput = (e) => (name = e.target.value);
+      const seg = (id, val, fn) => {
+        const el = box.querySelector(id);
+        el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(val) === b.dataset.v));
+        el.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; fn(b.dataset.v); render(box.scrollTop); };
+      };
+      seg('#ley', look.eyes, (v) => (look.eyes = v)); seg('#lec', look.eyeColor, (v) => (look.eyeColor = v));
+      seg('#lh', look.hair, (v) => (look.hair = +v)); seg('#lhc', look.hairColor, (v) => (look.hairColor = v)); seg('#lsk', look.skin, (v) => (look.skin = v));
+      seg('#lb', look.body, (v) => (look.body = v)); seg('#lsh', look.shirt, (v) => (look.shirt = v)); seg('#lpa', look.pants, (v) => (look.pants = v));
+      box.querySelector('#lno').onclick = () => this.closeModal();
+      box.querySelector('#lok').onclick = () => {
+        sim.look = look; if (name.trim()) sim.name = name.trim();
+        this.closeModal(); $('#family').dataset.sig = ''; this.sig = ''; this.update(); this.g.save();
+        this.toast(`${sim.name} tiene nuevo aspecto`, 'good', sim.id);
+      };
+    };
+    render();
+  }
+
   // ---------- creador de familia ----------
   createFamily(onDone, onCancel) {
     const defs = [this.newMember('f')];
@@ -475,6 +521,8 @@ export class UI {
           <div class="field"><label>Silueta</label>${segH('fb', Object.entries(BODY_STYLES))}</div>
           <div class="field"><label>Peinado</label>${segH('fh', HAIR_STYLES.map((n, i) => [i, n]))}</div>
           <div class="field"><label>Pelo</label>${swH('fhc', HAIR_COLORS)}</div>
+          <div class="field"><label>Ojos</label>${segH('fey', Object.entries(EYE_STYLES))}</div>
+          <div class="field"><label>Color de ojos</label>${swH('fec', EYE_COLORS)}</div>
           <div class="field"><label>Parte de arriba</label>${swH('fsh', CLOTHES)}</div>
           <div class="field"><label>Parte de abajo</label>${swH('fpa', CLOTHES)}</div>
         </div>
@@ -506,6 +554,8 @@ export class UI {
       seg('#fb', d.look.body, (v) => (d.look.body = v));
       seg('#fh', d.look.hair, (v) => (d.look.hair = +v));
       seg('#fhc', d.look.hairColor, (v) => (d.look.hairColor = v));
+      seg('#fey', d.look.eyes || 'redondos', (v) => (d.look.eyes = v));
+      seg('#fec', d.look.eyeColor, (v) => (d.look.eyeColor = v));
       seg('#fsh', d.look.shirt, (v) => (d.look.shirt = v));
       seg('#fpa', d.look.pants, (v) => (d.look.pants = v));
       seg('#ft', d.traits, (v) => { if (d.traits.includes(v)) d.traits = d.traits.filter((t) => t !== v); else { d.traits.push(v); if (d.traits.length > 2) d.traits.shift(); } });

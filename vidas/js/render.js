@@ -503,7 +503,7 @@ export class IsoRenderer {
     } else {
       this.hairFront(L, p.x, hy, k);
       const ex = fdir * 1.3 * k;
-      this.face(p.x + ex, hy + 1.5 * k, k, blink || s.sleeping || pose.eyesClosed, pose.mood ?? s.mood, pose.talk ? Math.sin(now * 14) > 0 : pose.chew ? Math.sin(now * 9) > 0.3 : false);
+      this.face(p.x + ex, hy + 1.5 * k, k, blink || s.sleeping || pose.eyesClosed, pose.mood ?? s.mood, pose.talk ? Math.sin(now * 14) > 0 : pose.chew ? Math.sin(now * 9) > 0.3 : false, L);
       this.drawProp(pose, p.x, by, k, fdir, now, L);
     }
     if (shower) this.showerFx(p, by, k, z, now);
@@ -630,7 +630,7 @@ export class IsoRenderer {
     ctx.fillStyle = tint(L.shirt, 0.3); this.ell(p.x + 2 * k, p.y - 5 * k, 15 * k, 9 * k, true);
     ctx.fillStyle = L.skin; this.circ(p.x - 9 * k, p.y - 11 * k, 9.5 * k, true);
     ctx.fillStyle = L.hairColor; ctx.beginPath(); ctx.arc(p.x - 9 * k, p.y - 13 * k, 7 * k, Math.PI * 1.1, Math.PI * 1.9); ctx.fill();
-    this.face(p.x - 9 * k, p.y - 10 * k, k, s.sleeping, s.crying ? 10 : 80);
+    this.face(p.x - 9 * k, p.y - 10 * k, k, s.sleeping, s.crying ? 10 : 80, false, L);
     this.nameTag(s, p, view, z, view.active === s.id);
   }
   drawLying(s, p, k, view) {
@@ -656,15 +656,13 @@ export class IsoRenderer {
     ctx.beginPath(); ctx.arc(x, y - 1 * k, 9 * k, Math.PI * 1.25, Math.PI * 1.5); ctx.stroke();
     ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.3 * this.cam.zoom;
   }
-  face(x, y, k, closed, mood, open = false) {
+  face(x, y, k, closed, mood, open = false, L = null) {
+    this.curLook = L;
     const ctx = this.ctx; ctx.fillStyle = '#2a1d1a'; ctx.strokeStyle = '#2a1d1a';
     if (closed) {
       ctx.lineWidth = Math.max(1, 1.2 * k); ctx.beginPath();
       ctx.arc(x - 3.8 * k, y - 0.5 * k, 1.8 * k, 0.2, Math.PI - 0.2); ctx.moveTo(x + 5.6 * k, y - 0.2 * k); ctx.arc(x + 3.8 * k, y - 0.5 * k, 1.8 * k, 0.2, Math.PI - 0.2); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.ellipse(x - 3.8 * k, y, 1.5 * k, 2 * k, 0, 0, 7); ctx.ellipse(x + 3.8 * k, y, 1.5 * k, 2 * k, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x - 3.3 * k, y - 0.8 * k, 0.6 * k, 0, 7); ctx.arc(x + 4.3 * k, y - 0.8 * k, 0.6 * k, 0, 7); ctx.fill();
-    }
+    } else drawEyes(ctx, x, y, 3.8 * k, k, this.curLook);
     ctx.fillStyle = 'rgba(255,120,120,0.28)'; ctx.beginPath(); ctx.arc(x - 6.5 * k, y + 3 * k, 2 * k, 0, 7); ctx.arc(x + 6.5 * k, y + 3 * k, 2 * k, 0, 7); ctx.fill();
     ctx.strokeStyle = '#7a3a33'; ctx.lineWidth = Math.max(1, 1.2 * k); ctx.beginPath();
     if (open) { ctx.stroke(); ctx.fillStyle = '#7a3a33'; ctx.beginPath(); ctx.ellipse(x, y + 5 * k, 2 * k, 1.6 * k, 0, 0, 7); ctx.fill(); ctx.beginPath(); }
@@ -739,6 +737,34 @@ export class IsoRenderer {
   }
 }
 
+// Ojos según el estilo y color elegidos (s = tamaño base)
+function drawEyes(ctx, x, y, sep, s, L) {
+  const style = L?.eyes || 'redondos', col = L?.eyeColor || '#2a1d1a', ink = '#2a1d1a';
+  for (const side of [-1, 1]) {
+    const ex = x + side * sep;
+    if (style === 'grandes') {
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = ink; ctx.lineWidth = Math.max(0.8, 0.5 * s);
+      ctx.beginPath(); ctx.ellipse(ex, y, 2.1 * s, 2.6 * s, 0, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(ex, y + 0.4 * s, 1.55 * s, 1.95 * s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = ink; ctx.beginPath(); ctx.ellipse(ex, y + 0.5 * s, 0.75 * s, 1 * s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 0.6 * s, y - 0.6 * s, 0.6 * s, 0, 7); ctx.fill();
+    } else if (style === 'almendrados') {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(ex - 2.4 * s, y); ctx.quadraticCurveTo(ex, y - 2.4 * s, ex + 2.4 * s, y); ctx.quadraticCurveTo(ex, y + 1.8 * s, ex - 2.4 * s, y); ctx.fill();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ex, y - 0.1 * s, 1.15 * s, 0, 7); ctx.fill();
+      ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(ex, y - 0.1 * s, 0.55 * s, 0, 7); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = Math.max(1, 0.7 * s); ctx.beginPath(); ctx.moveTo(ex - 2.5 * s, y); ctx.quadraticCurveTo(ex, y - 2.5 * s, ex + 2.5 * s, y); ctx.stroke();
+    } else {
+      ctx.fillStyle = shade(col, 0.35); ctx.beginPath(); ctx.ellipse(ex, y, 1.5 * s, 2 * s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 0.5 * s, y - 0.8 * s, 0.6 * s, 0, 7); ctx.fill();
+      if (style === 'pestanas') {
+        ctx.strokeStyle = ink; ctx.lineWidth = Math.max(0.8, 0.5 * s); ctx.beginPath();
+        ctx.moveTo(ex + side * 1.1 * s, y - 1.6 * s); ctx.lineTo(ex + side * 2.3 * s, y - 2.6 * s);
+        ctx.moveTo(ex + side * 0.2 * s, y - 2 * s); ctx.lineTo(ex + side * 0.9 * s, y - 3.2 * s); ctx.stroke();
+      }
+    }
+  }
+}
+
 function heartPath(ctx, x, y, s) {
   ctx.beginPath(); ctx.moveTo(x, y + s * 0.9);
   ctx.bezierCurveTo(x - s * 1.4, y, x - s * 0.9, y - s * 1.1, x, y - s * 0.4);
@@ -763,9 +789,7 @@ export function drawPortrait(canvas, sim, size = 64) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     if (L.hair === 2) { ctx.beginPath(); ctx.arc(cx + 2 * k, cy - 22 * k, 8 * k, 0, 7); ctx.fill(); ctx.stroke(); }
   } else { ctx.beginPath(); ctx.arc(cx, cy, 18 * k, Math.PI * 1.12, Math.PI * 1.88); ctx.fill(); }
-  ctx.fillStyle = '#2a1d1a';
-  ctx.beginPath(); ctx.ellipse(cx - 6.5 * k, cy + 3 * k, 2.4 * k, 3.1 * k, 0, 0, 7); ctx.ellipse(cx + 6.5 * k, cy + 3 * k, 2.4 * k, 3.1 * k, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx - 5.7 * k, cy + 1.8 * k, 0.9 * k, 0, 7); ctx.arc(cx + 7.3 * k, cy + 1.8 * k, 0.9 * k, 0, 7); ctx.fill();
+  drawEyes(ctx, cx, cy + 3 * k, 6.5 * k, 1.55 * k, L);
   ctx.fillStyle = 'rgba(255,120,120,0.3)'; ctx.beginPath(); ctx.arc(cx - 11 * k, cy + 8 * k, 3.2 * k, 0, 7); ctx.arc(cx + 11 * k, cy + 8 * k, 3.2 * k, 0, 7); ctx.fill();
   ctx.strokeStyle = '#7a3a33'; ctx.lineWidth = 1.8 * k; ctx.beginPath();
   const m = sim.mood ?? 70;

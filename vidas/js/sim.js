@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -32,6 +32,7 @@ export function randomLook(gender) {
     skin: pick(SKINS), hair: gender === 'f' ? pick([0, 1, 1, 2]) : gender === 'x' ? pick([0, 1, 2, 3]) : pick([0, 0, 3, 2]),
     body: gender === 'f' ? (Math.random() < 0.7 ? 'vestido' : 'recto') : gender === 'x' ? pick(['recto', 'vestido']) : 'recto',
     hairColor: pick(HAIR_COLORS.slice(0, 6)), shirt: pick(CLOTHES), pants: pick(CLOTHES),
+    eyes: pick(Object.keys(EYE_STYLES)), eyeColor: pick(EYE_COLORS.slice(0, 6)),
   };
 }
 
