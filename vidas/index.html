@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#2f6fd0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Vidas">
+  <title>Vidas</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <header id="top">
+    <div id="money" class="pill"></div>
+    <div id="clock" class="pill"></div>
+    <div id="speeds" class="pill">
+      <button data-s="0" aria-label="Pausa">⏸</button>
+      <button data-s="1" aria-label="Normal">▶</button>
+      <button data-s="2" aria-label="Rápido">⏩</button>
+      <button data-s="3" aria-label="Muy rápido">⏭</button>
+    </div>
+  </header>
+
+  <div id="queue"></div>
+  <div id="toasts"></div>
+
+  <div id="buildbar" hidden></div>
+
+  <nav id="bottom">
+    <div id="family"></div>
+    <div id="modes">
+      <button data-panel="needs"><b>❤️</b><span>Estado</span></button>
+      <button data-panel="rels"><b>👥</b><span>Gente</span></button>
+      <button data-panel="build"><b>🛠️</b><span>Construir</span></button>
+      <button data-panel="menu"><b>☰</b><span>Menú</span></button>
+    </div>
+  </nav>
+
+  <section id="sheet" hidden>
+    <div class="sheet-head"><h2></h2><button class="close" aria-label="Cerrar">✕</button></div>
+    <div class="sheet-body"></div>
+  </section>
+
+  <div id="pie" hidden></div>
+  <div id="modal" hidden><div class="modal-box"></div></div>
+  <div id="fade"><span>💕</span></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
