@@ -3,8 +3,8 @@
 // addHearts(), addMarker(), insetRight
 import * as THREE from '../vendor/three.module.min.js';
 import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
-import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES } from './data.js';
-import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf } from './sim.js';
+import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES, SEASONS } from './data.js';
+import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf, seasonOf, weatherOf } from './sim.js';
 import { iconImage } from './icons.js';
 
 const PX = 0.024;           // píxeles del catálogo → metros
@@ -122,6 +122,7 @@ function mat(color, opts = {}) {
 }
 
 // ---------- muebles ----------
+let CUR_LEAVES = '#4ea04e';
 function buildObject(o) {
   const def = OBJECTS[o.type]; const g = new THREE.Group(); g.userData.objId = o.id;
   const add = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.objId = o.id; g.add(mesh); return mesh; };
@@ -133,7 +134,7 @@ function buildObject(o) {
   }
   if (o.type === 'arbol') {
     add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 1.1, 8), mat('#7a5232'))).position.set(cx, 0.55, cz);
-    const leaf = mat('#3e8a3e', { rough: 0.9 }), leaf2 = mat('#4ea04e', { rough: 0.9 });
+    const lc = CUR_LEAVES; const leaf = mat(shadeHex(lc, 0.15), { rough: 0.9 }), leaf2 = mat(lc, { rough: 0.9 });
     add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.48, 1), leaf)).position.set(cx, 1.35, cz);
     add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 1), leaf2)).position.set(cx + 0.18, 1.7, cz - 0.1);
     add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 1), leaf2)).position.set(cx - 0.2, 1.6, cz + 0.15);
@@ -542,6 +543,41 @@ export class Renderer3D {
     }
     return best;
   }
+  pickPet(state, sx, sy) {
+    let best = null, bd = 34;
+    for (const p of state.pets || []) {
+      const m = this.pets?.get(p.id); if (!m || !m.root.visible) continue;
+      const q = this.project(m.root.position.clone().add(new THREE.Vector3(0, 0.25, 0)));
+      const d = Math.hypot(q.x - sx, q.y - sy); if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  // Mascotas hechas con piezas simples, animadas al andar
+  syncPets(state, t, dt) {
+    this.pets ||= new Map(); const seen = new Set();
+    for (const p of state.pets || []) {
+      seen.add(p.id); let m = this.pets.get(p.id);
+      if (!m) { m = buildPet(p); this.pets.set(p.id, m); this.scene.add(m.root); }
+      const vis = !p.out; m.root.visible = vis; if (!vis) continue;
+      const walking = p.path?.length > 0;
+      m.root.position.set(p.x + 0.5, 0.05, p.y + 0.5);
+      if (walking) { const n = p.path[0]; const yaw = Math.atan2(n.x - p.x, n.y - p.y); let d = yaw - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); m.yaw += d * Math.min(1, dt * 10); }
+      m.root.rotation.y = m.yaw;
+      const w = walking ? Math.sin(t * 12) : 0;
+      m.legs.forEach((l, i) => (l.rotation.x = (i % 2 ? w : -w) * 0.6));
+      m.tail.rotation.x = -0.6 + (p.sleeping ? 0 : Math.sin(t * (walking ? 10 : 4)) * 0.4);
+      m.body.position.y = p.sleeping ? 0.14 : 0.3 + Math.abs(w) * 0.02;
+      m.head.position.y = p.sleeping ? 0.18 : 0.42; m.legs.forEach((l) => (l.visible = !p.sleeping));
+    }
+    for (const [id, m] of this.pets) if (!seen.has(id)) { this.scene.remove(m.root); this.pets.delete(id); }
+  }
+  // Estación (color del césped y de los árboles) y lluvia o nieve
+  season(state) {
+    const S = seasonOf(state); const w = weatherOf(state).type;
+    if (S.id !== this.seasonId) { this.seasonId = S.id; CUR_LEAVES = S.leaves; this.island.material[2].color.set(new THREE.Color(S.grass).lerp(new THREE.Color(0xffffff), 0.35)); }
+    this.weatherType = w;
+    this.weatherDim = w === 'lluvia' || w === 'nieve' ? 0.65 : w === 'nubes' ? 0.82 : 1;
+  }
   pickObject(state, sx, sy) {
     this.setRay(sx, sy);
     const hits = this.ray.intersectObjects(this.objGroup.children, true);
@@ -557,7 +593,7 @@ export class Renderer3D {
     const seen = new Set();
     for (const o of state.objects) {
       seen.add(o.id);
-      const key = `${o.type}|${o.x}|${o.y}|${o.rot}|${o.tint || ''}`;
+      const key = `${o.type}|${o.x}|${o.y}|${o.rot}|${o.tint || ''}|${o.type === 'arbol' ? CUR_LEAVES : ''}`;
       let rec = this.objMeshes.get(o.id);
       if (!rec || rec.key !== key) {
         if (rec) this.objGroup.remove(rec.g);
@@ -659,7 +695,7 @@ export class Renderer3D {
     if (css !== this.bg) { this.bg = css; document.body.style.background = css; }
     const a = ((h - 6) / 13) * Math.PI; const up = Math.max(0, Math.sin(a));
     this.sun.position.set(6 + Math.cos(a) * 14, 2 + up * 16, 6 + 10); this.sun.target.position.set(6, 0, 6);
-    this.sun.intensity = 0.15 + up * 2.3 * (1 - night);
+    this.sun.intensity = (0.15 + up * 2.3 * (1 - night)) * (this.weatherDim || 1);
     this.sun.color.setHSL(0.09, 0.6 + (1 - up) * 0.3, 0.75 + up * 0.15);
     this.hemi.intensity = 0.5 + 0.5 * (1 - night);
     this.hemi.color.set(night > 0.5 ? 0x8090c0 : 0xdfefff);
@@ -700,6 +736,7 @@ export class Renderer3D {
     const wm = std({ map: wallTexture(style.color, style.pattern, 1.5), roughness: 0.9 });
     const top = mat(shadeHex(style.color, 0.2), { rough: 0.95 });
     const frame = mat('#fffaf2', { rough: 0.5 }), leaf = mat('#a8784a', { rough: 0.6 }), knob = mat('#d4b04a', { metal: 0.6, rough: 0.3 });
+    this.glasses = (this.glasses || []).filter((gl) => !gl.userData.built);
     for (const q of state.walls || []) {
       const g = new THREE.Group(); G.add(g);
       const box = (w, hh, d, x, y, z, m = [wm, wm, top, top, wm, wm]) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), m); me.position.set(x, y, z); me.castShadow = true; me.receiveShadow = true; g.add(me); return me; };
@@ -712,6 +749,13 @@ export class Renderer3D {
         const hinge = new THREE.Group(); hinge.position.set(side + 0.03, 0, 0); hinge.rotation.y = -1.25; g.add(hinge);
         const lf = new THREE.Mesh(new RoundedBoxGeometry(DW - 0.06, DH - 0.04, 0.04, 2, 0.01), leaf); lf.position.set((DW - 0.06) / 2, DH / 2, 0); lf.castShadow = true; hinge.add(lf);
         const kb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), knob); kb.position.set(DW - 0.16, 1.0, 0.04); hinge.add(kb);
+      } else if (q.window) {
+        const SILL = 0.85, TOP = 2.05, WW = 0.8, side = (1 - WW) / 2;
+        box(side, WALL_H, WALL_T, side / 2, WALL_H / 2, 0); box(side, WALL_H, WALL_T, 1 - side / 2, WALL_H / 2, 0);
+        box(WW, SILL, WALL_T, 0.5, SILL / 2, 0); box(WW, WALL_H - TOP, WALL_T, 0.5, TOP + (WALL_H - TOP) / 2, 0);
+        const gl = new THREE.Mesh(new THREE.BoxGeometry(WW, TOP - SILL, 0.02), std({ color: 0xbfe3f5, transparent: true, opacity: 0.35, roughness: 0.05, emissive: 0x000000 }));
+        gl.position.set(0.5, (SILL + TOP) / 2, 0); gl.userData.built = true; g.add(gl); (this.glasses ||= []).push(gl);
+        for (const [fw, fh, fx, fy] of [[WW, 0.05, 0.5, SILL], [WW, 0.05, 0.5, TOP], [0.05, TOP - SILL, side, (SILL + TOP) / 2], [0.05, TOP - SILL, 1 - side, (SILL + TOP) / 2], [0.04, TOP - SILL, 0.5, (SILL + TOP) / 2]]) box(fw, fh, WALL_T + 0.02, fx, fy, 0, frame);
       } else box(1 + WALL_T, WALL_H, WALL_T, 0.5, WALL_H / 2, 0);
       if (q.d === 'h') { g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x + 0.5; g.userData.cz = q.y; }
       else { g.rotation.y = -Math.PI / 2; g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x; g.userData.cz = q.y + 0.5; }
@@ -728,6 +772,8 @@ export class Renderer3D {
     this.buildWalls(state);
     this.syncObjects(state, view);
     this.syncPeople(state, view, t, dt);
+    this.syncPets(state, t, dt);
+    this.season(state);
     this.lighting(state, t);
     this.updateCamera(); if (this.cam.yaw !== this.cutYaw) { this.cutYaw = this.cam.yaw; this.cutaway(); }
     if (!this.hq) {
@@ -750,6 +796,25 @@ export class Renderer3D {
       if (hq.z > 1) continue;
       this.nameTag(s, fq, z, view.active === s.id);
       this.bubble(state, s, hq, z, now);
+    }
+    // mascotas: nombre y burbuja si necesitan algo
+    for (const p of state.pets || []) {
+      const m = this.pets?.get(p.id); if (!m || !m.root.visible) continue;
+      const q = this.project(m.root.position.clone().add(new THREE.Vector3(0, 0.6, 0))), f = this.project(m.root.position);
+      if (this.cam.dist < 30) { ctx.font = `800 ${9.5 * z}px ${FONT}`; ctx.textAlign = 'center'; const tw = ctx.measureText(p.name).width + 10 * z; ctx.fillStyle = 'rgba(255,240,215,0.92)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(f.x - tw / 2, f.y + 4 * z, tw, 13 * z, 6 * z) : ctx.rect(f.x - tw / 2, f.y + 4 * z, tw, 13 * z); ctx.fill(); ctx.fillStyle = '#5a3a1a'; ctx.fillText(p.name, f.x, f.y + 14 * z); }
+      const low = Object.entries(p.needs).filter(([, v]) => v < 30).sort((a, b) => a[1] - b[1])[0];
+      if (p.sleeping) this.zzz(q, z * 0.8, now);
+      else if (p.bubble && p.bubble.until > state.time) this.bubbleIcon(q, z * 0.85, 'heart', '#ff4f86', null, now);
+      else if (low) this.bubbleIcon(q, z * 0.85, { hambre: 'food', carino: 'heart', diversion: 'ball' }[low[0]], '#e5484d', '#f5a524', now);
+    }
+    // lluvia o nieve (pocas partículas, dibujadas en 2D)
+    if (this.weatherType === 'lluvia' || this.weatherType === 'nieve') {
+      const snow = this.weatherType === 'nieve'; ctx.strokeStyle = 'rgba(190,215,240,0.55)'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2;
+      for (let i = 0; i < 70; i++) {
+        const sp = snow ? 40 : 520, x0 = (hash(i, 3) * this.w + (snow ? Math.sin(now + i) * 20 : -now * 60)) % this.w, y = (hash(i, 9) * this.h + now * sp) % this.h;
+        const x = (x0 + this.w) % this.w;
+        if (snow) { ctx.beginPath(); ctx.arc(x, y, 1.8, 0, TAU); ctx.fill(); } else { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 11); ctx.stroke(); }
+      }
     }
     this.hearts = this.hearts.filter((h) => h.t < 2);
     for (const h of this.hearts) {
@@ -785,6 +850,12 @@ export class Renderer3D {
     if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = 2 * z; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
     const img = iconImage(icon, color, 2.4); if (img.complete) ctx.drawImage(img, x - r * 0.62, y - r * 0.62, r * 1.24, r * 1.24);
   }
+  bubbleIcon(q, z, icon, color, ring, now) {
+    const ctx = this.ctx; const x = q.x + 12 * z, y = q.y - 8 * z + Math.sin(now * 3) * 1.4, r = 12 * z;
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = 2 * z; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke(); }
+    const img = iconImage(icon, color, 2.4); if (img.complete) ctx.drawImage(img, x - r * 0.62, y - r * 0.62, r * 1.24, r * 1.24);
+  }
   zzz(q, z, now) {
     const ctx = this.ctx; ctx.textAlign = 'center';
     for (let i = 0; i < 3; i++) {
@@ -794,6 +865,27 @@ export class Renderer3D {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+function buildPet(p) {
+  const root = new THREE.Group(); const fur = std({ color: hex(p.color), roughness: 0.9 }); const dark = std({ color: 0x1d1512 });
+  const dog = p.species === 'perro';
+  const mk = (geo, m, parent, x, y, z) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); parent.add(me); return me; };
+  const body = mk(new THREE.CapsuleGeometry(dog ? 0.11 : 0.085, dog ? 0.28 : 0.22, 3, 8), fur, root, 0, 0.3, 0); body.rotation.x = Math.PI / 2;
+  const head = new THREE.Group(); head.position.set(0, 0.42, dog ? 0.24 : 0.19); root.add(head);
+  mk(new THREE.SphereGeometry(dog ? 0.1 : 0.085, 12, 10), fur, head, 0, 0, 0);
+  if (dog) { mk(new THREE.CapsuleGeometry(0.045, 0.06, 2, 6), fur, head, 0, -0.03, 0.09).rotation.x = Math.PI / 2; mk(new THREE.SphereGeometry(0.022, 8, 6), dark, head, 0, -0.02, 0.15); }
+  for (const sd of [-1, 1]) {
+    const ear = mk(dog ? new THREE.SphereGeometry(0.04, 8, 6) : new THREE.ConeGeometry(0.035, 0.07, 6), fur, head, sd * 0.06, dog ? 0.02 : 0.08, 0); if (dog) { ear.scale.set(0.6, 1.4, 0.8); ear.position.y = -0.01; ear.position.x = sd * 0.09; }
+    mk(new THREE.SphereGeometry(0.014, 6, 5), dark, head, sd * 0.035, 0.02, dog ? 0.085 : 0.075);
+  }
+  const legs = [];
+  for (const [lx, lz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) { const g = new THREE.Group(); g.position.set(lx * 0.06, 0.24, lz * (dog ? 0.13 : 0.1)); root.add(g); mk(new THREE.CylinderGeometry(0.022, 0.02, 0.22, 6), fur, g, 0, -0.11, 0); legs.push(g); }
+  const tail = new THREE.Group(); tail.position.set(0, 0.34, dog ? -0.24 : -0.19); root.add(tail);
+  mk(new THREE.CylinderGeometry(0.014, 0.022, dog ? 0.16 : 0.24, 6), fur, tail, 0, (dog ? 0.16 : 0.24) / 2, 0);
+  const blob = new THREE.Mesh(BLOB_GEO, BLOB_MAT); blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; blob.scale.setScalar(0.7); root.add(blob);
+  root.traverse((m) => { if (m.isMesh) m.userData.petId = p.id; });
+  return { root, body, head, legs, tail, yaw: 0 };
 }
 
 function heartPath(ctx, x, y, s) {

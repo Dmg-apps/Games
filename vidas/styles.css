@@ -298,3 +298,11 @@ body.sheet-open #camctl { display: none; }
 #camctl { flex-wrap: wrap; justify-content: flex-end; max-width: 110px; }
 #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 30; transition: opacity 400ms ease; }
 #flash.on { opacity: 0.85; transition: none; }
+
+.diary div:last-child { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 500; line-height: 1.45; }
+.letter { background: #fffaf0; border: 1px solid #efe2c8; border-radius: 14px; padding: 16px; font-family: Georgia, 'Times New Roman', serif; font-size: 16px; line-height: 1.55; white-space: pre-wrap; margin-top: 8px; }
+textarea { width: 100%; font: inherit; font-size: 16px; padding: 12px; border-radius: 14px; border: 2px solid transparent; background: var(--fill); resize: vertical; outline: none; font-family: Georgia, serif; }
+textarea:focus { border-color: var(--ink); background: #fff; }
+#speeds.real button { display: none; }
+#speeds.real::after { content: 'Reloj real'; font-size: 12px; font-weight: 800; padding: 0 10px; color: var(--ink-2); }
+#speeds.real .thumb { display: none; }

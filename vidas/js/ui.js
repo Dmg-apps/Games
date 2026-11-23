@@ -1,7 +1,7 @@
 // Interfaz DOM: HUD, paneles, menús contextuales, modales y creador de personajes.
 import {
   NEEDS, BABY_NEEDS, NEED_INFO, NEED_IC, NEED_COLOR, TRAITS, AGES, OBJECTS, OBJ_IC, CATEGORIES, CAREERS, SCHOOL, MOODLETS, WORRIES,
-  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS, SKILLS, ASPIRATIONS, REWARDS,
+  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, WEATHER, WINDOW_PRICE,
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
@@ -60,7 +60,10 @@ export class UI {
     const badge = night ? 'moon' : 'sun';
     if (clock.dataset.b !== badge) { clock.dataset.b = badge; clock.querySelector('.badge').innerHTML = icon(badge); }
     clock.querySelector('.t b').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    clock.querySelector('.t span').textContent = `${DAYS[Sim.dowOf(st.time)]} · Día ${Sim.dayOf(st.time) + 1}${st.powerOff ? ' · Sin luz' : ''}`;
+    const wt = Sim.weatherOf(st).type;
+    clock.querySelector('.t span').textContent = `${DAYS[Sim.dowOf(st.time)]} · Día ${Sim.dayOf(st.time) + 1} · ${Sim.seasonOf(st).label} · ${WEATHER[wt].label}${st.powerOff ? ' · Sin luz' : ''}`;
+    if (!night && wt !== 'sol' && clock.dataset.b !== wt) { clock.dataset.b = wt; clock.querySelector('.badge').innerHTML = icon(WEATHER[wt].ic); }
+    $('#speeds').classList.toggle('real', !!st.settings.realTime);
     document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));
     $('#speeds .thumb').style.transform = `translateX(${st.speed * 34}px)`;
     this.renderFamily(); this.renderQueue();
@@ -95,7 +98,7 @@ export class UI {
       const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
       b.querySelector('.alert').hidden = !(list.some((n) => s.needs[n] < 20) || s.crying);
       const away = b.querySelector('.away'); away.hidden = s.location === 'casa';
-      const aw = s.location === 'escuela' ? 'backpack' : 'briefcase';
+      const aw = s.location === 'escuela' ? 'backpack' : s.location === 'salida' ? 'pin' : 'briefcase';
       if (away.dataset.i !== aw) { away.dataset.i = aw; away.innerHTML = icon(aw); }
       const mb = s.mood >= 60 ? 2 : s.mood >= 35 ? 1 : 0;
       if (b.dataset.mb !== String(mb)) { b.dataset.mb = mb; drawPortrait(b.querySelector('canvas'), s, 46); }
@@ -202,7 +205,7 @@ export class UI {
   renderNeeds() {
     const s = this.active; const body = $('#sheet .sheet-body'); const st = this.state; if (!s) return;
     const der = Sim.derivedMoodlets(st, s);
-    const sig = [s.id, s.age, s.name, s.aspDone, s.points, (s.rewards || []).join(), Object.values(s.skills || {}).map(Math.floor).join(), s.paintings, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
+    const sig = [s.id, s.age, s.name, s.diary?.length, s.diary?.[0]?.day, s.aspDone, s.points, (s.rewards || []).join(), Object.values(s.skills || {}).map(Math.floor).join(), s.paintings, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
     if (sig !== this.sig) {
       this.sig = sig;
       const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
@@ -237,6 +240,7 @@ export class UI {
         h += `<div class="sec">${icon('star')} Habilidades</div>` + Object.entries(SKILLS).map(([k, sk]) => { const v = s.skills?.[k] || 0; return `<div class="need"><span class="tile" style="background:#8b7cf6">${icon(sk.ic)}</span><span>${sk.label} <b style="color:var(--ink-3)">${Math.floor(v)}</b></span><div class="bar"><i style="transform:scaleX(${v / 10});background:#8b7cf6"></i></div></div>`; }).join('');
         if (s.paintings) h += `<p class="hint">Cuadros vendidos: <b>${s.paintings}</b></p>`;
       }
+      if (s.diary?.length) h += `<div class="sec">${icon('pencil')} Diario de ${esc(s.name)}</div>` + s.diary.slice(0, 5).map((d) => `<div class="card diary"><div class="hint">Día ${d.day + 1}</div><div>${esc(inflect(d.text, s))}</div></div>`).join('');
       if (s.home) h += `<div class="row" style="margin-top:16px"><button class="btn alt" id="nlook">${icon('sparkle')} Cambiar aspecto</button></div>`;
       body.innerHTML = h;
       drawPortrait(body.querySelector('#np'), s, 60);
@@ -261,11 +265,17 @@ export class UI {
     if (this.relTab === 'mem') return force ? this.renderMemories(body) : undefined;
     const others = Object.values(st.sims).filter((o) => o !== s && (o.home || s.rel[o.id]));
     others.sort((a, b) => (b.home - a.home) || (Sim.getRel(s, b).a + Sim.getRel(s, b).r) - (Sim.getRel(s, a).a + Sim.getRel(s, a).r));
-    const sig = s.id + others.map((o) => o.id + o.location + Math.round(Sim.getRel(s, o).a / 5) + Math.round(Sim.getRel(s, o).r / 5) + Sim.relLabel(st, s, o)).join();
+    const sig = s.id + (st.pets || []).map((p) => p.id + Object.values(p.needs).map((v) => Math.round(v / 10)).join('') + p.out + p.sleeping).join() + others.map((o) => o.id + o.location + Math.round(Sim.getRel(s, o).a / 5) + Math.round(Sim.getRel(s, o).r / 5) + Sim.relLabel(st, s, o)).join();
     if (!force && sig === this.sig) return;
     this.sig = sig;
     body.innerHTML = `${this.relTabs()}<p class="hint" style="margin-top:0">Las relaciones de <b>${esc(s.name)}</b>. Invita a gente desde el teléfono.</p>`;
     this.bindRelTabs(body);
+    for (const p of st.pets || []) {
+      const row = document.createElement('div'); row.className = 'relrow';
+      row.innerHTML = `<span class="tilebox" style="width:48px;height:48px;border-radius:16px;background:${p.color};color:#fff;font-size:22px">${icon('heart')}</span><div><div class="top"><b>${esc(p.name)}</b><span class="chip">${PETS[p.species].label}</span><span class="where">${p.out ? 'De paseo' : p.sleeping ? 'Durmiendo' : 'En casa'}</span></div>
+        <div class="bars" style="grid-template-columns:70px 1fr">${Object.entries(PET_NEEDS).map(([k, l]) => `<span>${l}</span><div class="bar"><i style="transform:scaleX(${p.needs[k] / 100});background:${p.needs[k] < 25 ? '#e5484d' : '#f0a04a'}"></i></div>`).join('')}</div></div>`;
+      body.appendChild(row);
+    }
     for (const o of others) {
       const r = Sim.getRel(s, o);
       const row = document.createElement('div'); row.className = 'relrow';
@@ -316,10 +326,10 @@ export class UI {
   }
   renderWallTools(body, grid) {
     body.querySelector('.hint').textContent = 'Separa habitaciones con paredes y pon puertas para poder pasar. Nadie atraviesa una pared sin puerta.';
-    const tools = [['wall', 'Pared', `${Sim.WALL_PRICE} € por tramo`, 'Arrastra el dedo por los bordes'], ['door', 'Puerta', `${Sim.DOOR_PRICE} €`, 'Toca una pared'], ['erase', 'Quitar', 'Devuelve la mitad', 'Toca una pared o puerta']];
+    const tools = [['wall', 'Pared', `${Sim.WALL_PRICE} € por tramo`, 'Arrastra el dedo por los bordes'], ['door', 'Puerta', `${Sim.DOOR_PRICE} €`, 'Toca una pared'], ['window', 'Ventana', `${WINDOW_PRICE} €`, 'Toca una pared'], ['erase', 'Quitar', 'Devuelve la mitad', 'Toca una pared o puerta']];
     for (const [id, name, price, how] of tools) {
       const b = document.createElement('button'); b.className = 'item';
-      b.innerHTML = `<span class="tilebox">${icon(id === 'wall' ? 'box' : id === 'door' ? 'logout' : 'trash')}</span>${name}<span class="p">${price}</span><span class="d">${how}</span>`;
+      b.innerHTML = `<span class="tilebox">${icon(id === 'wall' ? 'box' : id === 'door' ? 'logout' : id === 'window' ? 'sun' : 'trash')}</span>${name}<span class="p">${price}</span><span class="d">${how}</span>`;
       b.onclick = () => { this.hideSheetOnly(); this.g.setWallTool(id); };
       grid.appendChild(b);
     }
@@ -348,9 +358,9 @@ export class UI {
     const btn = (ic, label, fn, cls = '') => ({ ic, label, fn, cls });
     let info = '', acts = [];
     if (v.wallTool) {
-      const how = { wall: `Arrastra el dedo por los bordes del suelo · ${Sim.WALL_PRICE} € por tramo`, door: `Toca una pared para poner o quitar una puerta · ${Sim.DOOR_PRICE} €`, erase: 'Toca una pared o puerta para quitarla' }[v.wallTool];
+      const how = { wall: `Arrastra el dedo por los bordes del suelo · ${Sim.WALL_PRICE} € por tramo`, door: `Toca una pared para poner o quitar una puerta · ${Sim.DOOR_PRICE} €`, window: `Toca una pared para poner o quitar una ventana · ${WINDOW_PRICE} €`, erase: 'Toca una pared o puerta para quitarla' }[v.wallTool];
       info = `${icon('box')} ${how}`;
-      acts = [btn('box', 'Pared', () => this.g.setWallTool('wall'), v.wallTool === 'wall' ? 'primary' : ''), btn('logout', 'Puerta', () => this.g.setWallTool('door'), v.wallTool === 'door' ? 'primary' : ''), btn('trash', 'Quitar', () => this.g.setWallTool('erase'), v.wallTool === 'erase' ? 'red' : ''), btn('check', 'Listo', () => this.g.setWallTool(null))];
+      acts = [btn('box', 'Pared', () => this.g.setWallTool('wall'), v.wallTool === 'wall' ? 'primary' : ''), btn('logout', 'Puerta', () => this.g.setWallTool('door'), v.wallTool === 'door' ? 'primary' : ''), btn('sun', 'Ventana', () => this.g.setWallTool('window'), v.wallTool === 'window' ? 'primary' : ''), btn('trash', 'Quitar', () => this.g.setWallTool('erase'), v.wallTool === 'erase' ? 'red' : ''), btn('check', 'Listo', () => this.g.setWallTool(null))];
     } else if (v.ghost) {
       const d = OBJECTS[v.ghost.type];
       info = `${icon(OBJ_IC[v.ghost.type] || 'box')} <b>${d.name}</b>${v.ghost.mode === 'new' ? ` · ${d.price} €` : ''} · toca el suelo`;
@@ -380,6 +390,8 @@ export class UI {
     const st = this.state; const body = $('#sheet .sheet-body');
     body.innerHTML = `
       <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="baja">Baja · estate pendiente</button><button data-v="normal">Normal</button></div></div>
+      <div class="field"><label>Reloj</label><div class="seg" id="rt"><button data-v="0">Tiempo de juego</button><button data-v="1">Reloj real</button></div>
+        <p class="hint">Con el reloj real el juego va a tu misma hora: si es de noche donde estás, tu familia duerme. El tiempo avanza como en la vida (sin acelerar).</p></div>
       <div class="field"><label>Envejecimiento</label><div class="seg" id="age"><button data-v="1">Activado</button><button data-v="0">Desactivado</button></div></div>
       <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y las necesidades nunca llegan a cero.</p>
       <div class="field"><label>Calidad gráfica</label><div class="seg" id="qual"><button data-v="ligera">Ligera (2D)</button><button data-v="equilibrada">Equilibrada</button><button data-v="alta">Alta</button></div>
@@ -393,6 +405,7 @@ export class UI {
     const seg = (id, val, fn) => { const el = body.querySelector(id); el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === val)); el.onclick = (e) => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); this.renderMenu(); } }; };
     seg('#aut', st.settings.autonomy, (v) => (st.settings.autonomy = v));
     seg('#age', st.settings.aging ? '1' : '0', (v) => (st.settings.aging = v === '1'));
+    seg('#rt', st.settings.realTime ? '1' : '0', (v) => { st.settings.realTime = v === '1'; if (st.settings.realTime) { Sim.syncRealTime(st); st.speed = 1; this.toast('Reloj real activado: ahora vivís a tu misma hora', 'good'); } this.update(); });
     const q = body.querySelector('#qual'); q.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === this.g.quality));
     q.onclick = (e) => { const b = e.target.closest('button'); if (b && b.dataset.v !== this.g.quality) this.g.setQuality(b.dataset.v); };
     this.renderCloud(body.querySelector('#cloud'));
@@ -486,6 +499,56 @@ export class UI {
     const box = this.modal(`<h2>¿A quién llamas?</h2>${html}`);
     box.querySelectorAll('.li').forEach((b) => { drawPortrait(b.querySelector('canvas'), st.sims[b.dataset.id], 42); b.onclick = () => { this.closeModal(); Sim.inviteNeighbor(st, b.dataset.id); }; });
     box.querySelector('#ic').onclick = () => this.closeModal();
+  }
+  chooseOuting(simId) {
+    const st = this.state; const me = st.sims[simId];
+    const fam = Sim.householdSims(st).filter((s) => s !== me && Sim.canGoOut(st, s));
+    const pick = new Set();
+    const render = () => {
+      let h = `<p class="hint">¿A dónde va ${esc(me.name)}? Puede ir con más gente de la familia.</p><div class="list">`;
+      for (const [k, o] of Object.entries(OUTINGS)) h += `<button class="li" data-d="${k}"><span class="tilebox">${icon(o.ic)}</span><div><b>${o.label}</b><div class="hint">${Math.round(o.dur / 60 * 10) / 10} h · ${o.cost ? o.cost + ' € por persona' : 'Gratis'}${o.outdoor && ['lluvia', 'nieve'].includes(Sim.weatherOf(st).type) ? ' · hoy hace mal tiempo' : ''}</div></div></button>`;
+      h += '</div>';
+      if (fam.length) h += `<div class="field"><label>Acompañantes</label><div class="seg" id="ocomp">${fam.map((s) => `<button data-id="${s.id}" class="${pick.has(s.id) ? 'on' : ''}">${esc(s.name)}</button>`).join('')}</div></div>`;
+      h += `<div class="actions"><button class="btn alt" id="oc">Cancelar</button></div>`;
+      const box = this.modal(`<h2>Salir de casa</h2>${h}`);
+      const comp = box.querySelector('#ocomp'); if (comp) comp.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; pick.has(b.dataset.id) ? pick.delete(b.dataset.id) : pick.add(b.dataset.id); render(); };
+      box.querySelector('#oc').onclick = () => this.closeModal();
+      box.querySelectorAll('[data-d]').forEach((b) => (b.onclick = () => { const group = [me, ...[...pick].map((id) => st.sims[id])]; if (group.some((g) => g.age === 'nino') && group.length === 1) return; this.closeModal(); Sim.startOuting(st, group, b.dataset.d); this.update(); }));
+    };
+    render();
+  }
+  choosePet() {
+    const st = this.state; let species = 'perro', color = PETS.perro.colors[0], name = PET_NAMES[Math.floor(Math.random() * PET_NAMES.length)];
+    const render = () => {
+      const box = this.modal(`<h2>Adoptar una mascota</h2><p class="hint">Cuesta 200 €. Necesita comida, cariño y jugar. Si nadie la cuida, puede escaparse.</p>
+        <div class="field"><label>Especie</label><div class="seg" id="ps">${Object.entries(PETS).map(([k, p]) => `<button data-v="${k}" class="${k === species ? 'on' : ''}">${p.label}</button>`).join('')}</div></div>
+        <div class="field"><label>Color</label><div class="sw" id="pc">${PETS[species].colors.map((c) => `<button data-v="${c}" class="${c === color ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div></div>
+        <div class="field"><label>Nombre</label><input type="text" id="pn" maxlength="12" value="${esc(name)}" autocomplete="off"></div>
+        <div class="actions"><button class="btn alt" id="pno">Cancelar</button><button class="btn coral" id="pok">${icon('heart')} Adoptar</button></div>`);
+      box.querySelector('#pn').oninput = (e) => (name = e.target.value);
+      box.querySelector('#ps').onclick = (e) => { const b = e.target.closest('button'); if (b) { species = b.dataset.v; color = PETS[species].colors[0]; render(); } };
+      box.querySelector('#pc').onclick = (e) => { const b = e.target.closest('button'); if (b) { color = b.dataset.v; render(); } };
+      box.querySelector('#pno').onclick = () => this.closeModal();
+      box.querySelector('#pok').onclick = () => { this.closeModal(); Sim.adoptPet(st, species, name.trim(), color); this.update(); };
+    };
+    render();
+  }
+  writeLetter(simId) {
+    const st = this.state; const me = st.sims[simId];
+    const kids = Sim.householdSims(st).filter((s) => s !== me && (s.age === 'bebe' || s.age === 'nino'));
+    let to = kids[0]?.id || 'familia';
+    const box = this.modal(`<h2>Carta al futuro</h2><p class="hint">Escribe lo que ${esc(me.name)} quiere decir. ${kids.length ? 'A un hijo o hija se le entregará cuando sea adulto/a.' : ''} La cápsula del tiempo familiar se abre dentro de 7 días.</p>
+      <div class="field"><label>Para</label><div class="seg" id="lt">${kids.map((k) => `<button data-v="${k.id}">${esc(k.name)}</button>`).join('')}<button data-v="familia">Cápsula del tiempo</button></div></div>
+      <div class="field"><textarea id="ltx" maxlength="400" rows="6" placeholder="Querida familia…"></textarea></div>
+      <div class="actions"><button class="btn alt" id="lno">Cancelar</button><button class="btn coral" id="lok">${icon('pencil')} Guardar carta</button></div>`);
+    const seg = box.querySelector('#lt'); const mark = () => seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === to)); mark();
+    seg.onclick = (e) => { const b = e.target.closest('button'); if (b) { to = b.dataset.v; mark(); } };
+    box.querySelector('#lno').onclick = () => this.closeModal();
+    box.querySelector('#lok').onclick = () => { const t = box.querySelector('#ltx').value.trim(); if (!t) return this.toast('Escribe algo en la carta', 'warn'); this.closeModal(); Sim.writeLetter(st, me, to, t); };
+  }
+  readLetter(L) {
+    const st = this.state; const rec = L.to === 'familia' ? 'toda la familia' : st.sims[L.to]?.name;
+    this.info('Una carta del pasado', `<p class="hint">De ${esc(L.fromName)} para ${esc(rec || '')} · escrita el día ${Sim.dayOf(L.t) + 1}</p><div class="letter">${esc(L.text).replace(/\n/g, '<br>')}</div>`, 'Guardarla en el corazón');
   }
   confirmAdopt() { this.confirm('Adoptar un bebé cuesta 1000 €. ¿Seguro?', () => Sim.adoptBaby(this.state)); }
   nameBaby(babyId, adopted) {

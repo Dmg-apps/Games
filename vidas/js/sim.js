@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, SKILLS, ASPIRATIONS, REWARDS, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, SEASONS, WEATHER, WINDOW_PRICE, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -297,7 +297,7 @@ function freeObjectUsers(state, o) {
 }
 export const objById = (state, id) => state.objects.find((o) => o.id === id);
 export function decorScore(state) {
-  return state.objects.reduce((sum, o) => sum + (o.x < HOUSE + 2 ? OBJECTS[o.type].decor : 0), 0);
+  return state.objects.reduce((sum, o) => sum + (o.x < HOUSE + 2 ? OBJECTS[o.type].decor : 0), 0) + (state.walls || []).filter((q) => q.window).length;
 }
 
 // ---------- paredes ----------
@@ -451,10 +451,12 @@ export function derivedMoodlets(state, s) {
   if (state.powerOff) out.push({ label: 'Sin luz', mood: -8 });
   if (s.age !== 'bebe' && s.needs.higiene < 15) out.push({ label: 'Huele mal', mood: -8 });
   if (s.age !== 'bebe' && householdSims(state).some((b) => b.age === 'bebe' && b.crying)) out.push({ label: 'Bebé llorando', mood: -8 });
+  if (s.age !== 'bebe' && (state.pets || []).some((p) => Math.min(...Object.values(p.needs)) < 20)) out.push({ label: 'La mascota está triste', mood: -6 });
   return out;
 }
 function addMoodlet(s, id) {
   const def = MOODLETS[id]; if (!def) return;
+  if (s.home) { s.dayLog ||= []; if (!s.dayLog.includes(id)) s.dayLog.push(id); }
   s.moodlets = s.moodlets.filter((m) => m.id !== id);
   s.moodlets.push({ id, until: def.dur + (globalThis.__simTime || 0) });
 }
@@ -591,6 +593,7 @@ function busyReason(state, t) {
 
 function startNext(state, s) {
   const item = s.queue.shift(); if (!item) return;
+  if (item.kind === 'pet') return startPet(state, s, item);
   if (item.kind === 'go') {
     const p = pathTo(state, s, item.x, item.y);
     if (!p) return toast(`${s.name} no puede llegar ahí`, 'warn', s.id);
@@ -647,6 +650,7 @@ export function tick(state, dt) {
   processPendingVisits(state);
   for (const s of Object.values(state.sims)) {
     if (s.location === 'trabajo' || s.location === 'escuela') { atWork(state, s, dt); schedule(state, s); continue; }
+    if (s.location === 'salida') { outingTick(state, s, dt); continue; }
     if (s.location !== 'casa') continue;
     updateNeeds(state, s, dt);
     if (s.home) schedule(state, s);
@@ -659,6 +663,193 @@ export function tick(state, dt) {
     if (s.cur) runCur(state, s, dt);
     updateBubble(state, s);
   }
+  for (const p of state.pets || []) petTick(state, p, dt);
+}
+
+// ---------- salidas ----------
+export function canGoOut(state, s) {
+  if (s.location !== 'casa' || s.age === 'bebe') return false;
+  return !s.cur || !['ko', 'leave', 'partner'].includes(s.cur.kind);
+}
+export function startOuting(state, group, dest) {
+  const O = OUTINGS[dest]; const cost = O.cost * group.length;
+  if (state.money < cost) { toast('No hay dinero suficiente', 'warn'); return false; }
+  state.money -= cost;
+  for (const s of group) { interrupt(state, s); s.queue = []; s.location = 'salida'; s.outing = { dest, until: state.time + O.dur, with: group.map((g) => g.id) }; s.bubble = null; }
+  const names = group.map((g) => g.name).join(', ');
+  toast(`🚶 ${names} ${group.length > 1 ? 'se van' : 'se va'} al ${O.label.toLowerCase()}`, 'info', group[0].id);
+  return true;
+}
+function outingTick(state, s, dt) {
+  const o = s.outing; if (!o) { s.location = 'casa'; return; }
+  const O = OUTINGS[o.dest] || { rate: { diversion: 0.3, social: 0.1 }, skill: ['forma', 0.03] };
+  const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
+  for (const n of list) s.needs[n] = clamp(s.needs[n] - DECAY[n] / 60 * 0.5 * dt + (O.rate[n] || 0) * dt);
+  if (O.skill) gainSkill(state, s, O.skill[0], O.skill[1] * dt);
+  s.mood = computeMood(state, s); s.moodlets = s.moodlets.filter((m) => m.until > state.time);
+  if (state.time < o.until) return;
+  // vuelta a casa
+  s.location = 'casa'; s.x = EXIT.x; s.y = EXIT.y; s.cur = null; s.path = []; s.outing = null;
+  const rain = ['lluvia', 'nieve'].includes(weatherOf(state).type);
+  addMoodlet(s, O.outdoor && rain ? 'gris' : (O.moodlet || 'paseo'));
+  const others = o.with.map((id) => state.sims[id]).filter((q) => q && q !== s);
+  for (const q of others) setRel(state, s, q, 2, s.partner === q.id ? 3 : 0);
+  if (o.with[0] === s.id) {
+    if (o.dest === 'paseo') {
+      const pet = (state.pets || []).find((p) => p.id === o.pet); if (pet) { pet.out = 0; pet.x = EXIT.x; pet.y = EXIT.y; pet.needs.diversion = 100; pet.needs.carino = clamp(pet.needs.carino + 30); }
+      if (Math.random() < 0.4) { const n = pick(neighbors(state)); if (n) { setRel(state, s, n, 8, 0); toast(`Durante el paseo, ${s.name} ha charlado con ${n.name}`, 'good', s.id); } }
+    } else if (others.length >= 2) addMemory(state, `Tarde de ${OUTINGS[o.dest].label.toLowerCase()} en familia`, OUTINGS[o.dest].ic, o.with);
+    else if (others.length === 1 && s.partner === others[0].id) addMemory(state, `${s.name} y ${others[0].name} tuvieron una cita en el ${OUTINGS[o.dest].label.toLowerCase()}`, 'heart', o.with);
+  }
+  const t = randomFreeTile(state); queueGo(state, s, t.x, t.y);
+}
+
+// ---------- mascotas ----------
+export function adoptPet(state, species, name, color) {
+  state.pets ||= [];
+  if (state.pets.length >= 2) { toast('Ya tenéis dos mascotas', 'warn'); return null; }
+  if (state.money < 200) { toast('No hay dinero suficiente', 'warn'); return null; }
+  state.money -= 200;
+  const p = { id: 'p' + state.nextId++, species, name: name || pick(PET_NAMES), color: color || pick(PETS[species].colors), x: EXIT.x, y: EXIT.y, path: [], needs: { hambre: 80, carino: 80, diversion: 80 }, nextThink: 0, neglect: 0, out: 0 };
+  state.pets.push(p);
+  toast(`🐾 ¡${p.name} llega a casa!`, 'good'); addMemory(state, `${p.name} (${PETS[species].label.toLowerCase()}) llegó a la familia`, 'heart');
+  return p;
+}
+export const petById = (state, id) => (state.pets || []).find((p) => p.id === id);
+function petTick(state, p, dt) {
+  if (p.out && state.time < p.out) return;
+  for (const [n, r] of Object.entries(PETS[p.species].decay)) p.needs[n] = clamp(p.needs[n] - r / 60 * dt * (p.sleeping ? 0.4 : 1));
+  const h = hourOf(state.time);
+  p.sleeping = (h >= 23 || h < 7) && !p.busy;
+  if (p.busy && state.time > p.busy) p.busy = 0;
+  if (Object.values(p.needs).some((v) => v <= 0)) {
+    p.neglect += dt;
+    if (p.neglect > 1440) {
+      state.pets = state.pets.filter((q) => q !== p);
+      toast(`💔 ${p.name} se ha escapado de casa porque nadie le cuidaba`, 'bad'); addMemory(state, `${p.name} se escapó de casa`, 'heartbreak');
+      return;
+    }
+  } else p.neglect = 0;
+  if (Math.min(...Object.values(p.needs)) < 20 && !p.alert) { p.alert = true; toast(`🐾 ${p.name} necesita atención`, 'warn'); }
+  if (Math.min(...Object.values(p.needs)) > 40) p.alert = false;
+  if (p.sleeping || p.busy) { p.path = []; return; }
+  if (p.path.length) { walk(p, dt * 0.85); return; }
+  if (state.time < p.nextThink) return;
+  p.nextThink = state.time + 6 + Math.random() * 14;
+  const fam = householdSims(state).filter((q) => q.location === 'casa');
+  let target;
+  if (fam.length && Math.random() < 0.55) { const f = pick(fam); target = { x: Math.round(f.x) + pick([-1, 1, 0]), y: Math.round(f.y) + pick([-1, 1]) }; }
+  else target = randomFreeTile(state);
+  target.x = Math.max(0, Math.min(GRID - 1, target.x)); target.y = Math.max(0, Math.min(GRID - 1, target.y));
+  const path = pathTo(state, p, target.x, target.y); if (path) p.path = path.slice(0, 8);
+}
+export function petActions(state, s, p) {
+  const out = [{ id: 'comer', label: `Dar de comer a ${p.name}`, ic: 'food' }, { id: 'acariciar', label: 'Acariciar', ic: 'heart' }, { id: 'jugar', label: 'Jugar', ic: 'ball' }];
+  if (p.species === 'perro' && isAdult(s)) out.push({ id: 'pasear', label: 'Sacar a pasear', ic: 'pin' });
+  return out.map((a) => ({ ...a, disabled: p.sleeping ? 'Está durmiendo' : p.out ? 'Está de paseo' : null }));
+}
+const PET_ACT = { comer: { dur: 6, pet: { hambre: 80, carino: 10 }, cost: 3 }, acariciar: { dur: 10, pet: { carino: 55 }, sim: { social: 15 } }, jugar: { dur: 20, pet: { diversion: 60, carino: 30 }, sim: { diversion: 25 } }, pasear: { dur: 2 } };
+export function queuePet(state, s, act, petId) {
+  if (s.queue.length >= 6) return;
+  s.queue.push({ kind: 'pet', act, petId, icon: PET_ACT[act] ? { comer: 'food', acariciar: 'heart', jugar: 'ball', pasear: 'pin' }[act] : 'heart', label: `${{ comer: 'Dar de comer', acariciar: 'Acariciar', jugar: 'Jugar', pasear: 'Pasear' }[act]} a ${petById(state, petId)?.name || ''}` });
+}
+function startPet(state, s, item) {
+  const p = petById(state, item.petId); if (!p || p.out) return;
+  const r = nearestSpot(state, s, [{ x: Math.round(p.x), y: Math.round(p.y) }], true);
+  if (!r) { toast(`${s.name} no llega hasta ${p.name}`, 'warn', s.id); return; }
+  p.busy = state.time + 60; p.path = [];
+  s.cur = { kind: 'pet', act: item.act, petId: p.id, phase: 'walk', t: 0, spot: r.spot, icon: item.icon, label: item.label }; s.path = r.path;
+}
+function runPet(state, s, c, dt) {
+  const p = petById(state, c.petId); const A = PET_ACT[c.act];
+  if (!p) { s.cur = null; return; }
+  if (c.phase === 'walk') { c.phase = 'do'; if (A.cost) state.money -= A.cost; }
+  c.t += dt;
+  if (c.t < A.dur) return;
+  if (c.act === 'pasear') {
+    s.cur = null; p.busy = 0;
+    s.location = 'salida'; s.outing = { dest: 'paseo', until: state.time + 45, with: [s.id], pet: p.id }; p.out = state.time + 45;
+    toast(`🐕 ${s.name} sale a pasear con ${p.name}`, 'info', s.id); return;
+  }
+  for (const [n, v] of Object.entries(A.pet || {})) p.needs[n] = clamp(p.needs[n] + v);
+  for (const [n, v] of Object.entries(A.sim || {})) if (n in s.needs) s.needs[n] = clamp(s.needs[n] + v);
+  addMoodlet(s, 'mascota'); p.busy = 0; p.bubble = { icon: 'heart', until: state.time + 20 };
+  s.cur = null;
+}
+
+// ---------- clima y estaciones ----------
+export const seasonOf = (state) => SEASONS[Math.floor(dayOf(state.time) / 7) % 4];
+export function weatherOf(state) { return state.weather || { type: 'sol' }; }
+function updateWeather(state) {
+  if (state.weather && state.time < state.weather.until) return;
+  const w = seasonOf(state).w; const total = Object.values(w).reduce((a, b) => a + b, 0);
+  let r = Math.random() * total, type = 'sol';
+  for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) { type = k; break; } }
+  const prev = state.weather?.type;
+  state.weather = { type, until: state.time + rnd(240, 600) };
+  if (prev && prev !== type && (type === 'lluvia' || type === 'nieve')) toast(type === 'nieve' ? '❄️ Ha empezado a nevar' : '🌧️ Empieza a llover', 'info');
+}
+
+// ---------- ventanas ----------
+export function toggleWindow(state, q) {
+  if (!q.window && state.money < WINDOW_PRICE) { toast('No hay dinero suficiente', 'warn'); return false; }
+  q.window = !q.window; if (q.window) q.door = false;
+  state.money += q.window ? -WINDOW_PRICE : Math.round(WINDOW_PRICE / 2); touchWalls(state); return true;
+}
+
+// ---------- diario íntimo ----------
+const DIARY = {
+  beso: 'me han dado un beso precioso', intimidad: 'me siento muy enamorado/a', pareja: '¡tengo pareja!', boda: '¡me he casado!', ruptura: 'me han roto el corazón',
+  quemada: 'se me ha quemado la comida', gourmet: 'he cocinado como en un restaurante', comida_rica: 'he comido de maravilla', discusion: 'he discutido y me siento fatal',
+  rechazo: 'me han dado calabazas', ascenso: '¡me han ascendido!', despedido: 'me han despedido', nacimiento: 'ha llegado un bebé a casa', objetivo: 'he cumplido uno de mis sueños',
+  ternura: 'un gatito me ha robado el corazón', premio: '¡nos ha tocado la lotería!', buena_persona: 'he hecho lo correcto', culpa: 'me siento culpable por algo',
+  desmayo: 'me he desmayado de hambre, qué vergüenza', humillado: 'he tenido un accidente horrible', suelo: 'me he dormido en el suelo', crecer: 'he cumplido años',
+  mascota: 'he pasado un rato con mi mascota', aire_libre: 'he disfrutado del aire libre', en_forma: 'he ido al gimnasio', peli: 'he visto una peli genial',
+  paseo: 'he dado un buen paseo', inspirado: 'me siento inspirado/a', frustrado: 'algo me ha salido mal', acogedor: 'ha sido una tarde de lluvia muy a gusto', gris: 'el día gris me ha bajado el ánimo',
+  carta: 'he leído una carta que me ha emocionado', fresco: 'me he dado una buena ducha',
+};
+const WORRY_1P = { facturas: 'me agobian las facturas', soledad: 'me siento solo/a', estres: 'estoy muy estresado/a', quiere_hijo: 'tengo muchas ganas de tener un hijo', ascenso: 'sueño con un ascenso', sin_trabajo: 'me preocupa el dinero', casa_fea: 'la casa no me gusta nada', miedo: 'tengo miedo', deberes: 'tengo deberes pendientes', aburrido: 'me aburro muchísimo' };
+const WISH = { hambre: 'comer algo rico', energia: 'dormir mucho', higiene: 'darme una ducha', diversion: 'divertirme un poco', social: 'ver a alguien', vejiga: 'ir al baño a tiempo' };
+function writeDiary(state) {
+  for (const s of householdSims(state)) {
+    if (s.age === 'bebe' || s.location !== 'casa') continue;
+    const log = (s.dayLog || []).filter((k) => DIARY[k]);
+    const open = s.mood >= 70 ? 'Hoy ha sido un día genial.' : s.mood >= 45 ? 'Hoy ha sido un día normal.' : 'Qué día más duro.';
+    const bits = log.slice(-3).map((k) => DIARY[k]);
+    let text = open + (bits.length ? ' ' + bits.map((b, i) => (i === 0 ? b[0].toUpperCase() + b.slice(1) : b)).join(bits.length > 2 ? ', ' : ' y ').replace(/, ([^,]*)$/, ' y $1') + '.' : '');
+    if (s.worries.length) text += ` Además, ${WORRY_1P[s.worries[0]] || 'algo me preocupa'}.`;
+    else { const low = NEEDS.filter((n) => s.needs[n] < 45).sort((a, b) => s.needs[a] - s.needs[b])[0]; if (low) text += ` Mañana quiero ${WISH[low]}.`; }
+    s.diary ||= []; s.diary.unshift({ day: dayOf(state.time), text }); if (s.diary.length > 14) s.diary.length = 14;
+    s.dayLog = [];
+  }
+}
+
+// ---------- cartas al futuro ----------
+export function writeLetter(state, from, to, text) {
+  state.letters ||= [];
+  const L = { from: from.id, fromName: from.name, to, text: text.slice(0, 400), t: state.time, open: false };
+  if (to === 'familia') L.openDay = dayOf(state.time) + 7;
+  state.letters.push(L);
+  toast(to === 'familia' ? '✉️ Cápsula del tiempo guardada: se abrirá dentro de 7 días' : `✉️ Carta guardada: ${state.sims[to]?.name} la leerá cuando sea adulto/a`, 'good', from.id);
+}
+function deliverLetters(state, grownId = null) {
+  const day = dayOf(state.time);
+  for (const L of state.letters || []) {
+    if (L.open) continue;
+    if ((grownId && L.to === grownId) || (L.to === 'familia' && day >= L.openDay)) {
+      L.open = true; emit('letter', { letter: L });
+      const rec = L.to === 'familia' ? householdSims(state) : [state.sims[L.to]].filter(Boolean);
+      rec.forEach((r) => addMoodlet(r, 'carta'));
+      addMemory(state, L.to === 'familia' ? `Abrimos la cápsula del tiempo de ${L.fromName}` : `${state.sims[L.to]?.name} leyó la carta de ${L.fromName}`, 'pencil', [L.from, L.to]);
+    }
+  }
+}
+
+// ---------- reloj real ----------
+export function syncRealTime(state) {
+  const now = new Date(); const m = now.getHours() * 60 + now.getMinutes();
+  let d = dayOf(state.time); if (m < (state.time % 1440) - 2) d++;
+  state.time = d * 1440 + m; state.lastHour = Math.floor(state.time / 60) - 0;
 }
 
 function needMult(s, n) {
@@ -769,6 +960,7 @@ function runCur(state, s, dt) {
     if (c.to === 'trabajo' || c.to === 'escuela') { s.workMood = 0; s.workT = 0; s.late = c.late; }
     return;
   }
+  if (c.kind === 'pet') return runPet(state, s, c, dt);
   if (c.kind === 'obj') runObj(state, s, c, dt);
   else if (c.kind === 'soc') runSoc(state, s, c, dt);
 }
@@ -958,6 +1150,10 @@ function autonomy(state, s) {
   }
   const needs = NEEDS.filter((n) => s.needs[n] < thr).sort((a, b) => s.needs[a] - s.needs[b]);
   for (const n of needs) if (tryNeed(state, s, n)) return;
+  if (!low && isAdult(s)) {
+    const pet = (state.pets || []).find((p) => !p.out && !p.sleeping && !p.busy && Math.min(...Object.values(p.needs)) < 35);
+    if (pet) { const n = Object.entries(pet.needs).sort((a, b) => a[1] - b[1])[0][0]; queuePet(state, s, { hambre: 'comer', carino: 'acariciar', diversion: 'jugar' }[n], pet.id); return; }
+  }
   if (!low && Math.random() < 0.3) { const t = randomFreeTile(state); queueGo(state, s, t.x, t.y); }
 }
 function tryNeed(state, s, n) {
@@ -1208,6 +1404,10 @@ function hourly(state, offline) {
     if (c.length) addWorry(state, s, pick(c));
   }
   checkAspirations(state);
+  updateWeather(state);
+  if (h === 23) writeDiary(state);
+  deliverLetters(state);
+  if (['lluvia', 'nieve'].includes(weatherOf(state).type) && h >= 9 && h <= 21) for (const s of householdSims(state)) if (s.location === 'casa' && s.age !== 'bebe' && Math.random() < 0.3) addMoodlet(s, s.needs.diversion > 50 ? 'acogedor' : 'gris');
   // sucesos inesperados (como mucho uno al día)
   if (h >= 10 && h <= 21 && state.lastEventDay !== day && Math.random() < 0.05) {
     const ev = pickEvent(state);
@@ -1301,7 +1501,7 @@ function daily(state, offline) {
       if (prev === 'nino') { s.school = null; s.worries = s.worries.filter((w) => WORRIES[w].ages.includes('adulto')); }
       const msg = `🎂 ¡${s.name} ha crecido y ahora es ${AGES[next].label.toLowerCase()}!`;
       addMemory(state, `${s.name} cumplió años y pasó a ser ${AGES[next].label.toLowerCase()}`, 'star', [s.id]);
-      if (next === 'adulto') ensureAspiration(s);
+      if (next === 'adulto') { ensureAspiration(s); deliverLetters(state, s.id); }
       toast(msg, 'good', s.id);
       if (offline) state._offlineLog?.push(msg);
     }
@@ -1314,7 +1514,8 @@ export function processPendingVisits(state) {
 
 // ---------- progreso con la app cerrada ----------
 export function offlineProgress(state, ms) {
-  let mins = Math.min((ms / 1000) * 0.1, 2 * 1440); // 6 min de juego por minuto real, máx 2 días
+  // con reloj real pasa el mismo tiempo que en la vida (máx. 3 días); si no, 6 min de juego por minuto real (máx. 2 días)
+  let mins = state.settings?.realTime ? Math.min(ms / 60000, 3 * 1440) : Math.min((ms / 1000) * 0.1, 2 * 1440);
   if (mins < 10) return null;
   const startMoney = state.money;
   state._offlineLog = [];
@@ -1341,6 +1542,7 @@ export function offlineProgress(state, ms) {
         if (r.pay) state._offlineLog.push(`${s.name} fue a trabajar (+${r.pay} €)`);
         else if (s.age === 'nino') state._offlineLog.push(`${s.name} fue al cole`);
       };
+      if (s.location === 'salida') { s.location = 'casa'; s.outing = null; }
       if (s.location === 'trabajo' || s.location === 'escuela') {
         if (!sch) s.location = 'casa';
         else if (h >= sch.end || d !== s.workedDay) logWork(finishWork(state, s, true));
@@ -1350,6 +1552,8 @@ export function offlineProgress(state, ms) {
       }
     }
   }
+  for (const p of state.pets || []) { p.out = 0; p.path = []; for (const n in p.needs) p.needs[n] = Math.max(25, p.needs[n] - mins / 60 * 2); const t = randomFreeTile(state); p.x = t.x; p.y = t.y; }
+  if (state.settings?.realTime) syncRealTime(state);
   for (const s of householdSims(state)) {
     if (s.location === 'casa' && s.age !== 'bebe') { const p = randomFreeTile(state); s.x = p.x; s.y = p.y; }
     s.mood = computeMood(state, s);

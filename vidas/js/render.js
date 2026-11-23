@@ -93,6 +93,15 @@ export class IsoRenderer {
   addHearts(x, y) { for (let i = 0; i < 7; i++) this.hearts.push({ x: x + 0.5, y: y + 0.5, t: -i * 0.12, dx: (Math.random() - 0.5) * 34, s: 0.7 + Math.random() * 0.5 }); }
 
   // ---------- selección ----------
+  drawPet(p, now) {
+    const ctx = this.ctx, z = this.cam.zoom, q = this.iso(p.x + 0.5, p.y + 0.5); const b = p.path?.length ? Math.abs(Math.sin(now * 12)) * 2 * z : 0;
+    ctx.fillStyle = 'rgba(40,25,15,0.2)'; ctx.beginPath(); ctx.ellipse(q.x, q.y, 9 * z, 4 * z, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = p.color; ctx.strokeStyle = 'rgba(48,32,24,0.55)'; ctx.lineWidth = 1.2 * z;
+    ctx.beginPath(); ctx.ellipse(q.x, q.y - 8 * z - b, 9 * z, 5.5 * z, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(q.x + 7 * z, q.y - 14 * z - b, 5 * z, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.font = `800 ${9 * z}px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#5a3a1a'; ctx.fillText(p.name, q.x, q.y + 12 * z);
+  }
+  pickPet(state, sx, sy) { let best = null, bd = 26; for (const p of state.pets || []) { if (p.out) continue; const q = this.iso(p.x + 0.5, p.y + 0.5); const d = Math.hypot(q.x - sx, q.y - 10 - sy); if (d < bd) { bd = d; best = p; } } return best; }
   pickSim(state, sx, sy) {
     const sims = visibleSims(state).slice().sort((a, b) => (b.x + b.y) - (a.x + a.y));
     for (const s of sims) {
@@ -176,6 +185,7 @@ export class IsoRenderer {
       items.push({ k: o.x + f.w - 1 + o.y + f.h - 1, draw: () => this.drawObject(state, o, 1, view) });
     }
     for (const s of visibleSims(state)) items.push({ k: s.x + s.y + 0.5, draw: () => this.drawSim(state, s, view, now) });
+    for (const p of state.pets || []) if (!p.out) items.push({ k: p.x + p.y + 0.5, draw: () => this.drawPet(p, now) });
     if (view.ghost) { const gh = view.ghost, f = footprint(gh.type, gh.rot); items.push({ k: gh.x + f.w - 1 + gh.y + f.h - 1 + 0.6, draw: () => this.drawGhost(state, gh) }); }
     items.sort((a, b) => a.k - b.k).forEach((i) => i.draw());
 
@@ -365,6 +375,7 @@ export class IsoRenderer {
       this.quad([this.iso(a[0], a[1], h), this.iso(b[0], b[1], h), this.iso(b[0] + dx, b[1] + dy, h), this.iso(a[0] + dx, a[1] + dy, h)], shade(col, 0.2));
     };
     for (const q of state.walls || []) {
+      if (q.window) { seg(q, col, H); const a = [q.x, q.y], b = q.d === 'h' ? [q.x + 1, q.y] : [q.x, q.y + 1]; this.quad([this.iso(a[0] + (b[0] - a[0]) * 0.2, a[1] + (b[1] - a[1]) * 0.2, H - 2), this.iso(a[0] + (b[0] - a[0]) * 0.8, a[1] + (b[1] - a[1]) * 0.8, H - 2), this.iso(a[0] + (b[0] - a[0]) * 0.8, a[1] + (b[1] - a[1]) * 0.8, H + 1), this.iso(a[0] + (b[0] - a[0]) * 0.2, a[1] + (b[1] - a[1]) * 0.2, H + 1)], '#bfe3f5'); continue; }
       if (!q.door) { seg(q, col, H); continue; }
       const sub = (f0, f1) => (q.d === 'h' ? { d: 'h', x: q.x + f0, y: q.y, w: f1 - f0 } : { d: 'v', x: q.x, y: q.y + f0, w: f1 - f0 });
       for (const [f0, f1] of [[0, 0.12], [0.88, 1]]) { const p = sub(f0, f1); const a = [p.x, p.y], b = q.d === 'h' ? [p.x + p.w, p.y] : [p.x, p.y + p.w]; this.quad([this.iso(...a), this.iso(...b), this.iso(...b, H + 10), this.iso(...a, H + 10)], '#fffaf2', 'rgba(48,32,24,0.35)'); }

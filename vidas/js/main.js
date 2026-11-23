@@ -167,7 +167,7 @@ class Game {
     this.last = performance.now();
     if (sum) this.ui.showOffline(sum);
   }
-  setSpeed(s) { if (this.state) { this.state.speed = s; if (s > 0 && this.view.build) this.exitBuild(); this.ui.update(); } }
+  setSpeed(s) { if (this.state?.settings.realTime && s > 1) { this.ui.toast('Con el reloj real no se puede acelerar el tiempo', 'info'); s = 1; } if (this.state) { this.state.speed = s; if (s > 0 && this.view.build) this.exitBuild(); this.ui.update(); } }
   selectSim(id, center) {
     const s = this.state.sims[id]; if (!s) return;
     this.state.active = id; this.view.active = id;
@@ -290,7 +290,8 @@ class Game {
     const q = Sim.wallAt(st, e.d, e.x, e.y);
     if (this.view.wallTool === 'wall') { if (!q && Sim.addWalls(st, [e])) this.ui.toast(`Pared construida (−${Sim.WALL_PRICE} €)`, 'good'); }
     else if (!q) this.ui.toast('Toca justo encima de una pared', 'warn');
-    else if (this.view.wallTool === 'door') { if (Sim.toggleDoor(st, q)) this.ui.toast(q.door ? `Puerta puesta (−${Sim.DOOR_PRICE} €)` : 'Puerta quitada', 'good'); }
+    else if (this.view.wallTool === 'door') { if (Sim.toggleDoor(st, q)) { if (q.door) q.window = false; this.ui.toast(q.door ? `Puerta puesta (−${Sim.DOOR_PRICE} €)` : 'Puerta quitada', 'good'); } }
+    else if (this.view.wallTool === 'window') { if (Sim.toggleWindow(st, q)) this.ui.toast(q.window ? 'Ventana puesta' : 'Ventana quitada', 'good'); }
     else { Sim.removeWall(st, q); this.ui.toast('Pared quitada', 'good'); }
     this.view.wallHover = { d: e.d, x: e.x, y: e.y }; clearTimeout(this.hoverT); this.hoverT = setTimeout(() => (this.view.wallHover = null), 600);
     this.ui.update();
@@ -360,6 +361,13 @@ class Game {
       if (me.age === 'bebe') { this.ui.toast('Un bebé no puede hacer nada solo. Elige a un adulto.', 'warn'); return false; }
       return true;
     };
+    const pet = !target && this.renderer.pickPet?.(st, x, y);
+    if (pet) {
+      if (!needMe()) return;
+      const opts = Sim.petActions(st, me, pet).map((a) => ({ icon: a.ic, label: a.label, disabled: a.disabled, cls: 'care', run: () => { Sim.queuePet(st, me, a.id, pet.id); this.ui.update(); } }));
+      this.ui.showPie(x, y, { icon: 'heart', title: pet.name, sub: `${pet.species === 'perro' ? 'Perro' : 'Gato'} · ${Object.entries(pet.needs).filter(([, v]) => v < 35).length ? 'necesita atención' : 'feliz'}` }, opts);
+      return;
+    }
     if (target) {
       const opts = [];
       if (target.home && target.id !== st.active) opts.push({ icon: 'user', label: `Controlar a ${target.name}`, cls: 'main', run: () => this.selectSim(target.id) });
@@ -430,7 +438,7 @@ class Game {
     }
     const st = this.state;
     if (st) {
-      let dt = dtReal * SPEEDS[st.speed];
+      let dt = st.settings.realTime ? dtReal / 60 : dtReal * SPEEDS[st.speed]; // con reloj real, 1 minuto de juego por minuto
       if (!document.getElementById('modal').hidden) dt = 0;
       while (dt > 0) { const step = Math.min(dt, 1.5); Sim.tick(st, step); dt -= step; }
       for (const ev of Sim.drainEvents()) this.handleEvent(ev);
@@ -450,10 +458,14 @@ class Game {
     else if (ev.type === 'hearts') this.renderer.addHearts(ev.x, ev.y);
     else if (ev.type === 'birth') this.ui.nameBaby(ev.babyId, ev.adopted);
     else if (ev.type === 'choice') this.ui.chooseEvent(ev.event);
+    else if (ev.type === 'letter') this.ui.readLetter(ev.letter);
     else if (ev.type === 'ui') {
       if (ev.ui === 'job') this.ui.chooseJob(ev.simId);
       if (ev.ui === 'invite') this.ui.chooseInvite();
       if (ev.ui === 'adopt') this.ui.confirmAdopt();
+      if (ev.ui === 'outing') this.ui.chooseOuting(ev.simId);
+      if (ev.ui === 'pet') this.ui.choosePet();
+      if (ev.ui === 'letter') this.ui.writeLetter(ev.simId);
     }
   }
 }

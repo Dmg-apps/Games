@@ -287,3 +287,43 @@ Object.assign(MOODLETS, {
   premio: { label: '¡Le ha tocado la lotería!', mood: 30, dur: 1440 },
   inspirado: { label: 'Inspirado/a', mood: 10, dur: 360 },
 });
+
+// ---------- Salidas fuera de casa ----------
+export const OUTINGS = {
+  parque: { label: 'Parque', ic: 'tree', dur: 120, cost: 0, rate: { diversion: 0.5, social: 0.3, energia: -0.1 }, skill: ['forma', 0.015], outdoor: true, moodlet: 'aire_libre' },
+  restaurante: { label: 'Restaurante', ic: 'food', dur: 90, cost: 25, rate: { hambre: 1.3, social: 0.45, diversion: 0.2 }, moodlet: 'comida_rica' },
+  gimnasio: { label: 'Gimnasio', ic: 'zap', dur: 90, cost: 10, rate: { energia: -0.3, higiene: -0.4, diversion: 0.15 }, skill: ['forma', 0.045], moodlet: 'en_forma' },
+  cine: { label: 'Cine', ic: 'tv', dur: 150, cost: 12, rate: { diversion: 0.6, social: 0.2 }, moodlet: 'peli' },
+};
+// ---------- Mascotas ----------
+export const PETS = {
+  perro: { label: 'Perro', colors: ['#c8914f', '#3a2c22', '#f0e6d6', '#8a8a8a', '#d9b37a'], decay: { hambre: 3.5, carino: 2.5, diversion: 3.5 } },
+  gato: { label: 'Gato', colors: ['#e09040', '#2a2a2a', '#f4f0ea', '#9a9aa0', '#c8a070'], decay: { hambre: 3, carino: 1.8, diversion: 2.5 } },
+};
+export const PET_NEEDS = { hambre: 'Hambre', carino: 'Cariño', diversion: 'Diversión' };
+export const PET_NAMES = ['Luna', 'Toby', 'Coco', 'Nala', 'Rocky', 'Kira', 'Simba', 'Lola', 'Bruno', 'Mía', 'Thor', 'Canela'];
+// ---------- Clima y estaciones ----------
+export const SEASONS = [
+  { id: 'primavera', label: 'Primavera', grass: '#86c565', leaves: '#4ea04e', w: { sol: 5, nubes: 3, lluvia: 2 } },
+  { id: 'verano', label: 'Verano', grass: '#9cc45a', leaves: '#5a9a3e', w: { sol: 8, nubes: 2, lluvia: 1 } },
+  { id: 'otono', label: 'Otoño', grass: '#a8b860', leaves: '#d0862e', w: { sol: 3, nubes: 4, lluvia: 4 } },
+  { id: 'invierno', label: 'Invierno', grass: '#c8d4cf', leaves: '#7a9a8a', w: { sol: 3, nubes: 4, lluvia: 1, nieve: 4 } },
+];
+export const WEATHER = { sol: { label: 'Soleado', ic: 'sun' }, nubes: { label: 'Nublado', ic: 'cloud' }, lluvia: { label: 'Lluvia', ic: 'drop' }, nieve: { label: 'Nieve', ic: 'sparkle' } };
+export const WINDOW_PRICE = 100;
+ACTIONS.salir = { label: 'Salir (parque, cine…)', icon: '🚶', dur: 3, ages: ['adulto', 'anciano'], ui: 'outing', ic: 'pin' };
+ACTIONS.mascota = { label: 'Adoptar mascota (200 €)', icon: '🐾', dur: 5, ages: ['adulto', 'anciano'], ui: 'pet', ic: 'heart' };
+ACTIONS.carta = { label: 'Escribir carta al futuro', icon: '✉️', dur: 30, ages: ['adulto', 'anciano'], ui: 'letter', ic: 'pencil' };
+OBJECTS.telefono.acts.push('salir', 'mascota');
+OBJECTS.ordenador.acts.push('carta');
+Object.assign(MOODLETS, {
+  aire_libre: { label: 'Un día al aire libre', mood: 10, dur: 360 },
+  en_forma: { label: 'Se siente en forma', mood: 8, dur: 360 },
+  peli: { label: 'Qué buena peli', mood: 8, dur: 300 },
+  mascota: { label: 'Mimos con la mascota', mood: 8, dur: 240 },
+  mascota_triste: { label: 'La mascota está triste', mood: -6, dur: 120 },
+  acogedor: { label: 'Tarde acogedora', mood: 5, dur: 120 },
+  gris: { label: 'Día gris', mood: -4, dur: 120 },
+  carta: { label: 'Ha leído una carta muy especial', mood: 25, dur: 1440 },
+  paseo: { label: 'Buen paseo', mood: 8, dur: 240 },
+});
