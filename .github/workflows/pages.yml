@@ -1,7 +1,8 @@
 name: Publicar Vidas en GitHub Pages
 on:
   push:
-    branches: [main, claude/serene-turing-3n3j49]
+    # Se publica desde la rama por defecto del repositorio (GitHub solo permite esa)
+    branches: [claude/serene-turing-3n3j49]
   workflow_dispatch:
 permissions:
   contents: read
@@ -9,7 +10,7 @@ permissions:
   id-token: write
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
