@@ -162,6 +162,7 @@ export class IsoRenderer {
     this.frame = H.frame ?? true;
     for (let x = 0; x < GRID; x++) for (let y = 0; y < GRID; y++) this.ground(x, y, view.build);
     this.walls(night);
+    this.builtWalls(state, view);
     this.exitMark();
     // sombras de muebles
     for (const o of state.objects) if (!OBJECTS[o.type].walkable) this.objShadow(o);
@@ -352,6 +353,24 @@ export class IsoRenderer {
         this.quad([this.iso(0, y0 + 0.1, 41), this.iso(0, y0 + 0.9, 41), this.iso(0, y0 + 0.6, 50), this.iso(0, y0 + 0.3, 47)], '#6aa36a');
       }
     }
+  }
+  // Paredes construidas: en la vista 2D se dibujan bajas (como con las paredes recogidas)
+  builtWalls(state, view) {
+    const col = state.house?.wall?.color || '#f3e7d6', H = 16;
+    const seg = (q, c, h) => {
+      const a = q.d === 'h' ? [q.x, q.y] : [q.x, q.y], b = q.d === 'h' ? [q.x + 1, q.y] : [q.x, q.y + 1];
+      const pts = [this.iso(a[0], a[1]), this.iso(b[0], b[1]), this.iso(b[0], b[1], h), this.iso(a[0], a[1], h)];
+      this.quad(pts, c, 'rgba(48,32,24,0.35)');
+      const t = 0.1, dx = q.d === 'v' ? -t : 0, dy = q.d === 'h' ? -t : 0;
+      this.quad([this.iso(a[0], a[1], h), this.iso(b[0], b[1], h), this.iso(b[0] + dx, b[1] + dy, h), this.iso(a[0] + dx, a[1] + dy, h)], shade(col, 0.2));
+    };
+    for (const q of state.walls || []) {
+      if (!q.door) { seg(q, col, H); continue; }
+      const sub = (f0, f1) => (q.d === 'h' ? { d: 'h', x: q.x + f0, y: q.y, w: f1 - f0 } : { d: 'v', x: q.x, y: q.y + f0, w: f1 - f0 });
+      for (const [f0, f1] of [[0, 0.12], [0.88, 1]]) { const p = sub(f0, f1); const a = [p.x, p.y], b = q.d === 'h' ? [p.x + p.w, p.y] : [p.x, p.y + p.w]; this.quad([this.iso(...a), this.iso(...b), this.iso(...b, H + 10), this.iso(...a, H + 10)], '#fffaf2', 'rgba(48,32,24,0.35)'); }
+    }
+    for (const q of view.wallPreview || []) seg(q, q.bad ? 'rgba(240,80,80,0.6)' : 'rgba(70,210,140,0.6)', H);
+    if (view.wallHover) seg(view.wallHover, 'rgba(255,214,90,0.9)', H + 4);
   }
   window(pos, axis, night) {
     const w = 1.3, P = (t, z) => (axis === 'x' ? this.iso(pos + t, 0, z) : this.iso(0, pos + t, z));

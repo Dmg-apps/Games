@@ -135,6 +135,7 @@ export function newGame(familyDefs, surname) {
     settings: { autonomy: 'baja', aging: true }, surname: surname || 'Familia',
   };
   state.house = randomHouse();
+  ensureWalls(state);
   furnish(state);
   familyDefs.forEach((d, i) => {
     const t = randomFreeTile(state);
@@ -256,6 +257,9 @@ export function canPlace(state, type, x, y, rot, ignoreId = null) {
       if (objTiles(o).some((t) => t.x === tx && t.y === ty)) return false;
     }
     if (!walk) for (const s of visibleSims(state)) if (Math.round(s.x) === tx && Math.round(s.y) === ty) return false;
+    const ws = wallSet(state);
+    if (i + 1 < w && edgeBlocked(ws, tx, ty, tx + 1, ty)) return false;
+    if (j + 1 < h && edgeBlocked(ws, tx, ty, tx, ty + 1)) return false;
   }
   return true;
 }
@@ -295,10 +299,75 @@ export function decorScore(state) {
   return state.objects.reduce((sum, o) => sum + (o.x < HOUSE + 2 ? OBJECTS[o.type].decor : 0), 0);
 }
 
+// ---------- paredes ----------
+// Una pared ocupa un borde entre casillas. 'h': borde horizontal en la línea y (entre (x,y-1) y (x,y)).
+// 'v': borde vertical en la línea x (entre (x-1,y) y (x,y)). Con door: true se puede pasar.
+export const WALL_PRICE = 60, DOOR_PRICE = 150;
+const wkey = (d, x, y) => `${d}:${x}:${y}`;
+export function ensureWalls(state) {
+  if (state.walls) return;
+  const { w, h } = houseDims(state);
+  state.walls = [];
+  for (let x = 0; x < w; x++) state.walls.push({ d: 'h', x, y: h });
+  for (let y = 0; y < h; y++) state.walls.push({ d: 'v', x: w, y });
+  // puerta principal hacia la salida
+  const front = EXIT.y < h ? state.walls.find((q) => q.d === 'v' && q.y === EXIT.y) : state.walls.find((q) => q.d === 'h' && q.x === w - 1);
+  if (front) front.door = true;
+}
+function wallSet(state) {
+  if (state._wallCache && state._wallCache.src === state.walls) return state._wallCache.set;
+  const set = new Set();
+  for (const q of state.walls || []) if (!q.door) set.add(wkey(q.d, q.x, q.y));
+  Object.defineProperty(state, '_wallCache', { value: { src: state.walls, set }, enumerable: false, configurable: true, writable: true });
+  return set;
+}
+function touchWalls(state) { state.walls = [...(state.walls || [])]; }
+// ¿Hay pared entre dos casillas vecinas (ortogonales)?
+function edgeBlocked(ws, ax, ay, bx, by) {
+  if (bx === ax + 1) return ws.has(wkey('v', bx, ay));
+  if (bx === ax - 1) return ws.has(wkey('v', ax, ay));
+  if (by === ay + 1) return ws.has(wkey('h', ax, by));
+  if (by === ay - 1) return ws.has(wkey('h', ax, ay));
+  return false;
+}
+function stepBlocked(ws, cx, cy, nx, ny) {
+  if (cx === nx || cy === ny) return edgeBlocked(ws, cx, cy, nx, ny);
+  // en diagonal no se cuela por las esquinas de las paredes
+  return edgeBlocked(ws, cx, cy, nx, cy) || edgeBlocked(ws, nx, cy, nx, ny) || edgeBlocked(ws, cx, cy, cx, ny) || edgeBlocked(ws, cx, ny, nx, ny);
+}
+export function wallAt(state, d, x, y) { return (state.walls || []).find((q) => q.d === d && q.x === x && q.y === y); }
+export function addWalls(state, segs) {
+  ensureWalls(state); let n = 0;
+  for (const g of segs) {
+    if (g.x < 0 || g.y < 0 || g.x > GRID || g.y > GRID) continue;
+    if (g.d === 'h' && (g.x >= GRID || g.y === 0 || g.y === GRID)) continue;
+    if (g.d === 'v' && (g.y >= GRID || g.x === 0 || g.x === GRID)) continue;
+    if (wallAt(state, g.d, g.x, g.y)) continue;
+    if (state.money < WALL_PRICE) { toast('No hay dinero suficiente', 'warn'); break; }
+    // no partir un mueble de varias casillas
+    if (state.objects.some((o) => { const t = objTiles(o); return t.some((a) => t.some((b) => g.d === 'v' ? (b.x === a.x + 1 && b.y === a.y && b.x === g.x && a.y === g.y) : (b.y === a.y + 1 && b.x === a.x && b.y === g.y && a.x === g.x))); })) continue;
+    state.walls.push({ d: g.d, x: g.x, y: g.y }); state.money -= WALL_PRICE; n++;
+  }
+  touchWalls(state); return n;
+}
+export function toggleDoor(state, q) {
+  if (!q.door && state.money < DOOR_PRICE) { toast('No hay dinero suficiente', 'warn'); return false; }
+  q.door = !q.door; state.money += q.door ? -DOOR_PRICE : Math.round(DOOR_PRICE * 0.5); touchWalls(state); return true;
+}
+export function removeWall(state, q) {
+  state.walls = state.walls.filter((w) => w !== q); state.money += Math.round(WALL_PRICE * 0.5) + (q.door ? Math.round(DOOR_PRICE * 0.5) : 0);
+}
+// Borde más cercano a un punto del suelo (coordenadas de casilla con decimales)
+export function nearestEdge(px, py) {
+  const hy = Math.round(py), vx = Math.round(px);
+  const dh = Math.abs(py - hy), dv = Math.abs(px - vx);
+  return dh < dv ? { d: 'h', x: Math.floor(px), y: hy, dist: dh } : { d: 'v', x: vx, y: Math.floor(py), dist: dv };
+}
+
 // ---------- caminos ----------
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 function bfs(state, sx, sy) {
-  const blocked = blockedMap(state);
+  const blocked = blockedMap(state); const ws = wallSet(state);
   const dist = new Int16Array(GRID * GRID).fill(-1);
   const prev = new Int16Array(GRID * GRID).fill(-1);
   const start = sy * GRID + sx;
@@ -313,10 +382,11 @@ function bfs(state, sx, sy) {
       const n = ny * GRID + nx;
       if (blocked[n] || dist[n] >= 0) continue;
       if (dx && dy && (blocked[cy * GRID + nx] || blocked[ny * GRID + cx])) continue;
+      if (stepBlocked(ws, cx, cy, nx, ny)) continue;
       dist[n] = dist[c] + 1; prev[n] = c; q.push(n);
     }
   }
-  return { dist, prev, blocked };
+  return { dist, prev, blocked, ws };
 }
 function buildPath(prev, sx, sy, tx, ty) {
   const path = []; let c = ty * GRID + tx; const s = sy * GRID + sx;
@@ -326,7 +396,7 @@ function buildPath(prev, sx, sy, tx, ty) {
 // Busca la casilla libre más cercana adyacente a un conjunto de casillas
 function nearestSpot(state, sim, tiles, diag = false) {
   const sx = Math.round(sim.x), sy = Math.round(sim.y);
-  const { dist, prev, blocked } = bfs(state, sx, sy);
+  const { dist, prev, blocked, ws } = bfs(state, sx, sy);
   let best = null, bd = 1e9;
   const dirs = diag ? DIRS : DIRS.slice(0, 4);
   for (const t of tiles) for (const [dx, dy] of dirs) {
@@ -334,6 +404,7 @@ function nearestSpot(state, sim, tiles, diag = false) {
     if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
     const n = ny * GRID + nx;
     if (blocked[n] || dist[n] < 0) continue;
+    if (stepBlocked(ws, t.x, t.y, nx, ny)) continue; // no usar un mueble a través de una pared
     if (tiles.some((q) => q.x === nx && q.y === ny)) continue;
     const taken = visibleSims(state).some((o) => o !== sim && o.cur?.spot && o.cur.spot.x === nx && o.cur.spot.y === ny);
     const d = dist[n] + (taken ? 6 : 0);
@@ -1172,7 +1243,7 @@ export function save(state) {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* almacenamiento lleno */ }
 }
 export function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === SAVE_VERSION) return s; } catch (e) { }
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === SAVE_VERSION) { ensureWalls(s); return s; } } catch (e) { }
   return null;
 }
 export function wipe() { localStorage.removeItem(KEY); }

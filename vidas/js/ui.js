@@ -5,6 +5,7 @@ import {
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
+import { catalogThumbs, webglAvailable } from './render3d.js';
 import { icon } from './icons.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
@@ -267,11 +268,23 @@ export class UI {
     body.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) this.renderBuild(b.dataset.c); };
     const grid = body.querySelector('.grid');
     if (cat === 'Estilo') return this.renderStyle(body, grid);
+    if (cat === 'Paredes') return this.renderWallTools(body, grid);
+    const thumbs = webglAvailable() ? catalogThumbs() : {};
     for (const [id, d] of Object.entries(OBJECTS)) {
       if (d.cat !== cat) continue;
       const b = document.createElement('button'); b.className = 'item'; b.disabled = st.money < d.price;
-      b.innerHTML = `<span class="tilebox">${icon(OBJ_IC[id] || 'box')}</span>${d.name}<span class="p">${d.price} €</span>${d.decor ? `<span class="d">Decoración +${d.decor}</span>` : ''}`;
+      b.innerHTML = `${thumbs[id] ? `<img class="thumb" src="${thumbs[id]}" alt="">` : `<span class="tilebox">${icon(OBJ_IC[id] || 'box')}</span>`}${d.name}<span class="p">${d.price} €</span>${d.decor ? `<span class="d">Decoración +${d.decor}</span>` : ''}`;
       b.onclick = () => { this.hideSheetOnly(); this.g.startPlacing(id); };
+      grid.appendChild(b);
+    }
+  }
+  renderWallTools(body, grid) {
+    body.querySelector('.hint').textContent = 'Separa habitaciones con paredes y pon puertas para poder pasar. Nadie atraviesa una pared sin puerta.';
+    const tools = [['wall', 'Pared', `${Sim.WALL_PRICE} € por tramo`, 'Arrastra el dedo por los bordes'], ['door', 'Puerta', `${Sim.DOOR_PRICE} €`, 'Toca una pared'], ['erase', 'Quitar', 'Devuelve la mitad', 'Toca una pared o puerta']];
+    for (const [id, name, price, how] of tools) {
+      const b = document.createElement('button'); b.className = 'item';
+      b.innerHTML = `<span class="tilebox">${icon(id === 'wall' ? 'box' : id === 'door' ? 'logout' : 'trash')}</span>${name}<span class="p">${price}</span><span class="d">${how}</span>`;
+      b.onclick = () => { this.hideSheetOnly(); this.g.setWallTool(id); };
       grid.appendChild(b);
     }
   }
@@ -298,7 +311,11 @@ export class UI {
     bar.hidden = false;
     const btn = (ic, label, fn, cls = '') => ({ ic, label, fn, cls });
     let info = '', acts = [];
-    if (v.ghost) {
+    if (v.wallTool) {
+      const how = { wall: `Arrastra el dedo por los bordes del suelo · ${Sim.WALL_PRICE} € por tramo`, door: `Toca una pared para poner o quitar una puerta · ${Sim.DOOR_PRICE} €`, erase: 'Toca una pared o puerta para quitarla' }[v.wallTool];
+      info = `${icon('box')} ${how}`;
+      acts = [btn('box', 'Pared', () => this.g.setWallTool('wall'), v.wallTool === 'wall' ? 'primary' : ''), btn('logout', 'Puerta', () => this.g.setWallTool('door'), v.wallTool === 'door' ? 'primary' : ''), btn('trash', 'Quitar', () => this.g.setWallTool('erase'), v.wallTool === 'erase' ? 'red' : ''), btn('check', 'Listo', () => this.g.setWallTool(null))];
+    } else if (v.ghost) {
       const d = OBJECTS[v.ghost.type];
       info = `${icon(OBJ_IC[v.ghost.type] || 'box')} <b>${d.name}</b>${v.ghost.mode === 'new' ? ` · ${d.price} €` : ''} · toca el suelo`;
       acts = [btn('rotate', 'Girar', () => this.g.rotateGhost()), btn('check', 'Colocar', () => this.g.confirmGhost(), 'primary'), btn('x', '', () => this.g.cancelGhost())];

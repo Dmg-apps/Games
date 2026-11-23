@@ -282,3 +282,6 @@ body.sheet-open #camctl { display: none; }
 @media (orientation: landscape) and (max-height: 560px) {
   #camctl { right: calc(var(--rail) + var(--safe-r) + 20px); bottom: calc(var(--safe-b) + 12px); }
 }
+
+.item .thumb { width: 72px; height: 72px; object-fit: contain; display: block; margin: -4px 0 0; filter: drop-shadow(0 3px 4px rgba(31,37,64,0.15)); }
+#buildbar .acts { flex-wrap: wrap; justify-content: center; }

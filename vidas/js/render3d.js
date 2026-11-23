@@ -444,13 +444,6 @@ export class Renderer3D {
       const pic = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.48), new THREE.MeshStandardMaterial({ map: canvasTex(128, (ctx, s) => { const gr = ctx.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, '#f0c27a'); gr.addColorStop(1, '#f6dca8'); ctx.fillStyle = gr; ctx.fillRect(0, 0, s, s); ctx.fillStyle = '#6aa36a'; ctx.beginPath(); ctx.moveTo(0, s); ctx.lineTo(s * 0.4, s * 0.45); ctx.lineTo(s * 0.7, s * 0.7); ctx.lineTo(s, s * 0.4); ctx.lineTo(s, s); ctx.fill(); }) }));
       pic.rotation.y = Math.PI / 2; pic.position.set(0.045, 1.55, h - 1.9); g.add(pic);
     }
-    // muros delanteros bajos (vista "paredes abajo")
-    const low = mat(shadeHex(wall.color, 0.08));
-    const lw1 = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, WALL_T), low); lw1.position.set(w / 2, 0.09, h + WALL_T / 2); lw1.castShadow = true; g.add(lw1);
-    const doorZ = EXIT.y < h ? EXIT.y : -1;
-    const a1 = doorZ >= 0 ? doorZ : h, b1 = doorZ >= 0 ? doorZ + 1 : h;
-    if (a1 > 0) { const s1 = new THREE.Mesh(new THREE.BoxGeometry(WALL_T, 0.18, a1), low); s1.position.set(w + WALL_T / 2, 0.09, a1 / 2); g.add(s1); }
-    if (h - b1 > 0) { const s2 = new THREE.Mesh(new THREE.BoxGeometry(WALL_T, 0.18, h - b1), low); s2.position.set(w + WALL_T / 2, 0.09, b1 + (h - b1) / 2); g.add(s2); }
     // felpudo de la salida
     const mat1 = new THREE.Mesh(new RoundedBoxGeometry(0.7, 0.02, 0.6, 2, 0.01), mat('#b8664a', { rough: 1 })); mat1.position.set(EXIT.x + 0.5, 0.01, EXIT.y + 0.5); mat1.receiveShadow = true; g.add(mat1);
   }
@@ -513,6 +506,11 @@ export class Renderer3D {
     if (!this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.05), p)) return { x: -1, y: -1 };
     return { x: Math.floor(p.x), y: Math.floor(p.z) };
   }
+  screenToWorld(sx, sy) {
+    this.setRay(sx, sy); const p = new THREE.Vector3();
+    if (!this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.05), p)) return { x: -1, y: -1 };
+    return { x: p.x, y: p.z };
+  }
   pickSim(state, sx, sy) {
     this.setRay(sx, sy);
     const hit = this.ray.intersectObjects(this.simGroup.children, true).find((h) => h.object.visible);
@@ -553,7 +551,7 @@ export class Renderer3D {
     for (const [id, rec] of this.objMeshes) if (!seen.has(id)) { this.objGroup.remove(rec.g); this.objMeshes.delete(id); }
     this.objKeySig = [...this.objMeshes.values()].map((r) => r.key).join(';');
     // fantasma y resaltado en construcción
-    const hkey = JSON.stringify([view.selected, view.ghost]);
+    const hkey = JSON.stringify([view.selected, view.ghost, view.wallPreview, view.wallHover]);
     for (const [id, rec] of this.objMeshes) if (!view.ghost || view.ghost.objId !== id) rec.g.visible = true;
     if (view.ghost?.objId) { const rec = this.objMeshes.get(view.ghost.objId); if (rec) rec.g.visible = false; }
     this.grid.visible = !!view.build;
@@ -565,6 +563,14 @@ export class Renderer3D {
       m.rotation.x = -Math.PI / 2; m.position.set(x + w / 2, 0.06, y + h / 2); this.highlight.add(m);
     };
     if (view.selected) { const o = state.objects.find((q) => q.id === view.selected); if (o) { const f = footprint(o.type, o.rot); tiles(o.x, o.y, f.w, f.h, 0xffd65a, 0.6); } }
+    for (const q of view.wallPreview || []) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(q.d === 'h' ? 1 : WALL_T, WALL_H * 0.6, q.d === 'h' ? WALL_T : 1), new THREE.MeshBasicMaterial({ color: q.bad ? 0xf05050 : 0x46d28c, transparent: true, opacity: 0.55, depthWrite: false }));
+      m.position.set(q.d === 'h' ? q.x + 0.5 : q.x, WALL_H * 0.3, q.d === 'h' ? q.y : q.y + 0.5); this.highlight.add(m);
+    }
+    if (view.wallHover) {
+      const q = view.wallHover; const m = new THREE.Mesh(new THREE.BoxGeometry(q.d === 'h' ? 1.02 : WALL_T + 0.06, 0.08, q.d === 'h' ? WALL_T + 0.06 : 1.02), new THREE.MeshBasicMaterial({ color: 0xffd65a }));
+      m.position.set(q.d === 'h' ? q.x + 0.5 : q.x, 0.1, q.d === 'h' ? q.y : q.y + 0.5); this.highlight.add(m);
+    }
     if (view.ghost) {
       const gh = view.ghost, f = footprint(gh.type, gh.rot);
       tiles(gh.x, gh.y, f.w, f.h, gh.ok ? 0x46d28c : 0xf05050, 0.5);
@@ -666,18 +672,53 @@ export class Renderer3D {
     // paredes de espaldas a la cámara: se bajan para ver el interior
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.cam.target).setY(0).normalize();
     for (const w of this.walls || []) { const facing = dir.dot(w.userData.normal) > -0.15; w.scale.y = facing ? 1 : 0.08; }
+    // paredes construidas: las que quedan entre la cámara y lo que miras se bajan
+    for (const g of this.segs || []) {
+      const v = new THREE.Vector3(g.userData.cx - this.cam.target.x, 0, g.userData.cz - this.cam.target.z);
+      const front = v.dot(dir) > 0.4;
+      const k = front ? 0.07 : 1; g.scale.y += (k - g.scale.y) * 0.25;
+    }
+  }
+  // Paredes construidas (exteriores e interiores) con sus puertas
+  buildWalls(state) {
+    const H = state.house || {}; const sig = JSON.stringify([state.walls, H.wall]);
+    if (sig === this.wallSig) return; this.wallSig = sig;
+    if (this.wallGroup) { this.scene.remove(this.wallGroup); this.wallGroup.traverse((o) => o.geometry?.dispose()); }
+    const G = new THREE.Group(); this.wallGroup = G; this.scene.add(G); this.segs = [];
+    const style = H.wall || { color: '#f3e7d6', pattern: 'rayas' };
+    const wm = new THREE.MeshStandardMaterial({ map: wallTexture(style.color, style.pattern, 1.5), roughness: 0.9 });
+    const top = mat(shadeHex(style.color, 0.2), { rough: 0.95 });
+    const frame = mat('#fffaf2', { rough: 0.5 }), leaf = mat('#a8784a', { rough: 0.6 }), knob = mat('#d4b04a', { metal: 0.6, rough: 0.3 });
+    for (const q of state.walls || []) {
+      const g = new THREE.Group(); G.add(g);
+      const box = (w, hh, d, x, y, z, m = [wm, wm, top, top, wm, wm]) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, hh, d), m); me.position.set(x, y, z); me.castShadow = true; me.receiveShadow = true; g.add(me); return me; };
+      // se construye a lo largo de X y se gira si es vertical
+      if (q.door) {
+        const DW = 0.82, DH = 2.05, side = (1 - DW) / 2;
+        box(side, WALL_H, WALL_T, side / 2, WALL_H / 2, 0); box(side, WALL_H, WALL_T, 1 - side / 2, WALL_H / 2, 0);
+        box(DW, WALL_H - DH, WALL_T, 0.5, DH + (WALL_H - DH) / 2, 0);
+        for (const [fw, fh, fx, fy] of [[0.05, DH, side, DH / 2], [0.05, DH, 1 - side, DH / 2], [DW + 0.05, 0.05, 0.5, DH]]) box(fw, fh, WALL_T + 0.03, fx, fy, 0, frame);
+        const hinge = new THREE.Group(); hinge.position.set(side + 0.03, 0, 0); hinge.rotation.y = -1.25; g.add(hinge);
+        const lf = new THREE.Mesh(new RoundedBoxGeometry(DW - 0.06, DH - 0.04, 0.04, 2, 0.01), leaf); lf.position.set((DW - 0.06) / 2, DH / 2, 0); lf.castShadow = true; hinge.add(lf);
+        const kb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), knob); kb.position.set(DW - 0.16, 1.0, 0.04); hinge.add(kb);
+      } else box(1 + WALL_T, WALL_H, WALL_T, 0.5, WALL_H / 2, 0);
+      if (q.d === 'h') { g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x + 0.5; g.userData.cz = q.y; }
+      else { g.rotation.y = -Math.PI / 2; g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x; g.userData.cz = q.y + 0.5; }
+      this.segs.push(g);
+    }
   }
 
   // ---------- fotograma ----------
   render(state, view) {
     const t = performance.now() / 1000; const dt = Math.min(0.05, t - (this.lastT || t)); this.lastT = t;
     this.buildHouse(state);
+    this.buildWalls(state);
     this.syncObjects(state, view);
     this.syncPeople(state, view, t, dt);
     this.lighting(state, t);
     this.updateCamera(); this.cutaway();
     if (!this.hq) {
-      const skey = this.objKeySig + '|' + this.houseSig + '|' + Math.round(hourOf(state.time) * 4);
+      const skey = this.objKeySig + '|' + this.houseSig + '|' + this.wallSig + '|' + Math.round(hourOf(state.time) * 4);
       if (skey !== this.shadowKey) { this.shadowKey = skey; this.gl.shadowMap.needsUpdate = true; }
     }
     if (this.marker.visible) { const a = (performance.now() - this.markerT) / 700; if (a > 1) this.marker.visible = false; else { this.marker.scale.setScalar(1 + a * 1.4); this.marker.material.opacity = 1 - a; } }
@@ -746,6 +787,31 @@ function heartPath(ctx, x, y, s) {
   ctx.beginPath(); ctx.moveTo(x, y + s * 0.9);
   ctx.bezierCurveTo(x - s * 1.4, y, x - s * 0.9, y - s * 1.1, x, y - s * 0.4);
   ctx.bezierCurveTo(x + s * 0.9, y - s * 1.1, x + s * 1.4, y, x, y + s * 0.9); ctx.closePath();
+}
+
+// Miniaturas del catálogo: cada mueble renderizado en 3D en un lienzo aparte
+let thumbCache = null;
+export function catalogThumbs() {
+  if (thumbCache) return thumbCache;
+  thumbCache = {};
+  try {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 192;
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping;
+    const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x9a8a70, 1.3));
+    const d = new THREE.DirectionalLight(0xffffff, 1.8); d.position.set(3, 5, 4); sc.add(d);
+    const cam = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
+    for (const type of Object.keys(OBJECTS)) {
+      const g = buildObject({ type, x: 0, y: 0, rot: 0, id: 'thumb', users: [] }); sc.add(g);
+      const box = new THREE.Box3().setFromObject(g); const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3()).length();
+      const dist = size / (2 * Math.tan(THREE.MathUtils.degToRad(15))) * 0.95;
+      cam.position.set(c.x + dist * 0.62, c.y + dist * 0.55, c.z + dist * 0.62); cam.lookAt(c);
+      r.render(sc, cam); thumbCache[type] = cv.toDataURL('image/png');
+      sc.remove(g); g.traverse((o) => o.geometry?.dispose());
+    }
+    r.dispose(); r.forceContextLoss();
+  } catch (e) { console.warn('Sin miniaturas', e); }
+  return thumbCache;
 }
 
 export function webglAvailable() {

@@ -70,6 +70,7 @@ class Game {
   }
   loadState(saved) {
     if (!saved || saved.v !== 1) return this.showTitle();
+    Sim.ensureWalls(saved);
     this.demo = null; this.state = saved;
     globalThis.__simTime = saved.time;
     const sum = Sim.offlineProgress(saved, Date.now() - saved.lastSaved);
@@ -183,7 +184,7 @@ class Game {
   }
   exitBuild() {
     if (!this.view.build) return;
-    this.view.build = false; this.view.ghost = null; this.view.selected = null;
+    this.view.build = false; this.view.ghost = null; this.view.selected = null; this.view.wallTool = null; this.view.wallPreview = null;
     if (this.state) this.state.speed = this.prevSpeed || 1;
     this.ui.renderBuildBar(); this.ui.update();
   }
@@ -239,10 +240,14 @@ class Game {
       p.x = e.clientX; p.y = e.clientY;
       if (ptrs.size === 1) {
         if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 9) { moved = true; if (drag) this.beginDrag(drag); }
-        if (moved && drag) this.dragTo(e.clientX, e.clientY, drag);
+        if (moved && drag?.wall) { this.view.wallPreview = this.wallSegments(drag.start, this.wallCorner(e.clientX, e.clientY)); }
+        else if (moved && drag) this.dragTo(e.clientX, e.clientY, drag);
         else if (moved) this.renderer.pan(dx, dy);
       } else if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; // desplazar con dos dedos
+        if (this.lastMid) this.renderer.pan(mid.x - this.lastMid.x, mid.y - this.lastMid.y);
+        this.lastMid = mid;
         if (pinchD) this.renderer.zoomAt(d / pinchD, (a.x + b.x) / 2, (a.y + b.y) / 2);
         pinchD = d;
         const ang = Math.atan2(b.y - a.y, b.x - a.x); // girar con dos dedos (3D)
@@ -253,16 +258,47 @@ class Game {
     const up = (e) => {
       if (!ptrs.has(e.pointerId)) return;
       ptrs.delete(e.pointerId);
-      if (ptrs.size === 0 && moved && drag) { this.endDrag(); drag = null; }
+      if (ptrs.size === 0 && moved && drag?.wall) {
+        const segs = (this.view.wallPreview || []).filter((q) => !q.bad); this.view.wallPreview = null;
+        const n = segs.length ? Sim.addWalls(this.state, segs) : 0;
+        if (n) this.ui.toast(`${n} tramo${n > 1 ? 's' : ''} de pared (−${n * Sim.WALL_PRICE} €)`, 'good');
+        drag = null; this.ui.update();
+      } else if (ptrs.size === 0 && moved && drag) { this.endDrag(); drag = null; }
       if (ptrs.size === 0 && !moved && e.type === 'pointerup') this.tap(e.clientX, e.clientY);
-      if (ptrs.size < 2) { pinchD = 0; pinchA = null; }
+      if (ptrs.size < 2) { pinchD = 0; pinchA = null; this.lastMid = null; }
     };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
     c.addEventListener('wheel', (e) => { e.preventDefault(); this.renderer.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); }, { passive: false });
   }
 
+  // ---------- paredes ----------
+  setWallTool(tool) {
+    this.view.wallTool = tool; this.view.wallPreview = null; this.view.selected = null; this.view.ghost = null;
+    this.ui.renderBuildBar();
+  }
+  wallCorner(x, y) { const w = this.renderer.screenToWorld(x, y); return { x: Math.max(0, Math.min(Sim.GRID, Math.round(w.x))), y: Math.max(0, Math.min(Sim.GRID, Math.round(w.y))) }; }
+  wallSegments(a, b) {
+    const segs = [];
+    if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) for (let x = Math.min(a.x, b.x); x < Math.max(a.x, b.x); x++) segs.push({ d: 'h', x, y: a.y });
+    else for (let y = Math.min(a.y, b.y); y < Math.max(a.y, b.y); y++) segs.push({ d: 'v', x: a.x, y });
+    return segs.map((q) => ({ ...q, bad: !!Sim.wallAt(this.state, q.d, q.x, q.y) || (q.d === 'h' && (q.y === 0 || q.y >= Sim.GRID)) || (q.d === 'v' && (q.x === 0 || q.x >= Sim.GRID)) }));
+  }
+  wallTap(x, y) {
+    const st = this.state; const w = this.renderer.screenToWorld(x, y); const e = Sim.nearestEdge(w.x, w.y);
+    if (e.dist > 0.42) return;
+    const q = Sim.wallAt(st, e.d, e.x, e.y);
+    if (this.view.wallTool === 'wall') { if (!q && Sim.addWalls(st, [e])) this.ui.toast(`Pared construida (−${Sim.WALL_PRICE} €)`, 'good'); }
+    else if (!q) this.ui.toast('Toca justo encima de una pared', 'warn');
+    else if (this.view.wallTool === 'door') { if (Sim.toggleDoor(st, q)) this.ui.toast(q.door ? `Puerta puesta (−${Sim.DOOR_PRICE} €)` : 'Puerta quitada', 'good'); }
+    else { Sim.removeWall(st, q); this.ui.toast('Pared quitada', 'good'); }
+    this.view.wallHover = { d: e.d, x: e.x, y: e.y }; clearTimeout(this.hoverT); this.hoverT = setTimeout(() => (this.view.wallHover = null), 600);
+    this.ui.update();
+  }
+
   // ---------- arrastrar muebles ----------
   dragTarget(x, y) {
+    if (this.view.wallTool === 'wall') return { wall: true, start: this.wallCorner(x, y) };
+    if (this.view.wallTool) return null;
     const st = this.state; const g = this.view.ghost;
     const t = this.renderer.screenToTile(x, y);
     if (g) {
@@ -309,6 +345,7 @@ class Game {
     const t = this.renderer.screenToTile(x, y);
     const inGrid = t.x >= 0 && t.y >= 0 && t.x < Sim.GRID && t.y < Sim.GRID;
     if (this.view.build) {
+      if (this.view.wallTool) return this.wallTap(x, y);
       if (this.view.ghost) { if (inGrid) { this.view.ghost.x = t.x; this.view.ghost.y = t.y; this.validateGhost(); } return; }
       const o = this.renderer.pickObject(st, x, y) || (inGrid && Sim.objectAt(st, t.x, t.y));
       this.view.selected = o ? o.id : null; this.ui.renderBuildBar();

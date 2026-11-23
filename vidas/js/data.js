@@ -239,4 +239,4 @@ OBJECTS.cama.tint = ['#6a8fd0'];
 OBJECTS.camita.tint = ['#e07a7a'];
 OBJECTS.cuadro.tint = ['#b05a5a', '#d08a6a'];
 OBJECTS.juguetes.tint = ['#e8c04a'];
-CATEGORIES.push('Estilo');
+CATEGORIES.push('Paredes', 'Estilo');
