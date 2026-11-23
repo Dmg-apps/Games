@@ -57,6 +57,14 @@ function tankHappy(t) {
 }
 function price(f) { const t = tankOf(f.tank); return Math.round(12 * rarity(f.g) * f.g.s * (f.adult ? 1 : 0.5) * (0.5 + f.health / 200) * (0.8 + (t ? tankHappy(t) : 50) / 250)); }
 const idealTemp = (t) => t.temp >= 23.5 && t.temp <= 27.5;
+// Por qué enferman los peces de un acuario (y qué hacer)
+function sickWhy(t) { const w = []; if (t.food < 15) w.push('pasan hambre: dales comida'); if (t.clean < 30) w.push('el agua está sucia: límpiala'); if (!idealTemp(t)) w.push(`la temperatura (${t.temp.toFixed(1)} °C) no es buena: ponla entre 24 y 27 °C`); return w; }
+const MED_PRICE = 15;
+function medicine(t) {
+  if (st.money < MED_PRICE) return toast('No hay dinero suficiente', 'warn');
+  st.money -= MED_PRICE; t.medUntil = st.time + 360; for (const f of fishIn(t)) f.health = clamp(f.health + 30);
+  const why = sickWhy(t); toast(why.length ? `Medicina echada. Ojo: ${why[0]}, o volverán a enfermar` : 'Medicina echada: se recuperarán en unas horas', why.length ? 'warn' : 'good', 'heart'); hud(); save();
+}
 
 // ---------- genética ----------
 function inherit(a, b) {
@@ -83,8 +91,10 @@ function tick(dt) {
   }
   for (const f of st.fish) {
     const t = tankOf(f.tank); if (!t) continue;
-    const bad = (t.food < 15 ? 1 : 0) + (t.clean < 30 ? 1 : 0) + (idealTemp(t) ? 0 : 1);
-    f.health = clamp(f.health + (bad ? -0.03 * bad : 0.02) * dt);
+    const bad = (t.food < 15 ? 1 : 0) + (t.clean < 30 ? 1 : 0) + (idealTemp(t) ? 0 : 1); const med = t.medUntil && st.time < t.medUntil;
+    f.health = clamp(f.health + (bad ? -0.03 * bad * (med ? 0.3 : 1) : 0.02) * dt + (med ? 0.06 * dt : 0));
+    if (f.health < 40 && !f.warned) { f.warned = true; const why = sickWhy(t); toast(`${f.name} está enfermo/a${why.length ? ': ' + why[0] : ''}. Abre su acuario y dale medicina.`, 'warn', 'alert'); }
+    if (f.health > 60) f.warned = false;
     if (!f.adult && st.time - f.born > 720) { f.adult = true; toast(`${f.name} ya es adulto/a`, 'good', 'fish'); }
     if (f.health <= 0) { st.fish = st.fish.filter((q) => q !== f); toast(`${f.name} no ha sobrevivido. Cuida la comida, el agua y la temperatura.`, 'bad', 'fish'); }
   }
@@ -435,6 +445,7 @@ function closeCard(force = false) {
   const f = followId && st.fish.find((q) => q.id === followId); if (!f) { el.hidden = true; return; }
   const age = Math.round((st.time - f.born) / 60);
   el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${COLORS[f.g.c].hex};color:#fff">${icon('fish')}</span><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span> <span class="trait">${fishTrait(f)}</span><div class="hint">${esc(speciesName(f.g))} · ${esc(FISH_TRAITS[f.trait]?.desc || '')}</div></div><b>${eur(price(f))}</b></div>
+    ${f.health < 40 ? `<div class="sickrow">${icon('alert')}<span style="flex:1">Enfermo/a${sickWhy(tankOf(f.tank)).length ? ': ' + sickWhy(tankOf(f.tank))[0] : ''}</span><button class="btn sm coral" data-med="${f.tank}">Medicina · ${eur(MED_PRICE)}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Salud</span><div class="bar"><i style="transform:scaleX(${f.health / 100});background:${f.health < 40 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
   el.hidden = false;
 }
@@ -471,6 +482,7 @@ function renderPanel() {
     b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:8px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button><div class="row" style="margin-bottom:10px"><button class="btn alt sm" style="flex:1" id="tmove">${icon('move')} Mover acuario</button><button class="btn alt sm" style="flex:1" id="trot">${icon('rotate')} Girar</button><button class="btn alt sm" id="tdel" aria-label="Quitar acuario">${icon('trash')}</button></div>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
       <div class="row" style="margin:8px 0"><button class="btn coral" id="feed">${icon('food')} Comida · 2 €</button><button class="btn alt" id="clean">${icon('drop')} Limpiar · 20 €</button></div>
       ${!has('calefactor') ? `<div class="row"><button class="btn alt sm" id="tdown">− Enfriar</button><span class="hint" style="flex:1;text-align:center;align-self:center">Ideal: 24–27 °C</span><button class="btn alt sm" id="tup">+ Calentar</button></div>` : '<p class="hint">El calefactor mantiene la temperatura perfecta.</p>'}
+      ${(() => { const sick = fs.filter((f) => f.health < 40); const why = sickWhy(t); return sick.length || why.length ? `<div class="sickrow">${icon('alert')}<div style="flex:1;min-width:0"><b>${sick.length ? `${sick.length} ${sick.length > 1 ? 'peces enfermos' : 'pez enfermo'}` : 'Cuidado'}</b><div class="hint">${why.length ? why.join(' · ') : 'Las causas ya están resueltas: la medicina acelera la recuperación.'}${t.medUntil && st.time < t.medUntil ? ' · Medicina activa' : ''}</div></div>${sick.length ? `<button class="btn sm coral" id="med">Medicina · ${eur(MED_PRICE)}</button>` : ''}</div>` : ''; })()}
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
       <div class="sec">${icon('fish')} Peces (${fs.length}/${TANK_CAP})</div>
       <p class="hint">Marca un macho y una hembra adultos para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
@@ -479,6 +491,7 @@ function renderPanel() {
       <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}">${icon('move')} ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
       <div class="grid" style="margin-top:8px">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox">${icon(d.ic)}</span>${d.label}<span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
     b.querySelector('#seeclose').onclick = () => enterClose(t.id);
+    const medB = b.querySelector('#med'); if (medB) medB.onclick = () => { medicine(t); renderPanel(); };
     b.querySelector('#tmove').onclick = () => armTank(t);
     b.querySelector('#tdel').onclick = () => removeTank(t);
     b.querySelector('#trot').onclick = () => { const p = tankPos(t), np = { ...p, r: (p.r + 1) % 4 }; if (!tankFits(t, np)) return toast('No cabe girado ahí: muévelo antes', 'warn'); t.pos = np; openTank(t.id); save(); };
@@ -533,7 +546,7 @@ function renderPanel() {
   }
   if (name === 'info') {
     b.innerHTML = `<div class="card"><div class="stat"><span class="tile" style="background:#f5a524">${icon('star')}</span><span>Reputación</span><b>${Math.floor(st.rep)}</b></div><div class="stat"><span class="tile" style="background:#25c48f">${icon('coin')}</span><span>Peces vendidos</span><b>${st.sold}</b></div><div class="stat"><span class="tile" style="background:#8b5cf6">${icon('sparkle')}</span><span>Variedades</span><b>${st.discovered.length}/${TOTAL_COMBOS}</b></div></div>
-      <p class="hint">Cuida comida, agua y temperatura de cada acuario. Si te olvidas, enferman; con la app cerrada siguen vivos pero lo pasan peor.</p>
+      <p class="hint">Cuida comida, agua y temperatura de cada acuario. Si algo falla, los peces enferman (se ven ladeados): corrige la causa y dales medicina desde su acuario. Con la app cerrada siguen vivos pero lo pasan peor.</p>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
       <div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn sm ${Sound.prefs().music ? '' : 'alt'}" id="snd_m" style="flex:1">${icon('music')} Música ${Sound.prefs().music ? 'sí' : 'no'}</button><button class="btn sm ${Sound.prefs().sfx ? '' : 'alt'}" id="snd_s" style="flex:1">${icon('bell')} Efectos ${Sound.prefs().sfx ? 'sí' : 'no'}</button></div>
@@ -659,6 +672,7 @@ if (store.load(KEY)) offline(); else { save(); say('marina', 'Te damos la bienve
 if (!st.requests.length) newRequest();
 hud();
 Sound.init('acuario');
+$('#fishcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-med]'); if (b) { medicine(tankOf(b.dataset.med)); closeCard(true); } });
 window.reef = { eng, THREE, get st() { return st; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)

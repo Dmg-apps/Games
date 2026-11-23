@@ -10,6 +10,8 @@ export const BIOMES = {
   humedal: { label: 'Humedal', color: '#8cc0b0', ic: 'drop' },
   bosque: { label: 'Bosque', color: '#6e9a56', ic: 'tree' },
 };
+// Enfermedades posibles de los animales (todas se curan con el veterinario)
+export const ILLNESS = { resfriado: 'Resfriado', tripa: 'Dolor de tripa', pulgas: 'Pulgas', pata: 'Cojea de una pata' };
 export const SIZES = { S: { label: 'Pequeño', n: 4, price: 400 }, M: { label: 'Mediano', n: 6, price: 800 }, L: { label: 'Grande', n: 8, price: 1400 } };
 
 // Especies originales. Cuerpo [largo, alto, ancho], patas, cuello, cabeza; colores; rasgos para el modelo 3D.
@@ -57,7 +59,8 @@ export const BUILDINGS = {
   fuente: { label: 'Fuente', price: 900, cat: 'Decoración', decor: 8, ic: 'drop' },
 };
 export const PATH_PRICE = 10;
-export const WAGES = { keeper: 120, cleaner: 90 };
+export const WAGES = { keeper: 120, cleaner: 90, vet: 160 };
+export const VET_VISIT = 80; // llamar al veterinario una vez
 export const FOOD_COST = 15;
 
 export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara', 'Bimba', 'Canela', 'Trufa', 'Pelusa', 'Golfo', 'Jazmín', 'Lirio', 'Menta', 'Ocre', 'Pimienta', 'Ramón', 'Sombra', 'Tango', 'Uva', 'Vainilla', 'Yuca', 'Zafiro', 'Arena', 'Bombón', 'Cacao', 'Dátil', 'Eco', 'Fresa', 'Gofio', 'Higo', 'Indi', 'Jara', 'Kala', 'Lima', 'Mango', 'Nuez', 'Olivo', 'Pan', 'Queso', 'Roble', 'Salvia', 'Tomillo', 'Ulises', 'Vega', 'Wanda', 'Xoco', 'Yago', 'Zarza', 'Ámbar', 'Brisa', 'Cometa', 'Dino', 'Estrella', 'Faro', 'Gema', 'Hada', 'Iris', 'Jade', 'Kumo', 'Loto', 'Merlín', 'Niebla', 'Ópalo', 'Pompón', 'Quimera', 'Rizos', 'Saltarín', 'Trueno', 'Umbra', 'Volcán'];

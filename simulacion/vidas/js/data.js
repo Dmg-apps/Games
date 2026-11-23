@@ -114,6 +114,7 @@ export const ACTIONS = {
   pizza: { label: 'Pedir pizza (40 €)', icon: '🍕', dur: 40, rate: { hambre: 2.2 }, ages: ['adulto', 'anciano'], cost: 40, moodlet: 'comida_rica' },
   adoptar: { label: 'Adoptar un bebé (1000 €)', icon: '👶', dur: 10, ages: ['adulto', 'anciano'], ui: 'adopt' },
   regar: { label: 'Regar', icon: '💧', dur: 5, ages: ['nino', 'adulto', 'anciano'] },
+  medico: { label: 'Llamar al médico (60 €)', icon: '🩺', dur: 20, ages: ['adulto', 'anciano'], cost: 60, resolves: 'resfriado' },
   pagar: { label: 'Pagar facturas', icon: '🧾', dur: 5, ages: ['adulto', 'anciano'], pay: true },
 };
 
@@ -182,6 +183,7 @@ export const WORRIES = {
   miedo: { label: 'Tiene miedo', hint: 'Un adulto debe consolarle', mood: -14, ages: ['nino'] },
   deberes: { label: 'Deberes pendientes', hint: 'Hacer los deberes en el ordenador', mood: -6, ages: ['nino'] },
   aburrido: { label: 'Se aburre', hint: 'Llena la Diversión', mood: -8, ages: ['nino', 'adulto', 'anciano'] },
+  resfriado: { label: 'Está resfriado/a', hint: 'Llama al médico con el teléfono o que duerma bien en una cama', mood: -12, ages: ['nino', 'adulto', 'anciano'] },
 };
 
 export const DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -210,7 +212,7 @@ export function inflect(text, s) {
 export const gx = (s, m, f, x) => (s?.gender === 'f' ? f : s?.gender === 'x' ? x : m);
 
 // Iconos (ver icons.js) para acciones e interacciones
-export const ACTION_IC = { picar: 'food', cocinar: 'food', dormir: 'moon', relajarse: 'sofa', siesta: 'moon', vater: 'toilet', ducha: 'drop', tele: 'tv', bailar: 'music', leer: 'book', jugarpc: 'game', buscartrabajo: 'briefcase', deberes: 'pencil', juguetes: 'ball', invitar: 'phone', pizza: 'pizza', adoptar: 'baby', regar: 'leaf', pagar: 'receipt' };
+export const ACTION_IC = { medico: 'heart', picar: 'food', cocinar: 'food', dormir: 'moon', relajarse: 'sofa', siesta: 'moon', vater: 'toilet', ducha: 'drop', tele: 'tv', bailar: 'music', leer: 'book', jugarpc: 'game', buscartrabajo: 'briefcase', deberes: 'pencil', juguetes: 'ball', invitar: 'phone', pizza: 'pizza', adoptar: 'baby', regar: 'leaf', pagar: 'receipt' };
 export const SOCIAL_IC = { charlar: 'chat', chiste: 'smile', halagar: 'star', abrazar: 'users', desahogarse: 'cloud', discutir: 'zap', coquetear: 'sparkle', besar: 'heart', pedirsalir: 'heart', casarse: 'ring', romper: 'heartbreak', intimidad: 'hearts', bebe: 'baby', mudarse: 'home', consolar: 'users', jugarnino: 'ball', despedir: 'logout', biberon: 'bottle', panal: 'drop', acunar: 'heart' };
 for (const [k, v] of Object.entries(ACTION_IC)) ACTIONS[k].ic = v;
 for (const [k, v] of Object.entries(SOCIAL_IC)) SOCIALS[k].ic = v;
@@ -316,7 +318,7 @@ MOODLETS.visita = { label: 'Buena visita', mood: 10, dur: 360 };
 ACTIONS.salir = { label: 'Salir (parque, cine…)', icon: '🚶', dur: 3, ages: ['adulto', 'anciano'], ui: 'outing', ic: 'pin' };
 ACTIONS.mascota = { label: 'Adoptar mascota (200 €)', icon: '🐾', dur: 5, ages: ['adulto', 'anciano'], ui: 'pet', ic: 'heart' };
 ACTIONS.carta = { label: 'Escribir carta al futuro', icon: '✉️', dur: 30, ages: ['adulto', 'anciano'], ui: 'letter', ic: 'pencil' };
-OBJECTS.telefono.acts.push('salir', 'mascota');
+OBJECTS.telefono.acts.push('salir', 'mascota', 'medico');
 OBJECTS.ordenador.acts.push('carta');
 Object.assign(MOODLETS, {
   aire_libre: { label: 'Un día al aire libre', mood: 10, dur: 360 },

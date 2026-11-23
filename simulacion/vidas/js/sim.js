@@ -896,6 +896,7 @@ function needMult(s, n) {
   let m = 1;
   for (const t of s.traits) m *= TRAITS[t]?.decay?.[n] || 1;
   for (const r of s.rewards || []) m *= REWARDS[r]?.decay?.[n] || 1;
+  if (s.worries?.includes('resfriado') && (n === 'energia' || n === 'higiene')) m *= 1.4; // resfriado: cansa y hay que ducharse más
   return m;
 }
 // ---------- habilidades ----------
@@ -1052,6 +1053,8 @@ function runObj(state, s, c, dt) {
     }
     if (a.resolves) {
       resolveWorry(state, s, a.resolves);
+      // el médico atiende a toda la familia que esté en casa
+      if (a.resolves === 'resfriado') for (const o of householdSims(state)) if (o !== s && o.location === 'casa') resolveWorry(state, o, 'resfriado');
       if (a.resolves === 'deberes' && s.school) s.school.grade = clamp(s.school.grade + 6);
     }
     interrupt(state, s);
@@ -1513,6 +1516,8 @@ function hourly(state, offline) {
     if (s.worries.includes('casa_fea') && decor >= 12) resolveWorry(state, s, 'casa_fea');
     if (s.worries.includes('sin_trabajo') && s.job) resolveWorry(state, s, 'sin_trabajo');
     if (s.worries.includes('miedo') && h >= 8 && h < 20 && Math.random() < 0.3) resolveWorry(state, s, 'miedo');
+    // dormir bien en una cama cura el resfriado poco a poco
+    if (s.worries.includes('resfriado') && s.cur?.act === 'dormir' && Math.random() < 0.2) resolveWorry(state, s, 'resfriado');
   }
   if (offline) return;
   // nuevas preocupaciones
@@ -1527,6 +1532,10 @@ function hourly(state, offline) {
     if (s.age === 'adulto' && !s.job && state.money < 3000) c.push('sin_trabajo');
     if (decor < 8) c.push('casa_fea');
     if (s.age === 'nino' && h >= 19) c.push('miedo', 'miedo');
+    // resfriados: más fácil si está agotado o sin duchar, y se contagian en casa
+    if (s.needs.energia < 25 || s.needs.higiene < 25) c.push('resfriado', 'resfriado');
+    if (householdSims(state).some((o) => o !== s && o.worries.includes('resfriado'))) c.push('resfriado');
+    if (Math.random() < 0.15) c.push('resfriado');
     if (c.length) addWorry(state, s, pick(c));
   }
   checkAspirations(state);
