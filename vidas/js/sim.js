@@ -133,7 +133,7 @@ export function newGame(familyDefs, surname) {
   const state = {
     v: SAVE_VERSION, nextId: 1, time: 8 * 60, speed: 1, money: 4000, lastSaved: Date.now(), powerOff: false,
     bills: [], household: [], active: null, sims: {}, objects: [], lastHour: 8, lastDay: 0,
-    settings: { autonomy: 'baja', aging: true }, surname: surname || 'Familia',
+    settings: { autonomy: 'total', aging: true, autoV2: true }, surname: surname || 'Familia',
   };
   state.house = randomHouse();
   ensureWalls(state);
@@ -1168,12 +1168,16 @@ const NEED_ACTS = {
   hambre: ['cocinar', 'picar'], energia: ['dormir', 'siesta'], higiene: ['ducha'], vejiga: ['vater'],
   diversion: ['tele', 'jugarpc', 'juguetes', 'bailar', 'leer', 'relajarse'],
 };
+// Nivel de autonomía efectivo: 'total' (hacen su vida), 'normal' o 'baja'.
+// Si no estás (app cerrada o sin tocar la pantalla un rato) siempre hacen su vida.
+export const autonomyLevel = (state) => (state._away ? 'total' : state.settings.autonomy || 'total');
 function autonomy(state, s) {
   if (state.time < s.nextThink) return;
   s.nextThink = state.time + 5 + Math.random() * 5;
   const npc = !s.home;
   if (npc) return npcThink(state, s);
-  const low = state.settings.autonomy !== 'normal';
+  if (autonomyLevel(state) === 'total') return lifeThink(state, s);
+  const low = autonomyLevel(state) !== 'normal';
   const thr = low ? 18 : 45;
   if (low && Math.random() < 0.35) return;
   const h = hourOf(state.time);
@@ -1196,6 +1200,88 @@ function autonomy(state, s) {
   }
   if (!low && Math.random() < 0.3) { const t = randomFreeTile(state); queueGo(state, s, t.x, t.y); }
 }
+// ---------- vida propia ----------
+const wchoice = (opts) => { const t = opts.reduce((a, o) => a + Math.max(0, o.w), 0); if (t <= 0) return null; let r = Math.random() * t; for (const o of opts) { r -= Math.max(0, o.w); if (r <= 0) return o; } return null; };
+const freeAt = (state, s, mins) => { const sch = scheduleOf(s); if (!sch || dowOf(state.time) > 4) return true; const h = hourOf(state.time); return h + mins / 60 + 0.5 < sch.start || h >= sch.end; };
+function objFor(state, s, act) { return state.objects.find((o) => OBJECTS[o.type].acts.includes(act) && objectActions(state, s, o).some((a) => a.id === act && !a.disabled)); }
+function bestCareer(s) {
+  const sk = s.skills || {};
+  if (s.aspiration === 'artista' || (sk.creatividad || 0) >= 3) return 'arte';
+  if ((sk.cocina || 0) >= 3) return 'cocina';
+  if ((sk.logica || 0) >= 3) return pick(['oficina', 'medicina']);
+  return pick(Object.keys(CAREERS));
+}
+function lifeThink(state, s) {
+  const h = hourOf(state.time), day = dayOf(state.time), adult = isAdult(s);
+  const fam = householdSims(state);
+  // 1. necesidades urgentes y dormir de noche
+  const urgent = NEEDS.filter((n) => s.needs[n] < 35 && n !== 'energia').sort((a, b) => s.needs[a] - s.needs[b]);
+  for (const n of urgent) if (tryNeed(state, s, n)) return;
+  if ((h >= 23 || h < 7 || s.needs.energia < 25) && s.needs.energia < 85) { if (tryNeed(state, s, 'energia')) return; }
+  // 2. cuidar de bebés, niños asustados y mascotas
+  if (adult) {
+    const baby = fam.find((b) => b.age === 'bebe' && b.location === 'casa' && Math.min(b.needs.hambre, b.needs.higiene, b.needs.social) < 50 && !b.cur);
+    if (baby) { const n = ['hambre', 'higiene', 'social'].sort((x, y) => baby.needs[x] - baby.needs[y])[0]; return queueSocial(state, s, { hambre: 'biberon', higiene: 'panal', social: 'acunar' }[n], baby.id); }
+    const scared = fam.find((k) => k.worries.includes('miedo') && k.location === 'casa' && !busyReason(state, k));
+    if (scared) return queueSocial(state, s, 'consolar', scared.id);
+    const pet = (state.pets || []).find((p) => !p.out && !p.sleeping && !p.busy && Math.min(...Object.values(p.needs)) < 45);
+    if (pet) { const n = Object.entries(pet.needs).sort((a, b) => a[1] - b[1])[0][0]; return queuePet(state, s, { hambre: 'comer', carino: 'acariciar', diversion: 'jugar' }[n], pet.id); }
+    // 3. asuntos de la casa: facturas y trabajo
+    if (state.bills.length && state.bills.some((b) => day - b.day >= 1) && state.money >= billsTotal(state) && !fam.some((o) => o.cur?.act === 'pagar' || o.queue.some((q) => q.act === 'pagar'))) {
+      const box = state.objects.find((o) => o.type === 'buzon'); if (box) return queueObject(state, s, 'pagar', box.id);
+    }
+    if (s.age === 'adulto' && !s.job && s.jobSearchDay !== day && (state.money < 6000 || s.aspiration === 'carrera')) { s.jobSearchDay = day; setJob(state, s, bestCareer(s)); return; }
+  }
+  if (s.worries.includes('deberes') && h >= 14 && h < 22) { const pc = objFor(state, s, 'deberes'); if (pc) return queueObject(state, s, 'deberes', pc.id); }
+  if (s.worries.includes('estres') || s.worries.includes('soledad')) {
+    const friend = fam.find((o) => o !== s && o.age !== 'bebe' && !busyReason(state, o) && getRel(s, o).a >= 15);
+    if (friend) return queueSocial(state, s, s.worries.includes('estres') ? 'desahogarse' : 'charlar', friend.id);
+  }
+  // 4. necesidades no urgentes
+  const needs = NEEDS.filter((n) => s.needs[n] < 55 && n !== 'social' && n !== 'diversion').sort((a, b) => s.needs[a] - s.needs[b]);
+  for (const n of needs) if (tryNeed(state, s, n)) return;
+  // 5. tiempo libre: según aspiración, personalidad y ánimo
+  const weekend = dowOf(state.time) >= 5, daytime = h >= 10 && h <= 20, rain = ['lluvia', 'nieve'].includes(weatherOf(state).type);
+  const others = fam.filter((o) => o !== s && o.age !== 'bebe' && o.location === 'casa' && !busyReason(state, o));
+  const partner = s.partner && state.sims[s.partner];
+  const trait = (t) => s.traits.includes(t);
+  const fun = 100 - s.needs.diversion, soc = 100 - s.needs.social;
+  const opts = [
+    { w: 1 + fun / 30 + (trait('jugueton') ? 1 : 0), go: () => tryNeed(state, s, 'diversion') },
+    { w: objFor(state, s, 'pintar') ? (s.aspiration === 'artista' ? 4 : (s.skills?.creatividad || 0) > 2 ? 2 : 0.6) : 0, go: () => { const o = objFor(state, s, 'pintar'); return o && (queueObject(state, s, 'pintar', o.id), true); } },
+    { w: s.aspiration === 'carrera' || s.aspiration === 'social' ? 1.5 : 0.6, go: () => { const o = objFor(state, s, 'leer'); return o && (queueObject(state, s, 'leer', o.id), true); } },
+    { w: adult && s.needs.hambre < 80 ? 1 : 0, go: () => { const o = objFor(state, s, 'cocinar'); return o && (queueObject(state, s, 'cocinar', o.id), true); } },
+    { w: others.length ? 1 + soc / 25 + (trait('sociable') ? 1.5 : 0) - (trait('solitario') ? 1 : 0) : 0, go: () => {
+      const o = partner && others.includes(partner) && Math.random() < 0.5 ? partner : pick(others);
+      const rel = getRel(s, o); let act = pick(['charlar', 'charlar', 'chiste', 'halagar']);
+      if (rel.a > 40 && Math.random() < 0.3) act = 'abrazar';
+      if (o === partner && Math.random() < 0.4) act = rel.r > 40 ? 'besar' : 'coquetear';
+      if (o.age === 'nino' || s.age === 'nino') act = Math.random() < 0.5 ? 'jugarnino' : 'charlar';
+      if (socialReq(state, s, o, act, SOCIALS[act]) !== true) act = 'charlar';
+      queueSocial(state, s, act, o.id); return true; } },
+    { w: partner && others.includes(partner) && adult && h >= 21 && h < 24 && getRel(s, partner).r >= 60 ? 0.5 : 0, go: () => {
+      const wantBaby = (s.aspiration === 'familia' || partner.aspiration === 'familia') && socialReq(state, s, partner, 'bebe', SOCIALS.bebe) === true;
+      const act = wantBaby ? 'bebe' : 'intimidad'; if (socialReq(state, s, partner, act, SOCIALS[act]) !== true) return false;
+      queueSocial(state, s, act, partner.id); return true; } },
+    { w: adult && daytime && freeAt(state, s, 150) ? (weekend ? 1.4 : 0.45) : 0, go: () => {
+      let dest = s.needs.hambre < 60 ? 'restaurante' : (s.skills?.forma || 0) < 3 && Math.random() < 0.3 ? 'gimnasio' : rain ? 'cine' : pick(['parque', 'cine', 'parque']);
+      const O = OUTINGS[dest]; const group = [s];
+      for (const o of others) if ((o === partner || o.age === 'nino') && Math.random() < 0.7 && freeAt(state, o, O.dur)) group.push(o);
+      if (state.money < O.cost * group.length + 200) dest = 'parque';
+      return startOuting(state, group, dest); } },
+    { w: adult && daytime && h < 21 ? 0.4 + (trait('sociable') ? 0.4 : 0) : 0, go: () => {
+      const friends = neighbors(state).filter((n) => n.location === 'fuera' && whereIs(state, n) === 'en su casa' && getRel(s, n).a >= 15);
+      if (friends.length && freeAt(state, s, 120) && Math.random() < 0.5) return startOuting(state, [s], 'visita', pick(friends).id);
+      const anyone = neighbors(state).filter((n) => n.location === 'fuera' && getRel(s, n).a >= 0);
+      if (anyone.length && !neighbors(state).some((n) => n.location === 'casa' || n.pendingVisit)) { inviteNeighbor(state, pick(anyone).id, true); return true; }
+      return false; } },
+    { w: adult && (state.pets || []).some((p) => p.species === 'perro' && !p.out && !p.sleeping && p.needs.diversion < 75) && daytime && !rain ? 0.7 : 0, go: () => { const p = state.pets.find((q) => q.species === 'perro' && !q.out); queuePet(state, s, 'pasear', p.id); return true; } },
+    { w: (state.pets || []).length ? 0.4 : 0, go: () => { const p = pick(state.pets.filter((q) => !q.out && !q.sleeping)); if (!p) return false; queuePet(state, s, pick(['acariciar', 'jugar']), p.id); return true; } },
+    { w: 0.5, go: () => { const t = randomFreeTile(state); queueGo(state, s, t.x, t.y); return true; } },
+  ];
+  for (let i = 0; i < 3; i++) { const o = wchoice(opts); if (!o) return; if (o.go()) return; o.w = 0; }
+}
+
 function tryNeed(state, s, n) {
   if (n === 'social') {
     const others = visibleSims(state).filter((o) => o !== s && o.age !== 'bebe' && !busyReason(state, o));
@@ -1450,7 +1536,7 @@ function hourly(state, offline) {
   deliverLetters(state);
   if (['lluvia', 'nieve'].includes(weatherOf(state).type) && h >= 9 && h <= 21) for (const s of householdSims(state)) if (s.location === 'casa' && s.age !== 'bebe' && Math.random() < 0.3) addMoodlet(s, s.needs.diversion > 50 ? 'acogedor' : 'gris');
   // sucesos inesperados (como mucho uno al día)
-  if (h >= 10 && h <= 21 && state.lastEventDay !== day && Math.random() < 0.05) {
+  if (!state._away && h >= 10 && h <= 21 && state.lastEventDay !== day && Math.random() < 0.05) {
     const ev = pickEvent(state);
     if (ev) { state.lastEventDay = day; state.pendingEvent = ev; emit('choice', { event: ev }); }
   }
@@ -1517,10 +1603,10 @@ export function arriveVisitor(state, n, why = 'ha venido de visita') {
   n.nextThink = 0;
   toast(`🔔 ${n.name} ${why}`, 'info', n.id);
 }
-export function inviteNeighbor(state, id) {
+export function inviteNeighbor(state, id, quiet = false) {
   const n = state.sims[id]; if (!n || n.location === 'casa') return;
   const h = hourOf(state.time);
-  if (h >= 22 || h < 8) return toast(`${n.name} dice que es muy tarde. Mejor mañana.`, 'warn');
+  if (h >= 22 || h < 8) return quiet ? null : toast(`${n.name} dice que es muy tarde. Mejor mañana.`, 'warn');
   if (getRel(n, state.sims[state.active] || n).a < -30) return toast(`${n.name} no quiere venir`, 'warn');
   n.pendingVisit = state.time + 30;
   toast(`📞 ${n.name} vendrá en un rato`, 'info');
@@ -1556,52 +1642,29 @@ export function processPendingVisits(state) {
 // ---------- progreso con la app cerrada ----------
 export function offlineProgress(state, ms) {
   // con reloj real pasa el mismo tiempo que en la vida (máx. 3 días); si no, 6 min de juego por minuto real (máx. 2 días)
-  let mins = state.settings?.realTime ? Math.min(ms / 60000, 3 * 1440) : Math.min((ms / 1000) * 0.1, 2 * 1440);
+  const mins = state.settings?.realTime ? Math.min(ms / 60000, 3 * 1440) : Math.min((ms / 1000) * 0.1, 2 * 1440);
   if (mins < 10) return null;
-  const startMoney = state.money;
-  state._offlineLog = [];
-  for (const s of Object.values(state.sims)) {
-    interrupt(state, s); s.queue = []; s.path = [];
-    if (!s.home && s.location === 'casa') s.location = 'fuera';
-  }
-  for (const o of state.objects) o.users = [];
+  const startMoney = state.money, startMem = (state.memories || []).length;
+  const keep = drainEvents(); const log = []; const seen = new Set(); const letters = [];
+  const wasAway = state._away; state._away = true;
+  // se simula de verdad: hacen su vida con total autonomía
   let left = mins;
   while (left > 0) {
-    const dt = Math.min(10, left); left -= dt;
-    state.time += dt; globalThis.__simTime = state.time;
-    const hour = Math.floor(state.time / 60);
-    while (state.lastHour < hour) { state.lastHour++; hourly(state, true); }
-    for (const s of householdSims(state)) {
-      const floor = s.age === 'bebe' ? 30 : 20;
-      const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
-      const before = {}; list.forEach((n) => (before[n] = s.needs[n]));
-      updateNeeds(state, s, dt, 0.5);
-      list.forEach((n) => { if (s.needs[n] < floor) s.needs[n] = Math.min(before[n], Math.max(s.needs[n], floor)); });
-      const sch = scheduleOf(s);
-      const d = dayOf(state.time), h = hourOf(state.time);
-      const logWork = (r) => {
-        if (r.pay) state._offlineLog.push(`${s.name} fue a trabajar (+${r.pay} €)`);
-        else if (s.age === 'nino') state._offlineLog.push(`${s.name} fue al cole`);
-      };
-      if (s.location === 'salida') { s.location = 'casa'; s.outing = null; }
-      if (s.location === 'trabajo' || s.location === 'escuela') {
-        if (!sch) s.location = 'casa';
-        else if (h >= sch.end || d !== s.workedDay) logWork(finishWork(state, s, true));
-      } else if (sch && dowOf(state.time) <= 4 && h >= sch.end && s.workedDay !== d && s.missedDay !== d && h - dt / 60 < sch.end) {
-        s.workedDay = d; s.late = false; s.location = 'trabajo';
-        logWork(finishWork(state, s, true));
-      }
+    const dt = Math.min(2, left); left -= dt; tick(state, dt);
+    for (const e of drainEvents()) {
+      if (e.type === 'letter') letters.push(e.letter);
+      if (e.type !== 'toast' || !['good', 'bad', 'worry'].includes(e.kind)) continue;
+      const t = e.msg.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim();
+      const key = t.replace(/[0-9]+/g, '#'); if (seen.has(key)) continue; seen.add(key); log.push(t);
     }
   }
-  for (const p of state.pets || []) { p.out = 0; p.path = []; for (const n in p.needs) p.needs[n] = Math.max(25, p.needs[n] - mins / 60 * 2); const t = randomFreeTile(state); p.x = t.x; p.y = t.y; }
+  state._away = wasAway;
   if (state.settings?.realTime) syncRealTime(state);
-  for (const s of householdSims(state)) {
-    if (s.location === 'casa' && s.age !== 'bebe') { const p = randomFreeTile(state); s.x = p.x; s.y = p.y; }
-    s.mood = computeMood(state, s);
-  }
-  const log = state._offlineLog; delete state._offlineLog;
+  for (const e of keep) events.push(e);
+  const newMem = (state.memories || []).slice(0, (state.memories || []).length - startMem).map((m) => m.text);
   if (state.bills.length) log.push(`Hay ${billsTotal(state)} € en facturas pendientes`);
-  return { mins, money: state.money - startMoney, log };
+  for (const L of letters) events.push({ type: 'letter', letter: L });
+  return { mins, money: state.money - startMoney, log: log.slice(-14), memories: newMem.slice(0, 6) };
 }
 
 // ---------- guardado ----------

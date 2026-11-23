@@ -71,6 +71,7 @@ class Game {
   loadState(saved) {
     if (!saved || saved.v !== 1) return this.showTitle();
     Sim.ensureWalls(saved);
+    if (!saved.settings.autoV2) { saved.settings.autonomy = 'total'; saved.settings.autoV2 = true; } // ahora hacen su vida por defecto
     if (saved.pendingEvent) setTimeout(() => this.ui.chooseEvent(saved.pendingEvent), 800);
     this.demo = null; this.state = saved;
     globalThis.__simTime = saved.time;
@@ -87,7 +88,7 @@ class Game {
     u.info(`Bienvenida, familia ${surname}`,
       `<ul>${u.li('user', 'Toca a alguien de tu familia (abajo) para controlarle.')}
       ${u.li('pin', 'Toca muebles, personas o el suelo para darle órdenes.')}
-      ${u.li('alert', 'Tienen <b>poca autonomía</b>: si no les atiendes, lo pasarán mal. Puedes cambiarlo en el Menú.')}
+      ${u.li('heart', 'Tienen <b>vida propia</b>: se cuidan, trabajan, salen y persiguen sus sueños aunque no estés. Tú decides cuando quieras.')}
       ${u.li('phone', 'Busca trabajo en el teléfono, paga las facturas en el buzón e invita a gente.')}</ul>`, 'A jugar');
   }
   afterStart() {
@@ -438,6 +439,9 @@ class Game {
     }
     const st = this.state;
     if (st) {
+      // si no estás (un minuto sin tocar la pantalla), hacen su vida por su cuenta
+      const away = t - this.lastInput > 60000;
+      if (away !== !!st._away) { st._away = away; if (!away && st.settings.autonomy !== 'total') this.ui.toast('Has vuelto: vuelves a llevar tú el control', 'info'); }
       let dt = st.settings.realTime ? dtReal / 60 : dtReal * SPEEDS[st.speed]; // con reloj real, 1 minuto de juego por minuto
       if (!document.getElementById('modal').hidden) dt = 0;
       while (dt > 0) { const step = Math.min(dt, 1.5); Sim.tick(st, step); dt -= step; }

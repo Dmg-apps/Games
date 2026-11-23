@@ -442,11 +442,12 @@ export class UI {
   renderMenu() {
     const st = this.state; const body = $('#sheet .sheet-body');
     body.innerHTML = `
-      <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="baja">Baja · estate pendiente</button><button data-v="normal">Normal</button></div></div>
+      <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="total">Hacen su vida</button><button data-v="normal">Normal</button><button data-v="baja">Baja · estate pendiente</button></div>
+        <p class="hint">Con «Hacen su vida» se cuidan solos, trabajan, salen, ven a los vecinos y persiguen sus sueños; tú decides cuando quieras. Sea cual sea la opción, si dejas el móvil un minuto o cierras la app, siguen con su vida.</p></div>
       <div class="field"><label>Reloj</label><div class="seg" id="rt"><button data-v="0">Tiempo de juego</button><button data-v="1">Reloj real</button></div>
         <p class="hint">Con el reloj real el juego va a tu misma hora: si es de noche donde estás, tu familia duerme. El tiempo avanza como en la vida (sin acelerar).</p></div>
       <div class="field"><label>Envejecimiento</label><div class="seg" id="age"><button data-v="1">Activado</button><button data-v="0">Desactivado</button></div></div>
-      <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y las necesidades nunca llegan a cero.</p>
+      <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y tu familia sigue con su vida: al volver te contamos qué han hecho.</p>
       <div class="field"><label>Calidad gráfica</label><div class="seg" id="qual"><button data-v="ligera">Ligera (2D)</button><button data-v="equilibrada">Equilibrada</button><button data-v="alta">Alta</button></div>
         <p class="hint">Si el móvil se calienta o va lento, usa Ligera o Equilibrada. Cambiarla recarga el juego (la partida se guarda).</p></div>
       <div class="sec">${icon('bell')} Notificaciones</div><div id="notif"></div>
@@ -525,12 +526,13 @@ export class UI {
       const bad = list.filter((n) => s.needs[n] < 35);
       if (bad.length) low.push(`<b>${esc(s.name)}</b> necesita: ${bad.map((n) => NEED_INFO[n].label.toLowerCase()).join(', ')}`);
     }
-    let html = `<p>Han pasado <b>${hrs} h</b> de juego mientras no estabas.</p><ul>`;
+    let html = `<p>Han pasado <b>${hrs} h</b> de juego y tu familia ha seguido con su vida:</p><ul>`;
     if (sum.money) html += this.li('coin', `Dinero: <b>${sum.money > 0 ? '+' : ''}${sum.money} €</b>`);
+    for (const m of sum.memories || []) html += this.li('star', esc(m));
     for (const l of sum.log) html += this.li('bell', esc(noEmoji(l)));
     for (const l of low) html += this.li('alert', l);
     html += '</ul>';
-    this.info('Has vuelto', html, 'Seguir jugando');
+    this.info('Mientras no estabas…', html, 'Seguir jugando');
   }
   chooseJob(simId) {
     const st = this.state; const s = st.sims[simId];
