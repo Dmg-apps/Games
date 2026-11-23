@@ -26,7 +26,7 @@ export function info(title, html, btn = 'Vale', cb) {
   box.querySelector('#m_ok').onclick = () => { closeModal(); cb && cb(); };
 }
 export function confirm(text, yes) {
-  const box = modal(`<h2>¿Seguro?</h2><p>${esc(text)}</p><div class="actions"><button class="btn alt" id="m_no">Cancelar</button><button class="btn coral" id="m_yes">Sí</button></div>`);
+  const box = modal(`<h2>¿Lo confirmas?</h2><p>${esc(text)}</p><div class="actions"><button class="btn alt" id="m_no">Cancelar</button><button class="btn coral" id="m_yes">Sí</button></div>`);
   box.querySelector('#m_no').onclick = closeModal; box.querySelector('#m_yes').onclick = () => { closeModal(); yes(); };
 }
 // Hoja inferior reutilizable

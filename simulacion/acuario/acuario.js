@@ -349,7 +349,7 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else { save(); info('Bienvenida a Arrecife', `<p>Tu tienda de peces acaba de abrir.</p><ul style="padding-left:18px;line-height:1.6"><li>Toca un <b>acuario</b> para ver sus peces, darles de comer, limpiar y decorar.</li><li><b>Cría</b> un macho y una hembra: las crías mezclan rasgos y a veces salen variedades nuevas.</li><li>Completa el <b>álbum</b> de ${TOTAL_COMBOS} variedades.</li><li>Atiende a los <b>clientes</b>: piden peces concretos y pagan bien.</li></ul>`, '¡A abrir la tienda!'); }
+if (store.load(KEY)) offline(); else { save(); info('Te damos la bienvenida a Arrecife', `<p>Tu tienda de peces acaba de abrir.</p><ul style="padding-left:18px;line-height:1.6"><li>Toca un <b>acuario</b> para ver sus peces, darles de comer, limpiar y decorar.</li><li><b>Cría</b> un macho y una hembra: las crías mezclan rasgos y a veces salen variedades nuevas.</li><li>Completa el <b>álbum</b> de ${TOTAL_COMBOS} variedades.</li><li>Atiende a los <b>clientes</b>: piden peces concretos y pagan bien.</li></ul>`, '¡A abrir la tienda!'); }
 if (!st.requests.length) newRequest();
 hud();
 window.reef = { eng, get st() { return st; } };

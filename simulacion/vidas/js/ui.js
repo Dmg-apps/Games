@@ -249,7 +249,7 @@ export class UI {
       const lk = body.querySelector('#nlook'); if (lk) lk.onclick = () => this.editLook(s);
       body.querySelectorAll('[data-rw]').forEach((b) => (b.onclick = () => { const r = REWARDS[b.dataset.rw]; this.confirm(`¿Canjear ${r.cost} puntos por «${r.label}»? ${r.desc}.`, () => { if (Sim.buyReward(st, s, b.dataset.rw)) { this.sig = ''; this.renderNeeds(); } }); }));
       const sk = body.querySelector('#nskip'); if (sk) sk.onclick = () => { Sim.skipToday(st, s); this.toast(`${s.name} se queda hoy en casa (bajará su rendimiento)`, 'warn', s.id); this.sig = ''; };
-      const q = body.querySelector('#nquit'); if (q) q.onclick = () => this.confirm(`¿Seguro que ${s.name} deja su trabajo?`, () => { Sim.setJob(st, s, null); this.sig = ''; });
+      const q = body.querySelector('#nquit'); if (q) q.onclick = () => this.confirm(`¿Confirmas que ${s.name} deja su trabajo?`, () => { Sim.setJob(st, s, null); this.sig = ''; });
     }
     const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
     for (const n of list) { const i = body.querySelector(`i[data-n="${n}"]`); if (i) { i.style.transform = `scaleX(${s.needs[n] / 100})`; i.style.backgroundColor = s.needs[n] < 20 ? '#e5484d' : NEED_COLOR[n]; } }
@@ -413,7 +413,7 @@ export class UI {
     if (v.wallTool) {
       const how = { wall: `Arrastra el dedo por los bordes del suelo · ${Sim.WALL_PRICE} € por tramo`, door: `Toca una pared para poner o quitar una puerta · ${Sim.DOOR_PRICE} €`, window: `Toca una pared para poner o quitar una ventana · ${WINDOW_PRICE} €`, erase: 'Toca una pared o puerta para quitarla' }[v.wallTool];
       info = `${icon('box')} ${how}`;
-      acts = [btn('box', 'Pared', () => this.g.setWallTool('wall'), v.wallTool === 'wall' ? 'primary' : ''), btn('logout', 'Puerta', () => this.g.setWallTool('door'), v.wallTool === 'door' ? 'primary' : ''), btn('sun', 'Ventana', () => this.g.setWallTool('window'), v.wallTool === 'window' ? 'primary' : ''), btn('trash', 'Quitar', () => this.g.setWallTool('erase'), v.wallTool === 'erase' ? 'red' : ''), btn('check', 'Listo', () => this.g.setWallTool(null))];
+      acts = [btn('box', 'Pared', () => this.g.setWallTool('wall'), v.wallTool === 'wall' ? 'primary' : ''), btn('logout', 'Puerta', () => this.g.setWallTool('door'), v.wallTool === 'door' ? 'primary' : ''), btn('sun', 'Ventana', () => this.g.setWallTool('window'), v.wallTool === 'window' ? 'primary' : ''), btn('trash', 'Quitar', () => this.g.setWallTool('erase'), v.wallTool === 'erase' ? 'red' : ''), btn('check', 'Hecho', () => this.g.setWallTool(null))];
     } else if (v.ghost) {
       const d = OBJECTS[v.ghost.type];
       info = `${icon(OBJ_IC[v.ghost.type] || 'box')} <b>${d.name}</b>${v.ghost.mode === 'new' ? ` · ${d.price} €` : ''} · toca el suelo`;
@@ -507,7 +507,7 @@ export class UI {
   modal(html) { const m = $('#modal'); m.hidden = false; const box = m.querySelector('.modal-box'); box.innerHTML = html; box.scrollTop = 0; return box; }
   closeModal() { $('#modal').hidden = true; }
   confirm(text, yes) {
-    const box = this.modal(`<h2>¿Seguro?</h2><p>${esc(text)}</p><div class="actions"><button class="btn alt" id="cno">Cancelar</button><button class="btn coral" id="cyes">Sí</button></div>`);
+    const box = this.modal(`<h2>¿Lo confirmas?</h2><p>${esc(text)}</p><div class="actions"><button class="btn alt" id="cno">Cancelar</button><button class="btn coral" id="cyes">Sí</button></div>`);
     box.querySelector('#cno').onclick = () => this.closeModal();
     box.querySelector('#cyes').onclick = () => { this.closeModal(); yes(); };
   }
@@ -607,14 +607,14 @@ export class UI {
     const st = this.state; const rec = L.to === 'familia' ? 'toda la familia' : st.sims[L.to]?.name;
     this.info('Una carta del pasado', `<p class="hint">De ${esc(L.fromName)} para ${esc(rec || '')} · escrita el día ${Sim.dayOf(L.t) + 1}</p><div class="letter">${esc(L.text).replace(/\n/g, '<br>')}</div>`, 'Guardarla en el corazón');
   }
-  confirmAdopt() { this.confirm('Adoptar un bebé cuesta 1000 €. ¿Seguro?', () => Sim.adoptBaby(this.state)); }
+  confirmAdopt() { this.confirm('Adoptar un bebé cuesta 1000 €. ¿Lo confirmas?', () => Sim.adoptBaby(this.state)); }
   nameBaby(babyId, adopted) {
     const st = this.state; const b = st.sims[babyId]; if (!b) return;
     const prevSpeed = st.speed; this.g.setSpeed(0);
     const box = this.modal(`<h2>${adopted ? '¡Habéis adoptado!' : '¡Ha nacido un bebé!'}</h2><div class="preview"><canvas></canvas></div>
       <div class="field"><label>Nombre</label><input type="text" id="bn" maxlength="14" value="${esc(b.name)}" autocomplete="off" enterkeyhint="done"></div>
       <div class="field"><label>Género</label><div class="seg" id="bg">${Object.entries(GENDERS).map(([k, g]) => `<button data-v="${k}">${g.label}</button>`).join('')}</div></div>
-      <p class="hint">Necesitará una cuna, biberón, pañales limpios y muchos mimos.</p><div class="actions"><button class="btn coral" id="bok">Listo</button></div>`);
+      <p class="hint">Necesitará una cuna, biberón, pañales limpios y muchos mimos.</p><div class="actions"><button class="btn coral" id="bok">Hecho</button></div>`);
     drawPortrait(box.querySelector('canvas'), b, 110);
     const seg = box.querySelector('#bg');
     const mark = () => seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.v === b.gender));

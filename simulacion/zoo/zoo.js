@@ -537,6 +537,6 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else info('Bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
+if (store.load(KEY)) offline(); else info('Te damos la bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
 hud();
 window.zoo = { eng, THREE, get st() { return st; }, get visitors() { return visitors; } };

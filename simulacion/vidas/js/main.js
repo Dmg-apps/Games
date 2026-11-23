@@ -85,7 +85,7 @@ class Game {
     globalThis.__simTime = this.state.time;
     this.afterStart();
     const u = this.ui;
-    u.info(`Bienvenida, familia ${surname}`,
+    u.info(`Te damos la bienvenida, familia ${surname}`,
       `<ul>${u.li('user', 'Toca a alguien de tu familia (abajo) para controlarle.')}
       ${u.li('pin', 'Toca muebles, personas o el suelo para darle órdenes.')}
       ${u.li('heart', 'Tienen <b>vida propia</b>: se cuidan, trabajan, salen y persiguen sus sueños aunque no estés. Tú decides cuando quieras.')}
