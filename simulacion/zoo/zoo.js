@@ -1,7 +1,7 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
-import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST } from './data.js';
+import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -118,7 +118,7 @@ function visitorsTick(dt) {
 
 // ---------- animales ----------
 function addAnimal(sp, e, baby = false) {
-  const a = { id: id(), sp, enc: e.id, x: e.x + rnd(0.5, e.n - 0.5), z: e.z + rnd(0.5, e.n - 0.5), tx: null, tz: null, hunger: 80, happy: 70, sex: Math.random() < 0.5 ? 'm' : 'f', baby, born: st.time, name: '' };
+  const a = { id: id(), sp, enc: e.id, x: e.x + rnd(0.5, e.n - 0.5), z: e.z + rnd(0.5, e.n - 0.5), tx: null, tz: null, hunger: 80, happy: 70, sex: Math.random() < 0.5 ? 'm' : 'f', baby, born: st.time, name: pick(ANIMAL_NAMES), state: 'wander' };
   st.animals.push(a); return a;
 }
 function animalsTick(dt) {
@@ -127,20 +127,43 @@ function animalsTick(dt) {
     a.happy += (animalHappy(a) - a.happy) * Math.min(1, 0.02 * dt);
     if (a.baby && st.time - a.born > 4 * 1440) { a.baby = false; toast(`La cría de ${SPECIES[a.sp].label.toLowerCase()} ya es adulta`, 'good', 'paw'); }
     const e = st.enclosures.find((q) => q.id === a.enc); if (!e) continue;
-    if (a.tx == null || (Math.abs(a.tx - a.x) < 0.05 && Math.abs(a.tz - a.z) < 0.05)) {
-      if (!a.restUntil || st.time > a.restUntil) { if (Math.random() < 0.5) { a.restUntil = st.time + rnd(5, 25); a.tx = a.x; a.tz = a.z; } else { a.tx = e.x + rnd(0.6, e.n - 0.6); a.tz = e.z + rnd(0.6, e.n - 0.6); } }
-    } else {
+    if (a.preg && st.time >= a.preg.until) { a.preg = null; const b = addAnimal(a.sp, e, true); b.mother = a.id; b.x = a.x + 0.2; b.z = a.z + 0.2; toast(`¡${a.name} (${SPECIES[a.sp].label.toLowerCase()}) ha tenido una cría!`, 'good', 'heart'); }
+    const arrived = a.tx == null || (Math.abs(a.tx - a.x) < 0.05 && Math.abs(a.tz - a.z) < 0.05);
+    if (a.state === 'eat' && arrived) a.hunger = clamp(a.hunger + 1.2 * dt);
+    if (arrived && (!a.restUntil || st.time > a.restUntil)) decide(a, e);
+    if (!arrived) {
       const S = SPECIES[a.sp]; const sp = (S.hop ? 1.4 : 0.9) * dt * (a.baby ? 0.8 : 1) * 0.6;
       const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
       if (d <= sp) { a.x = a.tx; a.z = a.tz; } else { a.x += dx / d * sp; a.z += dz / d * sp; a.dir = Math.atan2(dx, dz); }
     }
   }
 }
+// Qué hace un animal ahora: dormir de noche, comer si hay comida, beber, pastar, jugar, seguir a su madre...
+function decide(a, e) {
+  const S = SPECIES[a.sp], h = hourOf(st.time), inside = (x, z) => ({ x: Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, x)), z: Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, z)) });
+  const go = (x, z, state, mins) => { const p = inside(x, z); a.tx = p.x; a.tz = p.z; a.state = state; a.restUntil = st.time + mins; };
+  if (h >= 21 || h < 6) { if (a.state !== 'sleep') { const mom = a.mother && st.animals.find((m) => m.id === a.mother); go(mom ? mom.x + 0.2 : a.x + rnd(-1, 1), mom ? mom.z + 0.15 : a.z + rnd(-1, 1), 'sleep', 60); } else a.restUntil = st.time + 30; return; }
+  if (e.food && st.time < e.food.until && a.hunger < 90) return go(e.food.x + rnd(-0.35, 0.35), e.food.z + rnd(-0.35, 0.35), 'eat', 25);
+  const mom = a.baby && a.mother && st.animals.find((m) => m.id === a.mother && m.enc === a.enc);
+  if (mom && Math.random() < 0.75) return go(mom.x + rnd(-0.5, 0.5), mom.z + rnd(-0.5, 0.5), 'follow', rnd(2, 6));
+  const pond = e.items.find((i) => i.type === 'charca'), toy = e.items.find((i) => i.type === 'juguete');
+  const r = Math.random();
+  if (pond && r < 0.12) return go(pond.x + 0.5 + rnd(-0.6, 0.6), pond.z + 0.5 + rnd(-0.6, 0.6), 'drink', 12);
+  if (toy && r < 0.2) return go(toy.x + 0.5, toy.z + 0.5, 'play', 10);
+  if (!CARNIVORES.includes(a.sp) && r < 0.45) return go(a.x + rnd(-0.5, 0.5), a.z + rnd(-0.5, 0.5), 'graze', rnd(8, 20));
+  if (r < 0.65) return go(a.x, a.z, 'rest', rnd(6, 20));
+  go(e.x + rnd(0.6, e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'wander', 0);
+}
+const STATE_TXT = { wander: 'paseando', rest: 'descansando', graze: 'pastando', eat: 'comiendo', drink: 'bebiendo', sleep: 'durmiendo', play: 'jugando', follow: 'siguiendo a su madre' };
+// Pone un montón de comida en el recinto (los animales van a comer)
+function putFood(e) { e.food = { x: e.x + e.n / 2 + rnd(-0.8, 0.8), z: e.z + e.n / 2 + rnd(-0.8, 0.8), until: st.time + 150 }; for (const a of animalsIn(e)) if (a.state !== 'sleep') a.restUntil = 0; }
 function feedTimes() {
   // cada cuidador alimenta a 8 animales dos veces al día
   let capacity = st.staff.keeper * 8;
   const hungry = st.animals.slice().sort((a, b) => a.hunger - b.hunger);
-  for (const a of hungry) { if (capacity-- <= 0) break; a.hunger = 100; }
+  const fed = new Set();
+  for (const a of hungry) { if (capacity-- <= 0) break; fed.add(a.enc); }
+  for (const e of st.enclosures) if (fed.has(e.id)) putFood(e);
   if (st.animals.length > st.staff.keeper * 8) toast('Faltan cuidadores: hay animales sin comer. Contrata más o dales de comer tú.', 'warn', 'paw');
 }
 function breeding() {
@@ -151,11 +174,25 @@ function breeding() {
       if (!g.some((a) => a.sex === 'm') || !g.some((a) => a.sex === 'f')) continue;
       const avg = g.reduce((t, a) => t + a.happy, 0) / g.length;
       const space = (e.n * e.n) / (as.reduce((t, m) => t + SPECIES[m.sp].space, 0) + SPECIES[sp].space * 0.5);
-      if (avg > 65 && space >= 0.9 && Math.random() < 0.3) { addAnimal(sp, e, true); toast(`¡Ha nacido una cría de ${SPECIES[sp].label.toLowerCase()}!`, 'good', 'heart'); }
+      const mom = g.find((a) => a.sex === 'f' && !a.preg);
+      if (mom && avg > 65 && space >= 0.9 && Math.random() < 0.3 && !(e.nests || []).some((n) => n.sp === sp)) {
+        if (SPECIES[sp].eggs) { e.nests = [...(e.nests || []), { sp, mother: mom.id, x: mom.x, z: mom.z, n: 1 + (Math.random() < 0.4 ? 1 : 0), until: st.time + 1440 }]; toast(`${mom.name} (${SPECIES[sp].label.toLowerCase()}) ha puesto huevos en un nido`, 'good', 'egg'); }
+        else { mom.preg = { until: st.time + 1440 }; toast(`${mom.name} (${SPECIES[sp].label.toLowerCase()}) espera una cría`, 'good', 'heart'); }
+      }
     }
   }
 }
+function hatchNests() {
+  for (const e of st.enclosures) {
+    for (const n of (e.nests || []).filter((q) => st.time >= q.until)) {
+      for (let i = 0; i < n.n; i++) { const b = addAnimal(n.sp, e, true); b.mother = n.mother; b.x = n.x + rnd(-0.2, 0.2); b.z = n.z + rnd(-0.2, 0.2); }
+      toast(`¡Han salido ${n.n > 1 ? `${n.n} crías` : 'una cría'} del nido de ${SPECIES[n.sp].label.toLowerCase()}!`, 'good', 'egg');
+    }
+    if (e.nests) e.nests = e.nests.filter((q) => st.time < q.until);
+  }
+}
 function hourly(h) {
+  hatchNests();
   if (h === 9 || h === 17) feedTimes();
   if (h === 6) breeding();
   for (let i = 0; i < st.staff.cleaner * 2 && st.litter.length; i++) st.litter.shift();
@@ -223,11 +260,23 @@ function enrichMesh(type) {
   if (type === 'bambu') for (let i = 0; i < 6; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 5), mat('#6ab04a')); c.position.set(Math.cos(i) * 0.2, 0.6, Math.sin(i * 2) * 0.2); g.add(c); }
   return g;
 }
+const biomeTex = {};
+function groundTex(b) {
+  if (biomeTex[b]) return biomeTex[b];
+  const base = BIOMES[b].color;
+  biomeTex[b] = canvasTexture(128, (x, s) => {
+    x.fillStyle = base; x.fillRect(0, 0, s, s);
+    const dots = { granja: ['#86b25a', '#b8d07a', '#d8c070'], sabana: ['#c4ac5e', '#e2d290', '#a89a50'], selva: ['#3e8a3e', '#5aa84e', '#2f6e34'], artico: ['#ffffff', '#d8e6ee', '#c4d6e2'], humedal: ['#6aa898', '#9ccab8', '#5a7a5a'] }[b];
+    for (let i = 0; i < 900; i++) { x.fillStyle = dots[i % 3]; const r = b === 'selva' ? 3 : 1.5; x.fillRect(Math.random() * s, Math.random() * s, r, b === 'sabana' || b === 'granja' ? 4 : r); }
+    if (b === 'humedal') { x.fillStyle = 'rgba(80,150,200,0.45)'; for (let i = 0; i < 5; i++) { x.beginPath(); x.ellipse(Math.random() * s, Math.random() * s, 14, 8, 0, 0, 7); x.fill(); } }
+  }, [2, 2]);
+  return biomeTex[b];
+}
 function rebuildEnclosures() {
   const g = groups.enc; g.clear();
   for (const e of st.enclosures) {
     const eg = new THREE.Group(); eg.userData.enc = e.id; g.add(eg);
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(e.n - 0.05, 0.05, e.n - 0.05), mat(BIOMES[e.biome].color)); ground.position.set(e.x + e.n / 2, 0.03, e.z + e.n / 2); eg.add(ground);
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(e.n - 0.05, 0.05, e.n - 0.05), [mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), new THREE.MeshLambertMaterial({ map: groundTex(e.biome) }), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color)]); ground.position.set(e.x + e.n / 2, 0.03, e.z + e.n / 2); eg.add(ground);
     const rail = mat('#8a6a42');
     for (const [x, z, w, d] of [[e.x + e.n / 2, e.z, e.n, 0.06], [e.x + e.n / 2, e.z + e.n, e.n, 0.06], [e.x, e.z + e.n / 2, 0.06, e.n], [e.x + e.n, e.z + e.n / 2, 0.06, e.n]]) {
       for (const y of [0.35, 0.65]) { const r = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), rail); r.position.set(x, y, z); eg.add(r); }
@@ -305,7 +354,7 @@ function animalModel(sp) {
   const tl = F.includes('tail_long') ? 0.45 : 0.15;
   const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.015, F.includes('tail_long') && S.hop ? 0.07 : 0.025, tl, 5), m1); tm.position.y = -tl / 2; tail.add(tm); tail.rotation.x = S.hop ? -2.3 : 0.6;
   g.add(blob(Math.max(W, 0.3) * 1.8, Math.max(L, 0.3) * 1.5, 0.35));
-  return { g, body, legs, head, tail };
+  return { g, body, legs, head, tail, neck, torso, neckRx: neck.rotation.x };
 }
 function syncAnimals(t) {
   const seen = new Set();
@@ -316,10 +365,14 @@ function syncAnimals(t) {
     m.g.position.set(a.x, 0.05, a.z); if (a.dir != null) m.g.rotation.y = a.dir;
     const k = a.baby ? 0.55 : 1; m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
-    if (S.hop) m.body.position.y = moving ? Math.abs(w) * 0.2 : 0;
-    else m.legs.forEach((l, i) => (l.rotation.x = (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5));
-    m.head.rotation.x = moving ? 0 : Math.sin(t * 0.8 + a.z) * 0.25 + 0.15;
-    m.tail.rotation.z = Math.sin(t * 3 + a.x) * 0.3;
+    const sleeping = a.state === 'sleep' && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
+    m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -S.legs * 0.85 : 0;
+    m.legs.forEach((l, i) => { l.visible = !sleeping; l.rotation.x = S.hop ? 0 : (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5; });
+    m.neck.rotation.x = m.neckRx + (headDown ? 0.9 + Math.sin(t * 3 + a.x) * 0.08 : sleeping ? 0.6 : 0);
+    m.head.rotation.x = moving ? 0 : headDown ? 0.4 : sleeping ? 0.3 : Math.sin(t * 0.8 + a.z) * 0.25 + 0.1;
+    m.tail.rotation.z = Math.sin(t * (a.state === 'play' ? 8 : 3) + a.x) * (sleeping ? 0.05 : 0.3);
+    m.torso.scale.x = (a.preg ? 1.3 : 1) * (m.torsoSX ??= m.torso.scale.x);
+    if (a.state === 'play' && !moving) m.g.rotation.y += Math.sin(t * 4) * 0.02;
   }
   for (const [k, m] of animalMeshes) if (!seen.has(k)) { groups.animals.remove(m.g); animalMeshes.delete(k); }
 }
@@ -340,7 +393,26 @@ function syncPeople(t) {
 }
 function rebuildLitter() { const g = groups.litter; g.clear(); for (const l of st.litter) { const b = box(0.12, 0.04, 0.08, l.c); b.position.set(l.x + 0.3 + Math.random() * 0.4, 0.08, l.z + 0.3 + Math.random() * 0.4); b.rotation.y = Math.random() * 3; g.add(b); } }
 
+groups.extra = new THREE.Group(); S3.add(groups.extra);
+function syncExtras() {
+  const key = JSON.stringify(st.enclosures.map((e) => [e.food && st.time < e.food.until ? [e.food.x, e.food.z] : 0, (e.nests || []).map((n) => [n.x, n.z, n.n, n.sp])]));
+  if (key === sig.extra) return; sig.extra = key; const g = groups.extra; g.clear();
+  for (const e of st.enclosures) {
+    if (e.food && st.time < e.food.until) {
+      const carn = animalsIn(e).some((a) => CARNIVORES.includes(a.sp)); const pile = new THREE.Group(); pile.position.set(e.food.x, 0.06, e.food.z);
+      for (let i = 0; i < 9; i++) { const p = new THREE.Mesh(carn ? new THREE.DodecahedronGeometry(0.07, 0) : new THREE.BoxGeometry(0.22, 0.04, 0.05), mat(carn ? '#a8423a' : pick(['#d8c060', '#c8a848', '#7ab04a', '#e89a4a']))); p.position.set(rnd(-0.2, 0.2), 0.03 + (i % 3) * 0.03, rnd(-0.2, 0.2)); p.rotation.y = rnd(0, 3); pile.add(p); }
+      g.add(pile);
+    }
+    for (const n of e.nests || []) {
+      const nest = new THREE.Group(); nest.position.set(n.x, 0.06, n.z);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.06, 6, 14), mat(n.sp === 'tortuga' ? '#c8a870' : '#8a6a3a')); ring.rotation.x = Math.PI / 2; nest.add(ring);
+      for (let i = 0; i < n.n + 1; i++) { const egg = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), mat(n.sp === 'pinguino' ? '#e8f0f4' : n.sp === 'tortuga' ? '#f4ecd8' : '#f8e8e0')); egg.scale.y = 1.25; egg.position.set((i - n.n / 2) * 0.09, 0.06, (i % 2) * 0.05); egg.userData.nest = e.id; nest.add(egg); }
+      g.add(nest);
+    }
+  }
+}
 function sync(t) {
+  syncExtras();
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
   const s2 = JSON.stringify(st.enclosures); if (s2 !== sig.enc) { sig.enc = s2; rebuildEnclosures(); }
   const s3 = JSON.stringify(st.buildings); if (s3 !== sig.bld) { sig.bld = s3; rebuildBuildings(); }
@@ -385,6 +457,12 @@ function paintPath(t) {
   if (occupied(t.x, t.z) || st.money < PATH_PRICE) return;
   st.paths.push(key); st.money -= PATH_PRICE;
 }
+eng.onDoubleTap = (sx, sy) => {
+  if (view.tool) return;
+  const t = tileAt(sx, sy); const e = t && encAt(t.x, t.z);
+  if (e && !close) return enterClose(e);
+  const p = eng.ground(sx, sy); if (p) { eng.cam.follow = null; eng.cam.tx = new THREE.Vector3(p.x, 0, p.z); eng.cam.distT = Math.max(eng.cam.min, eng.cam.dist * 0.55); }
+};
 eng.onDragStart = (sx, sy) => { if (view.tool === 'path') { paintPath(tileAt(sx, sy)); return true; } return false; };
 eng.onDragMove = (sx, sy) => { if (view.tool === 'path') paintPath(tileAt(sx, sy)); };
 eng.onDragEnd = () => { hud(); save(); };
@@ -417,13 +495,52 @@ eng.onTap = (sx, sy) => {
     st.money -= B.price; st.buildings.push({ id: id(), type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
   }
   // sin herramienta: información
-  const aId = eng.pick(sx, sy, groups.animals.children, 'animal'); if (aId) return animalCard(aId);
+  const aId = eng.pick(sx, sy, groups.animals.children, 'animal');
+  if (close) { const nest = eng.pick(sx, sy, groups.extra.children, 'nest'); if (nest) { nestCard = nest; followId = null; eng.cam.follow = null; return animalCardTick(true); } if (aId) return followAnimal(aId); return; }
+  if (aId) return animalCard(aId);
   const e = t && encAt(t.x, t.z); if (e) return encCard(e);
   const b = t && buildingAt(t.x, t.z); if (b) return confirm(`¿Quitar ${BUILDINGS[b.type].label.toLowerCase()}? Recuperas la mitad.`, () => { st.buildings = st.buildings.filter((q) => q !== b); st.money += Math.round(BUILDINGS[b.type].price / 2); hud(); save(); });
 };
 
 // ---------- interfaz ----------
 const sheet = new Sheet();
+// ---------- vista de cerca ----------
+let close = null, followId = null, cardT = 0, nestCard = null;
+function animalWorld(aid) { const m = animalMeshes.get(aid); return m ? m.g.position : null; }
+function enterClose(e) {
+  close = e.id; followId = null; nestCard = null; sheet.close(); setTool(null); closeModal();
+  eng.cam.follow = null; eng.cam.min = 1.5; eng.cam.tx = new THREE.Vector3(e.x + e.n / 2, 0, e.z + e.n / 2); eng.cam.distT = eng.fitDist(e.n * 0.95); eng.cam.pitchT = 0.42;
+  $('#closebar').hidden = false; $('#tools').parentElement.classList.add('closing'); renderCloseBar();
+}
+function exitClose() {
+  close = null; followId = null; nestCard = null; eng.cam.follow = null; eng.cam.min = 4; eng.cam.pitchT = 0.9; eng.cam.distT = eng.fitDist(15);
+  $('#closebar').hidden = true; $('#animalcard').hidden = true; $('#tools').parentElement.classList.remove('closing');
+}
+function followAnimal(aid) { followId = aid; nestCard = null; eng.follow(() => (followId ? animalWorld(followId) : null)); eng.cam.distT = Math.min(eng.cam.dist, eng.fitDist(3.2)); cardT = 0; animalCardTick(true); }
+function renderCloseBar() {
+  const e = st.enclosures.find((q) => q.id === close); if (!e) return exitClose();
+  const as = animalsIn(e);
+  const key = e.id + as.length + e.biome; if ($('#closebar').dataset.k === key) return; $('#closebar').dataset.k = key;
+  $('#closebar').innerHTML = `<span class="ttl">${icon('fence')} ${BIOMES[e.biome].label} · ${as.length} ${as.length === 1 ? 'animal' : 'animales'}</span><button class="btn sm" id="cb_f">${icon('eye')} Seguir a uno</button><button class="btn sm alt" id="cb_i">${icon('menu')} Ficha</button><button class="btn sm alt" id="cb_x">${icon('x')}</button>`;
+  $('#cb_f').onclick = () => { if (!as.length) return; const i = as.findIndex((a) => a.id === followId); followAnimal(as[(i + 1) % as.length].id); };
+  $('#cb_i').onclick = () => encCard(e);
+  $('#cb_x').onclick = exitClose;
+}
+function animalCardTick(force = false) {
+  const el = $('#animalcard'); const now = performance.now(); if (!force && now - cardT < 600) return; cardT = now;
+  if (nestCard) {
+    const e = st.enclosures.find((q) => q.id === nestCard); const n = e && (e.nests || [])[0];
+    if (!n) { nestCard = null; el.hidden = true; return; }
+    el.innerHTML = `<b>${icon('egg')} Nido de ${SPECIES[n.sp].label.toLowerCase()}</b><div class="hint">${n.n + 1} huevos · eclosionan en unas ${Math.max(1, Math.round((n.until - st.time) / 60))} h</div>`; el.hidden = false; return;
+  }
+  const a = followId && st.animals.find((q) => q.id === followId); if (!a) { el.hidden = true; return; }
+  const S = SPECIES[a.sp]; const kids = st.animals.filter((k) => k.mother === a.id && k.baby).length; const mom = a.mother && st.animals.find((m) => m.id === a.mother);
+  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${BIOMES[S.biome].color}">${icon('paw')}</span><div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'}${a.baby ? ' · cría' : ''}</span>
+    <div class="hint">Está ${STATE_TXT[a.state] || 'tranquilo'}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
+    <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
+    <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
+  el.hidden = false;
+}
 function hud() {
   $('#money b').textContent = eur(st.money);
   const h = hourOf(st.time); const open = h >= 9 && h < 20;
@@ -508,9 +625,10 @@ function encCard(e) {
   const box2 = modal(`<h2>Recinto de ${BIOMES[e.biome].label.toLowerCase()}</h2><p class="hint">${e.n}×${e.n} · ${e.items.length} objetos · ánimo medio ${happy}%</p>
     <div class="list">${as.map((a) => `<div class="li"><span class="tilebox">${icon('paw')}</span><div style="flex:1"><b>${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}</b> <span class="hint">${a.sex === 'm' ? '♂' : '♀'}</span>
       <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div></div><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
-    <div class="actions" style="flex-direction:column"><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
+    <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
   box2.querySelector('#close').onclick = closeModal;
-  box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); st.money -= as.length * 5; as.forEach((a) => (a.hunger = 100)); closeModal(); toast('Animales alimentados', 'good', 'food'); hud(); };
+  box2.querySelector('#seeclose').onclick = () => enterClose(e);
+  box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); st.money -= as.length * 5; putFood(e); closeModal(); toast('Has dejado comida en el recinto', 'good', 'food'); hud(); };
   box2.querySelector('#demo').onclick = () => { closeModal(); confirm(`Se venderán los ${as.length} animales. ¿Derribar?`, () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === e.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== e.id); st.enclosures = st.enclosures.filter((q) => q !== e); hud(); save(); }); };
   box2.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.sell); st.money += Math.round(SPECIES[a.sp].price * (a.baby ? 0.4 : 0.6)); st.animals = st.animals.filter((q) => q !== a); closeModal(); encCard(e); hud(); save(); }));
 }
@@ -530,7 +648,8 @@ let uiT = 0, saveT = 0;
 eng.onFrame = (dt) => {
   const paused = modalOpen() || st.speed === 0;
   if (!paused) { let g = dt * SPEEDS[st.speed]; while (g > 0) { const s = Math.min(g, 2); tick(s); g -= s; } }
-  eng.activity = paused ? 'idle' : visitors.length && eng.cam.dist < 22 ? 'busy' : 'calm';
+  eng.activity = close ? 'close' : paused ? 'idle' : visitors.length && eng.cam.dist < 22 ? 'busy' : 'calm';
+  if (close) { animalCardTick(); if (uiT > 0.45) renderCloseBar(); }
   uiT += dt; saveT += dt;
   if (uiT > 0.5) { uiT = 0; hud(); if (sheet.name === 'staff' || sheet.name === 'info') { /* refresco ligero */ } }
   if (saveT > 20) { saveT = 0; save(); }
@@ -539,4 +658,4 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) save(
 window.addEventListener('pagehide', save);
 if (store.load(KEY)) offline(); else info('Te damos la bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
 hud();
-window.zoo = { eng, THREE, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, enterClose, rebuildEnclosures, get st() { return st; }, get visitors() { return visitors; } };

@@ -501,7 +501,11 @@ export class Renderer3D {
     this.cam.target.addScaledVector(right, -dx * k).addScaledVector(fwd, -dy * k * 1.4);
     this.cam.target.x = Math.max(-2, Math.min(GRID + 2, this.cam.target.x)); this.cam.target.z = Math.max(-2, Math.min(GRID + 2, this.cam.target.z));
   }
-  zoomAt(f) { this.cam.tx = null; this.cam.dist = Math.max(4, Math.min(42, this.cam.dist / f)); }
+  zoomAt(f, sx, sy) {
+    this.cam.tx = null; const old = this.cam.dist; this.cam.dist = Math.max(4, Math.min(42, this.cam.dist / f));
+    if (sx != null) { const p = this.screenToWorld(sx, sy); if (p.x > -5) { const k = 1 - this.cam.dist / old; this.cam.target.x += (p.x - this.cam.target.x) * k; this.cam.target.z += (p.y - this.cam.target.z) * k; } }
+  }
+  tilt(d) { this.cam.pitch = Math.max(0.35, Math.min(1.35, this.cam.pitch + d)); }
   rotate(a) { this.cam.yaw += a; this.cam.yawT = null; }
   spin(a) { this.cam.yawT = (this.cam.yawT ?? this.cam.yaw) + a; }
   updateCamera() {

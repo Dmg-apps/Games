@@ -5,6 +5,7 @@ import { Renderer3D, webglAvailable } from './render3d.js';
 import { UI } from './ui.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
+import { Gestures } from '../../shared/gestures.js';
 
 const SPEEDS = [0, 1, 3, 10]; // minutos de juego por segundo real
 
@@ -226,52 +227,34 @@ class Game {
 
   // ---------- entrada táctil ----------
   setupInput() {
-    const c = this.canvas; const ptrs = new Map(); let moved = false, pinchD = 0, pinchA = null, start = null;
-    let drag = null; // arrastre de un mueble en modo construcción
-    c.addEventListener('pointerdown', (e) => {
-      this.lastInput = performance.now();
-      c.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; drag = this.view.build ? this.dragTarget(e.clientX, e.clientY) : null; }
-      if (ptrs.size === 2) drag = null;
-      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); pinchA = Math.atan2(b.y - a.y, b.x - a.x); moved = true; }
+    // gestos compartidos con los demás juegos (ver shared/gestures.js)
+    let drag = null; const self = this;
+    this.gestures = new Gestures(this.canvas, {
+      onInput() { self.lastInput = performance.now(); },
+      pan(dx, dy) { self.renderer.pan(dx, dy); },
+      zoom(f, x, y) { self.renderer.zoomAt(f, x, y); },
+      rotate(a) { self.renderer.rotate?.(a); },
+      tilt: this.renderer.tilt ? (d) => self.renderer.tilt(d) : null,
+      onTap(x, y) { self.tap(x, y); },
+      onDoubleTap(x, y) { if (!self.view.build) self.renderer.zoomAt(1.7, x, y); },
+      onDragStart(x, y) { drag = self.view.build ? self.dragTarget(x, y) : null; return !!drag; },
+      onDragMove(x, y) {
+        if (!drag) return;
+        if (!drag.started) { drag.started = true; if (!drag.wall) self.beginDrag(drag); }
+        if (drag.wall) self.view.wallPreview = self.wallSegments(drag.start, self.wallCorner(x, y)); else self.dragTo(x, y, drag);
+      },
+      onDragEnd(cancel) {
+        if (drag?.wall && drag.started && !cancel) {
+          const segs = (self.view.wallPreview || []).filter((q) => !q.bad); self.view.wallPreview = null;
+          const n = segs.length ? Sim.addWalls(self.state, segs) : 0;
+          if (n) self.ui.toast(`${n} tramo${n > 1 ? 's' : ''} de pared (−${n * Sim.WALL_PRICE} €)`, 'good');
+          self.ui.update();
+        } else if (drag && drag.started && !drag.wall) self.endDrag();
+        self.view.wallPreview = null; drag = null;
+      },
     });
-    c.addEventListener('pointermove', (e) => {
-      this.lastInput = performance.now();
-      const p = ptrs.get(e.pointerId); if (!p) return;
-      const dx = e.clientX - p.x, dy = e.clientY - p.y;
-      p.x = e.clientX; p.y = e.clientY;
-      if (ptrs.size === 1) {
-        if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 9) { moved = true; if (drag) this.beginDrag(drag); }
-        if (moved && drag?.wall) { this.view.wallPreview = this.wallSegments(drag.start, this.wallCorner(e.clientX, e.clientY)); }
-        else if (moved && drag) this.dragTo(e.clientX, e.clientY, drag);
-        else if (moved) this.renderer.pan(dx, dy);
-      } else if (ptrs.size === 2) {
-        const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; // desplazar con dos dedos
-        if (this.lastMid) this.renderer.pan(mid.x - this.lastMid.x, mid.y - this.lastMid.y);
-        this.lastMid = mid;
-        if (pinchD) this.renderer.zoomAt(d / pinchD, (a.x + b.x) / 2, (a.y + b.y) / 2);
-        pinchD = d;
-        const ang = Math.atan2(b.y - a.y, b.x - a.x); // girar con dos dedos (3D)
-        if (pinchA !== null && this.renderer.rotate) { let da = ang - pinchA; da = Math.atan2(Math.sin(da), Math.cos(da)); this.renderer.rotate(-da); }
-        pinchA = ang;
-      }
-    });
-    const up = (e) => {
-      if (!ptrs.has(e.pointerId)) return;
-      ptrs.delete(e.pointerId);
-      if (ptrs.size === 0 && moved && drag?.wall) {
-        const segs = (this.view.wallPreview || []).filter((q) => !q.bad); this.view.wallPreview = null;
-        const n = segs.length ? Sim.addWalls(this.state, segs) : 0;
-        if (n) this.ui.toast(`${n} tramo${n > 1 ? 's' : ''} de pared (−${n * Sim.WALL_PRICE} €)`, 'good');
-        drag = null; this.ui.update();
-      } else if (ptrs.size === 0 && moved && drag) { this.endDrag(); drag = null; }
-      if (ptrs.size === 0 && !moved && e.type === 'pointerup') this.tap(e.clientX, e.clientY);
-      if (ptrs.size < 2) { pinchD = 0; pinchA = null; this.lastMid = null; }
-    };
-    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
-    c.addEventListener('wheel', (e) => { e.preventDefault(); this.renderer.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); }, { passive: false });
   }
+
 
   // ---------- paredes ----------
   setWallTool(tool) {

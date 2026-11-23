@@ -81,6 +81,7 @@ const P = {
   path: '<path d="M8 21c0-6 8-6 8-12 0-3-2-5-4-6M4 21h16"/>',
   bubbles: '<circle cx="9" cy="15" r="4"/><circle cx="16" cy="8" r="2.5"/><circle cx="17" cy="16" r="1.5"/>',
   gamepad: '<rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M7.5 10.5v4M5.5 12.5h4"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
 };
 

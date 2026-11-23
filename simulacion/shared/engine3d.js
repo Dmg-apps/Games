@@ -3,6 +3,7 @@
 // resolución contenida y pocas imágenes por segundo cuando no pasa nada.
 import * as THREE from './vendor/three.module.min.js';
 import { RoundedBoxGeometry } from './vendor/RoundedBoxGeometry.js';
+import { Gestures } from './gestures.js';
 export { THREE, RoundedBoxGeometry };
 
 const quality = () => localStorage.getItem('sim_quality') || (Math.min(screen.width, screen.height) < 700 ? 'eco' : 'alta');
@@ -66,7 +67,16 @@ export class Engine {
     const b = this.cam.bounds; this.cam.target.x = Math.max(-b, Math.min(b, this.cam.target.x)); this.cam.target.z = Math.max(-b, Math.min(b, this.cam.target.z));
     this.dirty = true;
   }
-  zoom(f) { this.cam.distT = null; this.cam.dist = Math.max(this.cam.min, Math.min(this.cam.max, this.cam.dist / f)); this.dirty = true; }
+  // Acerca hacia el punto de la pantalla (si se da) para que lo que tocas se quede bajo los dedos
+  zoom(f, sx, sy) {
+    this.cam.distT = null; const old = this.cam.dist;
+    this.cam.dist = Math.max(this.cam.min, Math.min(this.cam.max, this.cam.dist / f));
+    if (sx != null && !this.cam.follow) { const p = this.ground(sx, sy, this.cam.target.y); if (p) { const k = 1 - this.cam.dist / old; this.cam.target.x += (p.x - this.cam.target.x) * k; this.cam.target.z += (p.z - this.cam.target.z) * k; } }
+    this.dirty = true;
+  }
+  tilt(d) { this.cam.pitch = Math.max(this.cam.minPitch ?? 0.15, Math.min(this.cam.maxPitch ?? 1.35, this.cam.pitch + d)); this.dirty = true; }
+  // La cámara sigue a algo que se mueve (una función que devuelve su posición)
+  follow(fn) { this.cam.follow = fn; this.cam.tx = null; this.dirty = true; }
   rotate(a) { this.cam.yaw += a; this.dirty = true; }
   spin(a) { this.cam.yawT = (this.cam.yawT ?? this.cam.yaw) + a; }
   updateCamera() {
@@ -74,6 +84,8 @@ export class Engine {
     if (c.yawT != null) { c.yaw += (c.yawT - c.yaw) * 0.15; if (Math.abs(c.yawT - c.yaw) < 0.002) { c.yaw = c.yawT; c.yawT = null; } moving = true; }
     if (c.tx) { c.target.lerp(c.tx, 0.15); if (c.target.distanceTo(c.tx) < 0.01) c.tx = null; moving = true; }
     if (c.distT) { c.dist += (c.distT - c.dist) * 0.15; if (Math.abs(c.distT - c.dist) < 0.05) c.distT = null; moving = true; }
+    if (c.pitchT != null) { c.pitch += (c.pitchT - c.pitch) * 0.15; if (Math.abs(c.pitchT - c.pitch) < 0.003) c.pitchT = null; moving = true; }
+    if (c.follow) { const p = c.follow(); if (p) { c.target.x += (p.x - c.target.x) * 0.12; c.target.z += (p.z - c.target.z) * 0.12; if (p.y != null) c.target.y += (p.y - c.target.y) * 0.12; moving = true; } else c.follow = null; }
     this.camera.position.set(c.target.x + Math.sin(c.yaw) * Math.cos(c.pitch) * c.dist, c.target.y + Math.sin(c.pitch) * c.dist, c.target.z + Math.cos(c.yaw) * Math.cos(c.pitch) * c.dist);
     this.camera.lookAt(c.target);
     return moving;
@@ -87,41 +99,29 @@ export class Engine {
     return null;
   }
   project(v) { const p = v.clone().project(this.camera); return { x: (p.x + 1) / 2 * this.w, y: (-p.y + 1) / 2 * this.h, z: p.z }; }
-  // ---------- gestos: un dedo arrastra (o dibuja), dos dedos acercan/giran/desplazan ----------
+  // ---------- gestos (ver gestures.js) ----------
   input() {
-    const c = this.c, ptrs = new Map(); let moved = false, start = null, drag = false, pd = 0, pa = null, mid = null;
-    c.addEventListener('pointerdown', (e) => {
-      this.lastInput = performance.now(); c.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; drag = !!(this.onDragStart && this.onDragStart(e.clientX, e.clientY)); }
-      if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pd = Math.hypot(a.x - b.x, a.y - b.y); pa = Math.atan2(b.y - a.y, b.x - a.x); mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; moved = true; if (drag) { drag = false; this.onDragEnd?.(true); } }
+    const self = this;
+    this.gestures = new Gestures(this.c, {
+      onInput() { self.lastInput = performance.now(); },
+      pan(dx, dy) { if (self.cam.follow) self.cam.follow = null; self.pan(dx, dy); },
+      zoom(f, x, y) { self.zoom(f, x, y); },
+      rotate(a) { self.rotate(a); },
+      tilt(d) { self.tilt(d); },
+      onTap(x, y) { self.onTap?.(x, y); },
+      onDoubleTap(x, y) { if (self.onDoubleTap) return self.onDoubleTap(x, y); const p = self.ground(x, y); if (p) { self.cam.tx = new THREE.Vector3(p.x, self.cam.target.y, p.z); self.cam.distT = Math.max(self.cam.min, self.cam.dist * 0.5); } },
+      onDragStart(x, y) { return !!self.onDragStart?.(x, y); },
+      onDragMove(x, y) { self.onDragMove?.(x, y); },
+      onDragEnd(c) { self.onDragEnd?.(c); },
     });
-    c.addEventListener('pointermove', (e) => {
-      const p = ptrs.get(e.pointerId); if (!p) return; this.lastInput = performance.now();
-      const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-      if (ptrs.size === 1) {
-        if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 9) moved = true;
-        if (moved) { if (drag) this.onDragMove?.(e.clientX, e.clientY); else this.pan(dx, dy); }
-      } else if (ptrs.size === 2) {
-        const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const ang = Math.atan2(b.y - a.y, b.x - a.x); const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        if (pd) this.zoom(d / pd); pd = d;
-        if (pa != null) { let da = ang - pa; da = Math.atan2(Math.sin(da), Math.cos(da)); this.rotate(-da); } pa = ang;
-        if (mid) this.pan(m.x - mid.x, m.y - mid.y); mid = m;
-      }
-    });
-    const up = (e) => {
-      if (!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId);
-      if (ptrs.size === 0) { if (drag) { drag = false; this.onDragEnd?.(false); } else if (!moved && e.type === 'pointerup') this.onTap?.(e.clientX, e.clientY); }
-      if (ptrs.size < 2) { pd = 0; pa = null; mid = null; }
-    };
-    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
-    c.addEventListener('wheel', (e) => { e.preventDefault(); this.lastInput = performance.now(); this.zoom(e.deltaY < 0 ? 1.1 : 0.9); }, { passive: false });
   }
   // ---------- bucle: solo dibuja lo necesario ----------
   loop(t) {
     const dt = Math.min(0.25, (t - (this.lastT || t)) / 1000); this.lastT = t;
     this.onFrame?.(dt, t);
-    const camMoving = this.cam.tx || this.cam.yawT != null || this.cam.distT || t - this.lastInput < 1200;
-    const fps = camMoving ? (this.hq ? 60 : 30) : this.activity === 'busy' ? 20 : this.activity === 'calm' ? 10 : 4;
+    const camMoving = this.cam.tx || this.cam.yawT != null || this.cam.distT || this.cam.pitchT != null || t - this.lastInput < 1200;
+    const following = !!this.cam.follow;
+    const fps = camMoving ? (this.hq ? 60 : 30) : following || this.activity === 'close' ? 24 : this.activity === 'busy' ? 20 : this.activity === 'calm' ? 10 : 4;
     if (this.dirty || t - this.lastRender >= 1000 / fps - 2) {
       this.lastRender = t; this.dirty = false;
       this.updateCamera(); this.onBeforeRender?.(t / 1000);

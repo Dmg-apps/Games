@@ -127,6 +127,9 @@ const wallM = mat('#dcecef'); const w1 = box(16, 4, 0.2, wallM); w1.position.set
 for (let i = 0; i < 5; i++) { const s = box(16, 0.05, 0.05, mat('#bcd8de')); s.position.set(0, 0.5 + i * 0.8, -5.38); S3.add(s); }
 const counter = box(3.2, 1, 1, '#a8784a', 0.06); counter.position.set(5.2, 0.5, 4.2); S3.add(counter); const ctop = box(3.4, 0.08, 1.2, '#f4ece0', 0.03); ctop.position.set(5.2, 1.04, 4.2); S3.add(ctop);
 const sign = box(4, 0.8, 0.08, '#2fa8e0', 0.06); sign.position.set(0, 3.2, -5.35); S3.add(sign);
+// Reflejos de luz en el fondo (cáusticas) y superficie del agua, animados moviendo la textura
+const caustic = canvasTexture(128, (x, s) => { x.fillStyle = '#e8d4a0'; x.fillRect(0, 0, s, s); x.strokeStyle = 'rgba(255,255,240,0.55)'; x.lineWidth = 2; for (let i = 0; i < 26; i++) { x.beginPath(); const cx = Math.random() * s, cy = Math.random() * s, r = 6 + Math.random() * 14; for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI * 2; const rr = r * (0.7 + Math.random() * 0.5); k ? x.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : x.moveTo(cx + rr, cy); } x.stroke(); } }, [2, 1]);
+const ripple = canvasTexture(64, (x, s) => { x.fillStyle = 'rgba(180,225,250,0.5)'; x.fillRect(0, 0, s, s); x.strokeStyle = 'rgba(255,255,255,0.6)'; for (let i = 0; i < 10; i++) { x.beginPath(); x.arc(Math.random() * s, Math.random() * s, 4 + Math.random() * 10, 0, 7); x.stroke(); } }, [3, 2]);
 const SLOTS = [[-4.5, -2.6], [0, -2.6], [4.5, -2.6], [-4.5, 1.4], [0, 1.4], [4.5, 1.4]];
 const TW = 3, TH = 1.5, TD = 1.4, STAND = 0.75;
 const tankGroups = new Map();
@@ -145,20 +148,27 @@ function fishTexture(g) {
 }
 function fishMesh(f) {
   const g = new THREE.Group(); const s = 0.13 * f.g.s * (f.adult ? 1 : 0.55);
-  const m = new THREE.MeshLambertMaterial({ map: fishTexture(f.g), emissive: f.g.glow ? new THREE.Color(COLORS[f.g.c].hex).multiplyScalar(0.55) : new THREE.Color(0) });
+  const m = new THREE.MeshLambertMaterial({ map: fishTexture(f.g), transparent: !f.adult, opacity: f.adult ? 1 : 0.82, emissive: f.g.glow ? new THREE.Color(COLORS[f.g.c].hex).multiplyScalar(0.55) : new THREE.Color(0) });
   const body = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), m); body.scale.set(s * 0.55, s * 0.75, s * 1.4); g.add(body);
   const finM = new THREE.MeshLambertMaterial({ color: COLORS[f.g.c].hex, transparent: true, opacity: 0.85, side: THREE.DoubleSide, emissive: m.emissive });
   const tl = [0.9, 1.4, 2.0][f.g.f];
   const tail = new THREE.Mesh(new THREE.ConeGeometry(s * 0.6 * tl, s * 1.1 * tl, 3), finM); tail.rotation.x = -Math.PI / 2; tail.scale.set(0.15, 1, 1); tail.position.z = -s * (1.3 + 0.4 * tl);
   const tailPivot = new THREE.Group(); tailPivot.position.z = -s * 1.1; tail.position.z = -s * 0.5 * tl; tailPivot.add(tail); g.add(tailPivot);
   const dorsal = new THREE.Mesh(new THREE.ConeGeometry(s * 0.35 * tl, s * 0.6 * tl, 3), finM); dorsal.scale.set(0.15, 1, 1); dorsal.position.set(0, s * 0.85, -s * 0.1); g.add(dorsal);
-  for (const sd of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(s * 0.14, 6, 5), mat('#111')); e.position.set(sd * s * 0.42, s * 0.18, s * 0.95); g.add(e); }
-  g.userData.fish = f.id;
-  return { g, tail: tailPivot, x: rnd(-1, 1), y: rnd(0.3, 1.1), z: rnd(-0.4, 0.4), tx: 0, ty: 0.6, tz: 0, sp: rnd(0.25, 0.5) };
+  const eyeR = f.adult ? 0.14 : 0.24;
+  for (const sd of [-1, 1]) {
+    const w = new THREE.Mesh(new THREE.SphereGeometry(s * eyeR * 1.25, 8, 6), mat('#fff')); w.position.set(sd * s * 0.4, s * 0.2, s * 0.92); g.add(w);
+    const e = new THREE.Mesh(new THREE.SphereGeometry(s * eyeR, 8, 6), mat('#111')); e.position.set(sd * s * 0.47, s * 0.2, s * 0.98); g.add(e);
+  }
+  // aletas laterales que se mueven al nadar
+  const pects = [-1, 1].map((sd) => { const pv = new THREE.Group(); pv.position.set(sd * s * 0.5, -s * 0.15, s * 0.2); const fin = new THREE.Mesh(new THREE.ConeGeometry(s * 0.3, s * 0.55, 3), finM); fin.scale.set(1, 1, 0.15); fin.rotation.z = sd * 1.9; fin.position.x = sd * s * 0.2; pv.add(fin); g.add(pv); return pv; });
+  g.userData.fish = f.id; g.traverse((o) => { o.userData.fish = f.id; });
+  return { g, tail: tailPivot, pects, x: rnd(-1, 1), y: f.adult ? rnd(0.3, 1.1) : rnd(0.2, 0.5), z: rnd(-0.4, 0.4), tx: 0, ty: 0.6, tz: 0, sp: f.adult ? rnd(0.25, 0.5) : rnd(0.18, 0.3) };
 }
+const tid = (t) => t.id;
 function decoMesh(type, i) {
   const g = new THREE.Group(); const x = -1.1 + (i % 5) * 0.55, z = -0.35 + (i % 2) * 0.3; g.position.set(x, 0.12, z);
-  if (type === 'planta') for (let k = 0; k < 4; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.6 + k * 0.1, 4), mat('#3a9a5a')); l.position.set(k * 0.05 - 0.07, 0.3, 0); l.rotation.z = (k - 1.5) * 0.15; g.add(l); }
+  if (type === 'planta') { g.userData.sway = []; for (let k = 0; k < 5; k++) { const pv = new THREE.Group(); pv.position.set(k * 0.05 - 0.1, 0, (k % 2) * 0.05); const l = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.6 + k * 0.1, 4), mat(k % 2 ? '#3a9a5a' : '#4ab06a')); l.position.y = 0.3 + k * 0.05; pv.add(l); pv.rotation.z = (k - 2) * 0.12; pv.userData.base = pv.rotation.z; g.add(pv); g.userData.sway.push(pv); } }
   if (type === 'roca') for (let k = 0; k < 3; k++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.1 + k * 0.03, 0), mat('#8a8a90')); r.position.set(k * 0.12 - 0.12, 0.08, (k % 2) * 0.08); g.add(r); }
   if (type === 'castillo') { const b = box(0.35, 0.35, 0.3, '#d8c8a8'); b.position.y = 0.17; g.add(b); for (const sx of [-0.15, 0.15]) { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), mat('#d0c0a0')); tw.position.set(sx, 0.25, 0); g.add(tw); const c = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.15, 8), mat('#c05a4a')); c.position.set(sx, 0.57, 0); g.add(c); } }
   if (type === 'cofre') { const b = box(0.3, 0.16, 0.2, '#8a5a2a', 0.02); b.position.y = 0.08; g.add(b); const lid = box(0.3, 0.06, 0.2, '#a06a32'); lid.position.set(0, 0.2, -0.05); lid.rotation.x = -0.6; g.add(lid); const gold = box(0.24, 0.05, 0.14, '#f5c842'); gold.position.y = 0.17; g.add(gold); }
@@ -170,7 +180,8 @@ function buildTank(t, i) {
   const [x, z] = SLOTS[i]; const g = new THREE.Group(); g.position.set(x, 0, z); g.userData.tank = t.id; S3.add(g);
   const stand = box(TW + 0.2, STAND, TD + 0.2, '#7a5232', 0.04); stand.position.y = STAND / 2; g.add(stand);
   const inner = new THREE.Group(); inner.position.y = STAND + 0.02; g.add(inner);
-  const sand = box(TW - 0.06, 0.12, TD - 0.06, '#e8d4a0'); sand.position.y = 0.06; inner.add(sand);
+  const sand = new THREE.Mesh(new THREE.BoxGeometry(TW - 0.06, 0.12, TD - 0.06), [mat('#d8c490'), mat('#d8c490'), new THREE.MeshLambertMaterial({ map: caustic }), mat('#c8b480'), mat('#d8c490'), mat('#d8c490')]); sand.position.y = 0.06; inner.add(sand);
+  const surface = new THREE.Mesh(new THREE.PlaneGeometry(TW - 0.08, TD - 0.08), new THREE.MeshLambertMaterial({ map: ripple, transparent: true, opacity: 0.55, depthWrite: false })); surface.rotation.x = -Math.PI / 2; surface.position.y = TH - 0.11; inner.add(surface);
   const water = new THREE.Mesh(new THREE.BoxGeometry(TW - 0.06, TH - 0.15, TD - 0.06), new THREE.MeshLambertMaterial({ color: 0x5ab4e8, transparent: true, opacity: 0.28, depthWrite: false })); water.position.y = (TH - 0.15) / 2 + 0.04; inner.add(water);
   const glass = new THREE.Mesh(new THREE.BoxGeometry(TW, TH, TD), new THREE.MeshLambertMaterial({ color: 0xdff2fa, transparent: true, opacity: 0.12, depthWrite: false })); glass.position.y = TH / 2; inner.add(glass);
   const rim = box(TW + 0.04, 0.06, TD + 0.04, '#2a2f45'); rim.position.y = TH; inner.add(rim);
@@ -188,6 +199,15 @@ function syncTanks(t0) {
       rec.sig = dsig; rec.deco.clear(); rec.bubbles = [];
       t.deco.forEach((d, k) => { const m = decoMesh(d, k); rec.deco.add(m); if (m.userData.bubbles) for (let b = 0; b < 6; b++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 4), mat('#e8f6ff', { opacity: 0.7 })); s.userData.o = b / 6; s.userData.x = m.position.x; s.userData.z = m.position.z; rec.deco.add(s); rec.bubbles.push(s); } });
     }
+    // huevos (cuando hay puesta): un racimo junto a la primera planta o en un rincón
+    if (t.breeding && !rec.eggs) {
+      const eg = new THREE.Group(); const plant = rec.deco.children.find((c) => c.userData.sway);
+      eg.position.set(plant ? plant.position.x + 0.12 : -TW / 2 + 0.4, plant ? 0.35 : 0.16, plant ? plant.position.z + 0.05 : -TD / 2 + 0.3);
+      const em = new THREE.MeshLambertMaterial({ color: 0xffb070, transparent: true, opacity: 0.85, emissive: 0x402010 }); const dot = mat('#3a2010');
+      for (let k = 0; k < 16; k++) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), em); e.position.set(rnd(-0.07, 0.07), rnd(-0.08, 0.08), rnd(-0.04, 0.04)); const d = new THREE.Mesh(new THREE.SphereGeometry(0.006, 5, 4), dot); d.position.z = 0.015; e.add(d); e.userData.eggs = tid(t); eg.add(e); }
+      eg.userData.eggs = t.id; rec.inner.add(eg); rec.eggs = eg;
+    }
+    if (!t.breeding && rec.eggs) { rec.inner.remove(rec.eggs); rec.eggs = null; }
     // agua más verde si está sucia
     rec.water.material.color.setHSL(0.55 - (100 - t.clean) * 0.0016, 0.6, 0.6 - (100 - t.clean) * 0.002);
     for (const b of rec.bubbles) { const k = (t0 * 0.4 + b.userData.o) % 1; b.position.set(b.userData.x + Math.sin(k * 9) * 0.03, 0.15 + k * (TH - 0.3), b.userData.z); }
@@ -208,7 +228,12 @@ function swim(t) {
     const tank = tankOf(tid); const lively = tank && tank.food > 15 ? 1 : 0.5;
     for (const [fid, m] of rec.fish) {
       const f = st.fish.find((q) => q.id === fid); const sick = f && f.health < 40;
-      if (Math.hypot(m.tx - m.x, m.ty - m.y, m.tz - m.z) < 0.08 || Math.random() < 0.003) { m.tx = rnd(-(TW / 2 - 0.35), TW / 2 - 0.35); m.ty = rnd(0.3, TH - 0.35); m.tz = rnd(-(TD / 2 - 0.3), TD / 2 - 0.3); }
+      if (Math.hypot(m.tx - m.x, m.ty - m.y, m.tz - m.z) < 0.08 || Math.random() < 0.003) {
+        const parent = tank?.breeding && (tank.breeding.a === fid || tank.breeding.b === fid) && rec.eggs;
+        if (parent) { const e = rec.eggs.position; m.tx = e.x + rnd(-0.25, 0.25); m.ty = e.y + rnd(0, 0.2); m.tz = e.z + rnd(0.05, 0.3); }
+        else if (f && !f.adult) { const lead = [...rec.fish.values()].find((q) => q !== m && q.sp < 0.31); m.tx = (lead ? lead.x : 0) + rnd(-0.3, 0.3); m.ty = rnd(0.2, 0.55); m.tz = (lead ? lead.z : 0) + rnd(-0.2, 0.2); m.tx = Math.max(-(TW / 2 - 0.3), Math.min(TW / 2 - 0.3, m.tx)); m.tz = Math.max(-(TD / 2 - 0.25), Math.min(TD / 2 - 0.25, m.tz)); }
+        else { m.tx = rnd(-(TW / 2 - 0.35), TW / 2 - 0.35); m.ty = rnd(0.3, TH - 0.35); m.tz = rnd(-(TD / 2 - 0.3), TD / 2 - 0.3); }
+      }
       const dx = m.tx - m.x, dy = m.ty - m.y, dz = m.tz - m.z, d = Math.hypot(dx, dy, dz) || 1;
       const sp = m.sp * lively * (sick ? 0.4 : 1) * dt;
       m.x += dx / d * sp; m.y += dy / d * sp * 0.6; m.z += dz / d * sp;
@@ -216,16 +241,58 @@ function swim(t) {
       const yaw = Math.atan2(dx, dz); let a = yaw - m.g.rotation.y; a = Math.atan2(Math.sin(a), Math.cos(a)); m.g.rotation.y += a * Math.min(1, dt * 4);
       m.g.rotation.z = sick ? 0.9 : 0;
       m.tail.rotation.y = Math.sin(t * (8 + m.sp * 6)) * 0.45;
+      if (m.pects) m.pects.forEach((pv, i) => (pv.rotation.y = Math.sin(t * 6 + i * 3) * 0.5));
     }
+    for (const d of rec.deco.children) if (d.userData.sway) d.userData.sway.forEach((pv, i) => (pv.rotation.z = pv.userData.base + Math.sin(t * 1.3 + i) * 0.08));
+    if (rec.eggs) rec.eggs.children.forEach((e, i) => e.scale.setScalar(1 + Math.sin(t * 2 + i) * 0.06));
   }
 }
-eng.onBeforeRender = (t) => { syncTanks(t); swim(t); };
+eng.onBeforeRender = (t) => { syncTanks(t); swim(t); caustic.offset.set(Math.sin(t * 0.3) * 0.1, t * 0.03); ripple.offset.set(t * 0.02, Math.cos(t * 0.4) * 0.05); if (close) closeCard(); };
 // luz según la hora
 function light() { const h = hourOf(st.time); const night = h < 7 || h >= 21; eng.hemi.intensity = night ? 0.6 : 1.1; eng.sun.intensity = night ? 0.4 : 1.5; document.body.style.background = night ? 'linear-gradient(#1a2148,#3b3f72)' : 'linear-gradient(#bfe6f0,#eaf6f8)'; }
 
 // ---------- interfaz ----------
 const sheet = new Sheet();
 let focusTank = null;
+// ---------- vista de cerca ----------
+let close = null, followId = null, entering = false, cardT = 0;
+function fishWorld(fid) { for (const rec of tankGroups.values()) { const m = rec.fish.get(fid); if (m) { const v = new THREE.Vector3(); m.g.getWorldPosition(v); return v; } } return null; }
+function enterClose(tid) {
+  const i = st.tanks.findIndex((t) => t.id === tid); if (i < 0) return;
+  close = tid; followId = null; entering = true; sheet.close(); entering = false; focusTank = tid;
+  const [x, z] = SLOTS[i]; eng.cam.follow = null; eng.cam.min = 0.6; eng.cam.minPitch = -0.1;
+  eng.cam.tx = new THREE.Vector3(x, STAND + TH * 0.45, z); eng.cam.distT = eng.fitDist(3.25); eng.cam.pitchT = 0.05;
+  eng.cam.yawT = Math.round(eng.cam.yaw / (Math.PI * 2)) * Math.PI * 2;
+  $('#closebar').hidden = false; $('#camctl').hidden = true; renderCloseBar(); hud();
+}
+function exitClose() {
+  close = null; followId = null; eng.cam.follow = null; eng.cam.min = 2.2; eng.cam.minPitch = 0.15;
+  $('#closebar').hidden = true; $('#fishcard').hidden = true; $('#camctl').hidden = false;
+  focusTank = null; eng.cam.pitchT = 0.55; eng.cam.tx = new THREE.Vector3(0, 0.8, 0.5); eng.cam.distT = overviewDist(); hud();
+}
+function followFish(fid) {
+  followId = fid; eng.follow(() => (followId ? fishWorld(followId) : null)); eng.cam.distT = Math.min(eng.cam.dist, eng.fitDist(1.4)); cardT = 0; closeCard(true);
+}
+function renderCloseBar() {
+  const t = tankOf(close); if (!t) return exitClose();
+  const i = st.tanks.indexOf(t); const n = fishIn(t).length;
+  const key = t.id + n + !!t.breeding; if ($('#closebar').dataset.k === key) return; $('#closebar').dataset.k = key;
+  $('#closebar').innerHTML = `<span class="ttl">${icon('fish')} Acuario ${i + 1} · ${n} ${n === 1 ? 'pez' : 'peces'}${t.breeding ? ' · huevos' : ''}</span>
+    <button class="btn sm" id="cb_f">${icon('eye')} Seguir a un pez</button><button class="btn sm alt" id="cb_p">${icon('menu')} Panel</button><button class="btn sm alt" id="cb_x">${icon('x')}</button>`;
+  $('#cb_f').onclick = () => { const fs = fishIn(t); if (!fs.length) return; const cur = fs.findIndex((f) => f.id === followId); followFish(fs[(cur + 1) % fs.length].id); };
+  $('#cb_p').onclick = () => { const id = close; exitClose(); openTank(id); };
+  $('#cb_x').onclick = exitClose;
+}
+// ficha flotante del pez que sigues (o de los huevos)
+function closeCard(force = false) {
+  const el = $('#fishcard'); const now = performance.now(); if (!force && now - cardT < 500) return; cardT = now;
+  if (el.dataset.eggs) { const t = tankOf(el.dataset.eggs); if (!t || !t.breeding) { delete el.dataset.eggs; el.hidden = true; return; } el.innerHTML = `<b>${icon('egg')} Huevos</b><div class="hint">Eclosionarán en unos ${Math.max(1, Math.round(t.breeding.until - st.time))} min de juego. Los padres los vigilan.</div>`; el.hidden = false; return; }
+  const f = followId && st.fish.find((q) => q.id === followId); if (!f) { el.hidden = true; return; }
+  const age = Math.round((st.time - f.born) / 60);
+  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${COLORS[f.g.c].hex};color:#fff">${icon('fish')}</span><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span><div class="hint">${esc(speciesName(f.g))}</div></div><b>${eur(price(f))}</b></div>
+    <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Salud</span><div class="bar"><i style="transform:scaleX(${f.health / 100});background:${f.health < 40 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
+  el.hidden = false;
+}
 const selected = new Set();
 function hud() {
   $('#money b').textContent = eur(st.money);
@@ -240,6 +307,7 @@ function hud() {
 }
 function geneChips(g) { return `<span class="chip" style="background:${COLORS[g.c].hex};color:${g.c >= 7 || g.c === 2 ? '#333' : '#fff'}">${COLORS[g.c].label}</span><span class="chip">${PATTERNS[g.p].label}</span><span class="chip">${FINS[g.f].short}</span>${g.glow ? '<span class="chip gold">luminoso</span>' : ''}`; }
 function openTank(tid) {
+  if (close) exitClose();
   focusTank = tid; selected.clear();
   const i = st.tanks.findIndex((t) => t.id === tid); const [x, z] = SLOTS[i]; eng.focus(x, z + 0.3, tankDist() * 0.9); eng.cam.target.y = -0.55; eng.cam.pitch = 0.2; eng.cam.yawT = 0.12;
   sheet.open('tank', `Acuario ${i + 1}`); renderPanel(); hud();
@@ -254,7 +322,7 @@ function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'tank') {
     const t = tankOf(focusTank); if (!t) return sheet.close(); const fs = fishIn(t);
-    b.innerHTML = `${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
+    b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:10px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
       <div class="row" style="margin:8px 0"><button class="btn coral" id="feed">${icon('food')} Comida · 2 €</button><button class="btn alt" id="clean">${icon('drop')} Limpiar · 20 €</button></div>
       ${!has('calefactor') ? `<div class="row"><button class="btn alt sm" id="tdown">− Enfriar</button><span class="hint" style="flex:1;text-align:center;align-self:center">Ideal: 24–27 °C</span><button class="btn alt sm" id="tup">+ Calentar</button></div>` : '<p class="hint">El calefactor mantiene la temperatura perfecta.</p>'}
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
@@ -264,6 +332,7 @@ function renderPanel() {
       <button class="btn" id="breed" style="width:100%;margin-top:6px" ${selected.size === 2 && !t.breeding ? '' : 'disabled'}>${icon('egg')} Criar con los dos marcados</button>
       <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d) => `<span class="chip">${DECOS[d].label}</span>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
       <div class="grid" style="margin-top:8px">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox">${icon(d.ic)}</span>${d.label}<span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
+    b.querySelector('#seeclose').onclick = () => enterClose(t.id);
     b.querySelector('#feed').onclick = () => { if (st.money < 2) return; st.money -= 2; t.food = clamp(t.food + 45); renderPanel(); hud(); };
     b.querySelector('#clean').onclick = () => { if (st.money < 20) return toast('No hay dinero suficiente', 'warn'); st.money -= 20; t.clean = 100; renderPanel(); hud(); };
     const td = b.querySelector('#tdown'), tu = b.querySelector('#tup'); if (td) td.onclick = () => { t.temp -= 1; renderPanel(); }; if (tu) tu.onclick = () => { t.temp += 1; renderPanel(); };
@@ -327,8 +396,23 @@ function moveFish(fid) {
   box2.querySelector('#mx').onclick = closeModal;
   box2.querySelectorAll('[data-t]').forEach((x) => (x.onclick = () => { f.tank = x.dataset.t; closeModal(); renderPanel(); save(); }));
 }
-eng.onTap = (sx, sy) => { if (modalOpen()) return; const tid = eng.pick(sx, sy, [...tankGroups.values()].map((r) => r.g), 'tank'); if (tid) openTank(tid); };
-sheet.onClose = () => { focusTank = null; eng.cam.pitch = 0.55; eng.focus(0, 0.5, overviewDist()); eng.cam.target.y = 0.8; hud(); };
+eng.onTap = (sx, sy) => {
+  if (modalOpen()) return;
+  if (close) {
+    const rec = tankGroups.get(close); if (!rec) return;
+    const eggs = eng.pick(sx, sy, rec.eggs ? [rec.eggs] : [], 'eggs');
+    if (eggs) { followId = null; eng.cam.follow = null; $('#fishcard').dataset.eggs = close; return closeCard(true); }
+    delete $('#fishcard').dataset.eggs;
+    const fid = eng.pick(sx, sy, [...rec.fish.values()].map((m) => m.g), 'fish'); if (fid) followFish(fid);
+    return;
+  }
+  const tid = eng.pick(sx, sy, [...tankGroups.values()].map((r) => r.g), 'tank'); if (tid) openTank(tid);
+};
+eng.onDoubleTap = (sx, sy) => {
+  if (close) { eng.cam.distT = Math.max(eng.cam.min, eng.cam.dist * 0.6); return; }
+  const tid = eng.pick(sx, sy, [...tankGroups.values()].map((r) => r.g), 'tank'); if (tid) enterClose(tid);
+};
+sheet.onClose = () => { if (entering) return; focusTank = null; eng.cam.pitch = 0.55; eng.focus(0, 0.5, overviewDist()); eng.cam.target.y = 0.8; hud(); };
 
 document.querySelector('#speeds').innerHTML = [['pause', 0], ['play', 1], ['ff', 2], ['fff', 3]].map(([ic, s]) => `<button data-s="${s}">${icon(ic)}</button>`).join('');
 document.querySelector('#speeds').onclick = (e) => { const b = e.target.closest('button'); if (b) { st.speed = +b.dataset.s; hud(); } };
@@ -342,7 +426,8 @@ let uiT = 0, saveT = 0;
 eng.onFrame = (dt) => {
   const paused = modalOpen() || st.speed === 0;
   if (!paused) { let g = dt * SPEEDS[st.speed]; while (g > 0) { const s = Math.min(g, 2); tick(s); g -= s; } }
-  eng.activity = focusTank ? 'busy' : 'calm';
+  eng.activity = close ? 'close' : focusTank ? 'busy' : 'calm';
+  if (close && uiT > 2.9) renderCloseBar();
   uiT += dt; saveT += dt;
   if (uiT > 3) { uiT = 0; hud(); if (sheet.name === 'tank' && !document.activeElement?.matches('input')) { const sc = sheet.body.scrollTop; renderPanel(); sheet.body.scrollTop = sc; } }
   if (saveT > 20) { saveT = 0; save(); }
