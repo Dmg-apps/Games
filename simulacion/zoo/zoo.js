@@ -1,6 +1,8 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
+import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
+import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES } from './data.js';
 
 const KEY = 'parque_save_v1';
@@ -18,7 +20,14 @@ function newPark() {
   for (let x = ENTRANCE.x - 4; x <= ENTRANCE.x + 4; x++) if (!st.paths.includes(pk(x, ENTRANCE.z - 6))) st.paths.push(pk(x, ENTRANCE.z - 6));
   return st;
 }
+const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newPark();
+const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
+// Copia en la nube (cuenta común a toda la app)
+const cloud = autoSync('parque', () => st);
+let swapping = false; // al cambiar a la partida de la nube no se vuelve a guardar la de aquí
+function useRemote(state) { swapping = true; store.save(KEY, state); sessionStorage.setItem('cloud_restored', '1'); location.reload(); }
+async function afterCloudLogin() { const r = await pullSlot('parque'); if (r === undefined) return; if (r) chooseSave(r.savedAt, () => useRemote(r.state), () => cloud.keepLocal()); else cloud.keepLocal(); }
 const pathSet = () => new Set(st.paths);
 const id = () => 'z' + st.nextId++;
 
@@ -217,7 +226,7 @@ function tick(dt) {
   while (st.lastHour < hr) { st.lastHour++; hourly(st.lastHour % 24); }
   animalsTick(dt); visitorsTick(dt);
 }
-function save() { st.lastSaved = Date.now(); store.save(KEY, st); }
+function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
 // Con la app cerrada: pasa el tiempo más despacio y se estima lo ganado
 function offline() {
   const mins = Math.min((Date.now() - st.lastSaved) / 1000 * 0.2, 1440); if (mins < 20) return;
@@ -612,10 +621,12 @@ function renderPanel() {
       <div class="stat"><span class="tile" style="background:#8b5cf6">${icon('paw')}</span><span>Animales</span><b>${st.animals.length} en ${st.enclosures.length} recintos</b></div></div>
       <div class="sec">Precio de la entrada</div><div class="row" style="align-items:center"><button class="btn sm alt" id="tm">−</button><b style="flex:1;text-align:center;font-size:20px">${st.ticket} €</b><button class="btn sm alt" id="tp">+</button></div>
       <p class="hint">Más caro da más por visitante pero vienen menos.</p>
+      <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
     b.querySelector('#tm').onclick = () => { st.ticket = Math.max(0, st.ticket - 5); renderPanel(); };
     b.querySelector('#tp').onclick = () => { st.ticket = Math.min(60, st.ticket + 5); renderPanel(); };
+    renderCloud(b.querySelector('#cloudbox'), { slot: 'parque', sync: cloud, onLogin: afterCloudLogin, refresh: renderPanel });
     const q = localStorage.getItem('sim_quality') || (eng.hq ? 'alta' : 'eco'); b.querySelectorAll('#q button').forEach((x) => { x.classList.toggle('on', x.dataset.v === q); x.onclick = () => { localStorage.setItem('sim_quality', x.dataset.v); save(); location.reload(); }; });
     b.querySelector('#reset').onclick = () => confirm('Se borrará tu parque. ¿Empezar de cero?', () => { localStorage.removeItem(KEY); st = newPark(); visitors = []; sig = {}; sheet.close(); hud(); save(); });
   }
@@ -654,8 +665,22 @@ eng.onFrame = (dt) => {
   if (uiT > 0.5) { uiT = 0; hud(); if (sheet.name === 'staff' || sheet.name === 'info') { /* refresco ligero */ } }
   if (saveT > 20) { saveT = 0; save(); }
 };
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else { offline(); hud(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
 if (store.load(KEY)) offline(); else info('Te damos la bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
 hud();
 window.zoo = { eng, THREE, enterClose, rebuildEnclosures, get st() { return st; }, get visitors() { return visitors; } };
+
+// Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
+function cloudCheck() {
+  if (!cloudSession()) return;
+  cloud.newer(LOCAL_SAVED_AT).then((r) => {
+    if (r === undefined) return; // sin conexión: se vuelve a mirar al recuperarla
+    if (!r) return cloud.saved();
+    if (!HAD_LOCAL) return useRemote(r.state);
+    chooseSave(r.savedAt, () => useRemote(r.state), () => cloud.keepLocal());
+  });
+}
+cloud.onRetry = cloudCheck;
+if (sessionStorage.getItem('cloud_restored')) { sessionStorage.removeItem('cloud_restored'); setTimeout(() => toast('Partida recuperada de la nube', 'good', 'cloud'), 600); }
+cloudCheck();

@@ -1,5 +1,6 @@
 // Menú de juegos de Simulación
 import { icon } from './shared/icons.js';
+import { renderCloud } from './shared/cloudui.js';
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
 const eur = (n) => `${Math.round(n).toLocaleString('es-ES')} €`;
 const chip = (t) => `<span class="chip">${t}</span>`;
@@ -18,6 +19,10 @@ document.getElementById('games').innerHTML = GAMES.map((g) => {
   return `<a class="game" href="${g.href}"><div class="art" style="background:${g.grad}">${deco()}<span class="big">${icon(g.ic)}</span></div><span class="play">${icon('play')}</span>
     <div class="body"><h2>${g.title}</h2><p>${g.desc}</p><div class="prog">${p ? p.map(chip).join('') : chip('Nueva partida')}</div></div></a>`;
 }).join('') + `<div class="game soon"><div class="art"><span class="big">${icon('plus')}</span></div><div class="body"><h2>Próximamente</h2><p>Más mundos en camino: granja, ciudad, restaurante…</p></div></div>`;
+
+// Cuenta en la nube común: al entrar aquí, cada juego sincroniza su partida al abrirlo
+document.getElementById('cloudttl').innerHTML = `${icon('cloud')} Copia en la nube`;
+renderCloud(document.getElementById('cloud'));
 
 // Un solo service worker para toda la app (funciona sin conexión y se actualiza solo)
 if ('serviceWorker' in navigator) {

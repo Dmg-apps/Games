@@ -53,13 +53,17 @@ class Game {
     const onNew = () => this.ui.createFamily((defs, surname) => this.start(defs, surname), () => this.showTitle());
     this.ui.showTitle(!!saved, () => this.continueGame(), onNew);
     // ¿Hay una partida en la nube? (por ejemplo, en un móvil nuevo)
-    Cloud.pull().then((remote) => {
+    this.remoteP = Cloud.pull().then((remote) => {
       this.remote = remote;
       if (remote && !saved && !this.state) this.ui.showTitle(true, () => this.continueGame(), onNew, remote.family);
+      return remote;
     });
   }
-  continueGame() {
-    const local = Sim.load(); const remote = this.remote;
+  async continueGame() {
+    // espera a saber si hay una copia más nueva en la nube (máx. 4 s) para no pisarla
+    const remote = this.remoteP ? await Promise.race([this.remoteP, new Promise((r) => setTimeout(() => r(this.remote), 4000))]) : this.remote;
+    if (this.state) return;
+    const local = Sim.load();
     if (remote && (!local || remote.savedAt > (local.lastSaved || 0) + 5000)) {
       if (!local) return this.loadState(remote.state);
       const when = new Date(remote.savedAt).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });

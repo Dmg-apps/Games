@@ -1,6 +1,8 @@
 // Arrecife: cría peces, cuida los acuarios y lleva tu tienda.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
+import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
+import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES } from './data.js';
 
 const KEY = 'arrecife_save_v1';
@@ -32,7 +34,14 @@ function discover(st, g) {
   if (st.discovered.length % 10 === 0) { st.money += 150; st.rep += 2; toast(`Álbum: ${st.discovered.length} variedades. Premio de 150 €`, 'good', 'star'); }
   return true;
 }
+const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newShop();
+const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
+// Copia en la nube (cuenta común a toda la app)
+const cloud = autoSync('arrecife', () => st);
+let swapping = false; // al cambiar a la partida de la nube no se vuelve a guardar la de aquí
+function useRemote(state) { swapping = true; store.save(KEY, state); sessionStorage.setItem('cloud_restored', '1'); location.reload(); }
+async function afterCloudLogin() { const r = await pullSlot('arrecife'); if (r === undefined) return; if (r) chooseSave(r.savedAt, () => useRemote(r.state), () => cloud.keepLocal()); else cloud.keepLocal(); }
 const tankOf = (id) => st.tanks.find((t) => t.id === id);
 const fishIn = (t) => st.fish.filter((f) => f.tank === t.id);
 const has = (u) => st.upgrades.includes(u);
@@ -106,7 +115,7 @@ function hatch(t) {
   toast(`¡Han nacido ${n} alevines! ${names.slice(0, 2).join(', ')}${n > 2 ? '…' : ''}`, 'good', 'egg');
 }
 function endOfDay() { st.rep = Math.max(0, st.rep - 0.2); save(); }
-function save() { st.lastSaved = Date.now(); store.save(KEY, st); }
+function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
 function offline() {
   const mins = Math.min((Date.now() - st.lastSaved) / 1000 * 0.25, 1440); if (mins < 15) return;
   // pasa el tiempo con cuidado: sin muertes mientras no estás
@@ -384,8 +393,10 @@ function renderPanel() {
   if (name === 'info') {
     b.innerHTML = `<div class="card"><div class="stat"><span class="tile" style="background:#f5a524">${icon('star')}</span><span>Reputación</span><b>${Math.floor(st.rep)}</b></div><div class="stat"><span class="tile" style="background:#25c48f">${icon('coin')}</span><span>Peces vendidos</span><b>${st.sold}</b></div><div class="stat"><span class="tile" style="background:#8b5cf6">${icon('sparkle')}</span><span>Variedades</span><b>${st.discovered.length}/${TOTAL_COMBOS}</b></div></div>
       <p class="hint">Cuida comida, agua y temperatura de cada acuario. Si te olvidas, enferman; con la app cerrada siguen vivos pero lo pasan peor.</p>
+      <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
+    renderCloud(b.querySelector('#cloudbox'), { slot: 'arrecife', sync: cloud, onLogin: afterCloudLogin, refresh: renderPanel });
     const q = localStorage.getItem('sim_quality') || (eng.hq ? 'alta' : 'eco'); b.querySelectorAll('#q button').forEach((x) => { x.classList.toggle('on', x.dataset.v === q); x.onclick = () => { localStorage.setItem('sim_quality', x.dataset.v); save(); location.reload(); }; });
     b.querySelector('#reset').onclick = () => confirm('Se borrará tu tienda. ¿Empezar de cero?', () => { localStorage.removeItem(KEY); st = newShop(); tankGroups.forEach((r) => S3.remove(r.g)); tankGroups.clear(); sheet.close(); hud(); save(); });
   }
@@ -432,9 +443,23 @@ eng.onFrame = (dt) => {
   if (uiT > 3) { uiT = 0; hud(); if (sheet.name === 'tank' && !document.activeElement?.matches('input')) { const sc = sheet.body.scrollTop; renderPanel(); sheet.body.scrollTop = sc; } }
   if (saveT > 20) { saveT = 0; save(); }
 };
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else { offline(); hud(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
 if (store.load(KEY)) offline(); else { save(); info('Te damos la bienvenida a Arrecife', `<p>Tu tienda de peces acaba de abrir.</p><ul style="padding-left:18px;line-height:1.6"><li>Toca un <b>acuario</b> para ver sus peces, darles de comer, limpiar y decorar.</li><li><b>Cría</b> un macho y una hembra: las crías mezclan rasgos y a veces salen variedades nuevas.</li><li>Completa el <b>álbum</b> de ${TOTAL_COMBOS} variedades.</li><li>Atiende a los <b>clientes</b>: piden peces concretos y pagan bien.</li></ul>`, '¡A abrir la tienda!'); }
 if (!st.requests.length) newRequest();
 hud();
 window.reef = { eng, get st() { return st; } };
+
+// Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
+function cloudCheck() {
+  if (!cloudSession()) return;
+  cloud.newer(LOCAL_SAVED_AT).then((r) => {
+    if (r === undefined) return; // sin conexión: se vuelve a mirar al recuperarla
+    if (!r) return cloud.saved();
+    if (!HAD_LOCAL) return useRemote(r.state);
+    chooseSave(r.savedAt, () => useRemote(r.state), () => cloud.keepLocal());
+  });
+}
+cloud.onRetry = cloudCheck;
+if (sessionStorage.getItem('cloud_restored')) { sessionStorage.removeItem('cloud_restored'); setTimeout(() => toast('Partida recuperada de la nube', 'good', 'cloud'), 600); }
+cloudCheck();

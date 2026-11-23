@@ -36,6 +36,8 @@
     .game.soon { opacity: 0.75; pointer-events: none; }
     .game.soon .art { background: repeating-linear-gradient(45deg, #e6e3f0 0 14px, #eeebf6 14px 28px); }
     .game.soon .art .big { color: #a8a2c0; }
+    .account { max-width: 960px; margin: 18px auto 0; background: #fff; border-radius: 26px; box-shadow: var(--shadow); padding: 4px 16px 16px; }
+    .account .inner { max-width: 440px; }
     footer { max-width: 960px; margin: 22px auto 0; color: var(--ink-3); font-size: 12.5px; text-align: center; line-height: 1.5; }
     @media (hover: hover) and (pointer: fine) { .game:hover { transform: translateY(-3px); box-shadow: var(--shadow-l); } }
   </style>
@@ -46,7 +48,8 @@
     <div><h1>Simulación</h1><p>Elige un mundo y hazlo crecer.</p></div>
   </header>
   <main class="games" id="games"></main>
-  <footer>Las partidas se guardan en este móvil y funcionan sin conexión. Vidas puede guardarse también en la nube.<br>Pronto llegarán más juegos.</footer>
+  <section class="account"><div class="sec" id="cloudttl"></div><div class="inner" id="cloud"></div></section>
+  <footer>Las partidas se guardan en este móvil y funcionan sin conexión. Con una cuenta, todas se guardan también en la nube.<br>Pronto llegarán más juegos.</footer>
   <script type="module" src="hub.js"></script>
 </body>
 </html>
