@@ -111,6 +111,7 @@ export class Engine {
       onTap(x, y) { self.onTap?.(x, y); },
       onDoubleTap(x, y) { if (self.onDoubleTap) return self.onDoubleTap(x, y); const p = self.ground(x, y); if (p) { self.cam.tx = new THREE.Vector3(p.x, self.cam.target.y, p.z); self.cam.distT = Math.max(self.cam.min, self.cam.dist * 0.5); } },
       onDragStart(x, y) { return !!self.onDragStart?.(x, y); },
+      onLongPress(x, y) { return !!self.onLongPress?.(x, y); },
       onDragMove(x, y) { self.onDragMove?.(x, y); },
       onDragEnd(c) { self.onDragEnd?.(c); },
     });

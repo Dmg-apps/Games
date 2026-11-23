@@ -1416,7 +1416,7 @@ function schedule(state, s) {
     }
     if (h >= sch.start && h < sch.end - 2 && s.workedDay !== day && s.skipDay !== day && s.cur?.kind !== 'ko' && s.cur?.kind !== 'leave') {
       interrupt(state, s); s.queue = [];
-      s.cur = { kind: 'leave', to: s.age === 'nino' ? 'escuela' : 'trabajo', late: h > sch.start + 0.75, icon: s.age === 'nino' ? 'backpack' : 'briefcase', label: 'Ir a ' + what };
+      s.cur = { kind: 'leave', to: s.age === 'nino' ? 'escuela' : 'trabajo', late: h > sch.start + 0.75, icon: s.age === 'nino' ? 'backpack' : 'briefcase', label: ('Ir a ' + what).replace(/^Ir a el /, 'Ir al ') };
       s.path = pathTo(state, s, EXIT.x, EXIT.y) || [];
       s.workedDay = day;
     }

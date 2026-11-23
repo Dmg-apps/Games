@@ -2,6 +2,7 @@
 // - Un dedo: arrastrar la vista (con inercia) o, si el juego lo pide, dibujar/mover cosas.
 // - Dos dedos: el gesto se "decide" al empezar para que no se mezcle: girar, pellizcar (acercar) o inclinar.
 //   Al pellizcar también se desplaza siguiendo el punto medio. El zoom va hacia donde están los dedos.
+// - Mantener pulsado: coger un objeto (si el juego lo permite) y arrastrarlo para moverlo.
 // - Doble toque: acercar a ese punto. Rueda del ratón: zoom.
 export class Gestures {
   constructor(el, h) {
@@ -11,6 +12,7 @@ export class Gestures {
     el.addEventListener('pointerup', (e) => this.up(e)); el.addEventListener('pointercancel', (e) => this.up(e));
     el.addEventListener('wheel', (e) => { e.preventDefault(); h.onInput?.(); h.zoom?.(e.deltaY < 0 ? 1.12 : 0.89, e.clientX, e.clientY); }, { passive: false });
   }
+  clearHold() { if (this.hold) clearTimeout(this.hold); this.hold = null; }
   stopInertia() { if (this.inertia) cancelAnimationFrame(this.inertia); this.inertia = null; }
   down(e) {
     this.h.onInput?.(); this.stopInertia();
@@ -19,7 +21,16 @@ export class Gestures {
     if (this.ptrs.size === 1) {
       this.start = { x: e.clientX, y: e.clientY, t: performance.now() }; this.moved = false; this.vel = { x: 0, y: 0, a: 0 };
       this.drag = !!this.h.onDragStart?.(e.clientX, e.clientY);
+      this.clearHold();
+      if (!this.drag && this.h.onLongPress) {
+        const x = e.clientX, y = e.clientY;
+        this.hold = setTimeout(() => {
+          this.hold = null;
+          if (this.ptrs.size === 1 && !this.moved && this.h.onLongPress(x, y)) { this.drag = true; this.moved = true; this.vel = { x: 0, y: 0, a: 0 }; navigator.vibrate?.(18); }
+        }, 420);
+      }
     } else if (this.ptrs.size === 2) {
+      this.clearHold();
       if (this.drag) { this.drag = false; this.h.onDragEnd?.(true); }
       const [a, b] = [...this.ptrs.values()];
       this.two = { d0: Math.hypot(a.x - b.x, a.y - b.y), a0: Math.atan2(b.y - a.y, b.x - a.x), m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, mode: null, lastA: Math.atan2(b.y - a.y, b.x - a.x), lastD: Math.hypot(a.x - b.x, a.y - b.y), lastM: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
@@ -31,7 +42,7 @@ export class Gestures {
     const now = performance.now(); const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, now - p.t);
     p.x = e.clientX; p.y = e.clientY; p.t = now;
     if (this.ptrs.size === 1) {
-      if (!this.moved && Math.hypot(e.clientX - this.start.x, e.clientY - this.start.y) > 8) this.moved = true;
+      if (!this.moved && Math.hypot(e.clientX - this.start.x, e.clientY - this.start.y) > 8) { this.moved = true; this.clearHold(); }
       if (!this.moved) return;
       if (this.drag) return this.h.onDragMove?.(e.clientX, e.clientY);
       this.h.pan?.(dx, dy);
@@ -56,7 +67,7 @@ export class Gestures {
     }
   }
   up(e) {
-    if (!this.ptrs.has(e.pointerId)) return; this.ptrs.delete(e.pointerId);
+    if (!this.ptrs.has(e.pointerId)) return; this.ptrs.delete(e.pointerId); this.clearHold();
     if (this.ptrs.size === 1 && this.two) { const rot = this.two.mode === 'rotate'; this.two = null; const r = [...this.ptrs.values()][0]; this.start = { x: r.x, y: r.y, t: performance.now() }; if (rot) this.spinInertia(); this.vel.x = this.vel.y = 0; return; }
     if (this.ptrs.size > 0) return;
     this.two = null;

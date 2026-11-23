@@ -328,3 +328,5 @@ textarea:focus { border-color: var(--ink); background: #fff; }
 
 #title .backhub { position: absolute; top: calc(var(--safe-t) + 14px); left: 16px; display: flex; gap: 6px; align-items: center; color: #fff; text-decoration: none; font-weight: 800; font-size: 14px; background: rgba(20,24,48,0.35); padding: 8px 12px; border-radius: 999px; transform: scaleX(1); }
 #title .backhub .ic { transform: scaleX(-1); }
+/* oscurecido suave en los bordes de la escena 3D */
+.vignette { position: fixed; inset: 0; pointer-events: none; z-index: 0; background: radial-gradient(ellipse 120% 95% at 50% 45%, rgba(0,0,0,0) 58%, rgba(18,24,48,0.22) 100%); }

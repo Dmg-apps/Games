@@ -1,5 +1,6 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
+import * as Look from '../shared/look.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
@@ -241,34 +242,58 @@ const canvas = $('#stage');
 const eng = new Engine(canvas, { target: [N / 2, 0, N / 2 + 2], dist: 26, maxDist: 90, bounds: N, pitch: 0.9 });
 eng.cam.dist = eng.fitDist(15);
 const S3 = eng.scene;
-const grass = canvasTexture(128, (x, s) => { x.fillStyle = '#7dbb5c'; x.fillRect(0, 0, s, s); for (let i = 0; i < 1600; i++) { x.fillStyle = `rgba(${40 + Math.random() * 50},${110 + Math.random() * 60},40,0.5)`; x.fillRect(Math.random() * s, Math.random() * s, 1, 3); } }, [N / 3, N / 3]);
-const island = new THREE.Mesh(new THREE.BoxGeometry(N + 2, 0.8, N + 2), [mat('#7a4f2f'), mat('#7a4f2f'), new THREE.MeshLambertMaterial({ map: grass }), mat('#6e4528'), mat('#8a5a35'), mat('#8a5a35')]);
-island.position.set(N / 2, -0.4, N / 2); S3.add(island);
+// Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
+Look.setupLook(eng, { cx: N / 2, cz: N / 2, size: N * 0.78, height: 30, fog: { color: '#d4eaf4', near: 45, far: 140 } });
+const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: Look.grassTex(N / 3) }));
+parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); parkGround.receiveShadow = true; S3.add(parkGround);
+S3.add(Look.horizonGround(N / 2, N / 2, '#8fb070'));
+{
+  // seto alrededor del parque (con hueco en la entrada) y bosque de fondo
+  const R = Look.seeded(7); const hedge = [];
+  for (let i = -0.5; i <= N + 0.5; i += 0.7) for (const [x, z] of [[i, -0.6], [i, N + 0.6], [-0.6, i], [N + 0.6, i]]) if (!(Math.abs(x - ENTRANCE.x - 0.5) < 1.6 && z > N)) hedge.push([x, z]);
+  S3.add(Look.hedge(hedge));
+  const trees = []; for (let i = 0; i < 150; i++) { const a = R() * Math.PI * 2, d = N * 0.62 + 2 + Math.pow(R(), 0.7) * 34; const x = N / 2 + Math.cos(a) * d, z = N / 2 + Math.sin(a) * d; if (z > N + 1 && Math.abs(x - ENTRANCE.x) < 4) continue; trees.push({ x, z, s: 1.4 + R() * 1.4, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
+  S3.add(Look.forest(trees));
+  const field = []; for (let i = 0; i < 260; i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
+}
 // entrada
 const gate = new THREE.Group(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5);
-for (const sx of [-0.7, 0.7]) { const p = box(0.18, 2, 0.18, '#8a5a3a'); p.position.set(sx, 1, 0); gate.add(p); }
-const arch = box(1.8, 0.35, 0.25, '#2e7d4f', 0.05); arch.position.y = 2.05; gate.add(arch); S3.add(gate);
-const groups = { paths: new THREE.Group(), enc: new THREE.Group(), bld: new THREE.Group(), animals: new THREE.Group(), people: new THREE.Group(), litter: new THREE.Group(), ghost: new THREE.Group() };
+for (const sx of [-0.8, 0.8]) { const p = box(0.24, 2.1, 0.24, '#7a5032', 0.04); p.position.set(sx, 1.05, 0); gate.add(p); const cap = box(0.32, 0.12, 0.32, '#5a3a22', 0.03); cap.position.set(sx, 2.15, 0); gate.add(cap); }
+const arch = box(2.1, 0.42, 0.3, '#2e7d4f', 0.06); arch.position.y = 2.2; gate.add(arch);
+const archSign = box(1.5, 0.26, 0.04, '#f4e6c8', 0.03); archSign.position.set(0, 2.2, 0.16); gate.add(archSign);
+for (const sx of [-1.3, 1.3]) { const b = Look.bush(0.35, sx > 0 ? 2 : 3, '#2c6a2e', '#68a84a'); b.position.set(sx, 0, 0.2); gate.add(b); }
+Look.shadows(gate, true, false); S3.add(gate);
+const groups = { tufts: new THREE.Group(), paths: new THREE.Group(), enc: new THREE.Group(), bld: new THREE.Group(), animals: new THREE.Group(), people: new THREE.Group(), litter: new THREE.Group(), ghost: new THREE.Group() };
 Object.values(groups).forEach((g) => S3.add(g));
 const ov = document.createElement('canvas'); ov.className = 'overlay2d'; canvas.after(ov); const octx = ov.getContext('2d');
 
 let sig = {};
+const pathMat = new THREE.MeshLambertMaterial({ map: Look.pavingTex(1) });
 function rebuildPaths() {
   const g = groups.paths; g.clear(); const n = st.paths.length; if (!n) return;
-  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), mat('#e3d4b0'), n); const m = new THREE.Matrix4();
+  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.05, 1), pathMat, n); inst.receiveShadow = true; const m = new THREE.Matrix4();
   st.paths.forEach((p, i) => { const [x, z] = p.split(',').map(Number); m.makeTranslation(x + 0.5, 0.03, z + 0.5); inst.setMatrixAt(i, m); });
   g.add(inst);
 }
-function tree(scale = 1) { const t = new THREE.Group(); const tr = box(0.12 * scale, 0.7 * scale, 0.12 * scale, '#7a5232'); tr.position.y = 0.35 * scale; t.add(tr); const l = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42 * scale, 0), mat('#3e8a3e')); l.position.y = 0.95 * scale; t.add(l); const l2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3 * scale, 0), mat('#4ea04e')); l2.position.set(0.15 * scale, 1.2 * scale, 0.05); t.add(l2); t.add(blob(0.9 * scale, 0.9 * scale)); return t; }
-function enrichMesh(type) {
+const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico: 'pino', humedal: 'abedul' };
+function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
+function enrichMesh(type, biome = 'sabana', seed = 1) {
   const g = new THREE.Group();
-  if (type === 'arbol') g.add(tree(1.2));
-  if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.22 + i * 0.06, 0), mat('#8a8a8a')); r.position.set(i * 0.25 - 0.25, 0.15, (i % 2) * 0.2); g.add(r); } }
-  if (type === 'charca') { const w = new THREE.Mesh(new THREE.CircleGeometry(0.75, 20), mat('#4a9ad0')); w.rotation.x = -Math.PI / 2; w.position.y = 0.04; g.add(w); }
-  if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mat('#e05050')); b.position.y = 0.22; g.add(b, blob(0.5, 0.5)); }
-  if (type === 'bambu') for (let i = 0; i < 6; i++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2, 5), mat('#6ab04a')); c.position.set(Math.cos(i) * 0.2, 0.6, Math.sin(i * 2) * 0.2); g.add(c); }
+  if (type === 'arbol') g.add(tree(1.25, BIOME_TREE[biome], seed));
+  if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
+  if (type === 'charca') {
+    const bank = new THREE.Mesh(new THREE.CircleGeometry(0.88, 24), mat('#8a7a52')); bank.rotation.x = -Math.PI / 2; bank.position.y = 0.03; bank.receiveShadow = true; g.add(bank);
+    const w = new THREE.Mesh(new THREE.CircleGeometry(0.74, 24), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.92 })); w.rotation.x = -Math.PI / 2; w.position.y = 0.045; g.add(w); g.userData.water = w;
+    for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2 + rnd(-0.2, 0.2); const r = Look.rock(0.07 + Math.random() * 0.05, '#8d877a', seed + i); r.position.set(Math.cos(a) * 0.8, 0.02, Math.sin(a) * 0.8); g.add(r); }
+    if (biome !== 'artico') for (let i = 0; i < 6; i++) { const rd = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.012, 0.35 + Math.random() * 0.2, 3), mat('#5a8a3a')); const a = 2 + i * 0.25; rd.position.set(Math.cos(a) * 0.68, 0.2, Math.sin(a) * 0.68); rd.rotation.z = rnd(-0.2, 0.2); g.add(rd); }
+  }
+  if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ map: ballTex() })); b.position.y = 0.22; b.rotation.z = 0.4; g.add(b, blob(0.5, 0.5)); }
+  if (type === 'bambu') for (let i = 0; i < 7; i++) { const h = 1.0 + Math.random() * 0.6; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, h, 6, 4), mat(i % 2 ? '#7ab84a' : '#5e9e3c')); c.position.set(Math.cos(i * 1.7) * 0.22, h / 2, Math.sin(i * 2.3) * 0.22); c.rotation.z = rnd(-0.08, 0.08); g.add(c);
+    for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 3), mat('#4e8e34')); l.scale.z = 0.2; l.position.set(c.position.x + 0.08, h * (0.55 + k * 0.15), c.position.z); l.rotation.z = -1.1; l.rotation.y = k * 2; g.add(l); } }
+  Look.shadows(g, true, false);
   return g;
 }
+let ballT = null; const ballTex = () => ballT || (ballT = canvasTexture(64, (x, s) => { const c = ['#e5484d', '#fff', '#3b82f6', '#fff', '#f5c842', '#fff']; c.forEach((col, i) => { x.fillStyle = col; x.fillRect(i * s / 6, 0, s / 6 + 1, s); }); }));
 const biomeTex = {};
 function groundTex(b) {
   if (biomeTex[b]) return biomeTex[b];
@@ -281,17 +306,19 @@ function groundTex(b) {
   }, [2, 2]);
   return biomeTex[b];
 }
+const postGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.84, 6), postMat = mat('#6a4a2a');
 function rebuildEnclosures() {
-  const g = groups.enc; g.clear();
+  const g = groups.enc; g.clear(); eng.shadowsDirty?.();
   for (const e of st.enclosures) {
     const eg = new THREE.Group(); eg.userData.enc = e.id; g.add(eg);
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(e.n - 0.05, 0.05, e.n - 0.05), [mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), new THREE.MeshLambertMaterial({ map: groundTex(e.biome) }), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color)]); ground.position.set(e.x + e.n / 2, 0.03, e.z + e.n / 2); eg.add(ground);
+    const ground = new THREE.Mesh(new THREE.BoxGeometry(e.n - 0.05, 0.05, e.n - 0.05), [mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), new THREE.MeshLambertMaterial({ map: groundTex(e.biome) }), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color)]); ground.position.set(e.x + e.n / 2, 0.03, e.z + e.n / 2); ground.receiveShadow = true; eg.add(ground);
     const rail = mat('#8a6a42');
     for (const [x, z, w, d] of [[e.x + e.n / 2, e.z, e.n, 0.06], [e.x + e.n / 2, e.z + e.n, e.n, 0.06], [e.x, e.z + e.n / 2, 0.06, e.n], [e.x + e.n, e.z + e.n / 2, 0.06, e.n]]) {
       for (const y of [0.35, 0.65]) { const r = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), rail); r.position.set(x, y, z); eg.add(r); }
     }
-    for (let i = 0; i <= e.n; i++) for (const [x, z] of [[e.x + i, e.z], [e.x + i, e.z + e.n], [e.x, e.z + i], [e.x + e.n, e.z + i]]) { const p = box(0.09, 0.8, 0.09, '#6a4a2a'); p.position.set(x, 0.4, z); eg.add(p); }
-    for (const it of e.items) { const m = enrichMesh(it.type); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); eg.add(m); }
+    for (let i = 0; i <= e.n; i++) for (const [x, z] of [[e.x + i, e.z], [e.x + i, e.z + e.n], [e.x, e.z + i], [e.x + e.n, e.z + i]]) { const p = new THREE.Mesh(postGeo, postMat); p.position.set(x, 0.42, z); p.castShadow = true; eg.add(p); }
+    eg.children.forEach((c) => { if (c.geometry?.type === 'BoxGeometry' && c !== ground) c.castShadow = true; });
+    e.items.forEach((it, i) => { const m = enrichMesh(it.type, e.biome, it.x * 7 + it.z); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); m.userData.item = e.id + ':' + i; eg.add(m); });
   }
 }
 function buildingMesh(b) {
@@ -305,63 +332,108 @@ function buildingMesh(b) {
   else if (b.type === 'papelera') { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.35, 10), mat('#4a7a5a')); c.position.y = 0.18; g.add(c); }
   else if (b.type === 'farola') { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), mat('#3a3a44')); p.position.y = 0.7; g.add(p); const l = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat('#fff0b0', { emissive: '#7a6a30' })); l.position.y = 1.45; g.add(l); }
   else if (b.type === 'flores') for (let i = 0; i < 7; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), mat(pick(['#ff8fb1', '#ffd45c', '#fff', '#b99cff']))); f.position.set(rnd(-0.35, 0.35), 0.08, rnd(-0.35, 0.35)); g.add(f); }
-  else if (b.type === 'arbolp') g.add(tree(1));
+  else if (b.type === 'arbolp') g.add(tree(1.1, (b.x + b.z) % 3 ? 'roble' : 'abedul', b.x * 3 + b.z));
   else if (b.type === 'fuente') { const bs = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.25, 16), mat('#d8d0c4')); bs.position.y = 0.13; g.add(bs); const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16), mat('#6ab4e8')); w.position.y = 0.26; g.add(w); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.6, 8), mat('#d8d0c4')); c.position.y = 0.5; g.add(c); }
   if (B.cat === 'Tiendas') g.add(blob(1.2, 1.2));
-  return g;
+  Look.shadows(g, true, false); return g;
 }
-function rebuildBuildings() { const g = groups.bld; g.clear(); for (const b of st.buildings) { const m = buildingMesh(b); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.userData.bld = b.id; g.add(m); } }
+function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = buildingMesh(b); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.userData.bld = b.id; g.add(m); } }
 
+// Pelaje dibujado (rayas, manchas, pelo) en vez de piezas sueltas: más natural y sin coste extra
+const coatCache = new Map();
+function coat(sp) {
+  if (coatCache.has(sp)) return coatCache.get(sp);
+  const S = SPECIES[sp], F = S.feat, [c1, c2] = S.colors;
+  const t = canvasTexture(256, (x, s) => {
+    x.fillStyle = c1; x.fillRect(0, 0, s, s);
+    if (F.includes('stripes')) { x.fillStyle = c2; for (let i = 0; i < 16; i++) { const y0 = i * s / 16; x.beginPath(); x.moveTo(0, y0); for (let px = 0; px <= s; px += 8) x.lineTo(px, y0 + Math.sin(px * 0.045 + i) * 5 + Math.sin(px * 0.13) * 2); for (let px = s; px >= 0; px -= 8) x.lineTo(px, y0 + 6 + Math.sin(px * 0.05 + i * 1.3) * 4); x.fill(); } }
+    else if (F.includes('spots')) { x.fillStyle = '#f2dcae'; x.fillRect(0, 0, s, s); for (let i = 0; i < 46; i++) { const cx = (i % 7) * s / 7 + (Math.floor(i / 7) % 2) * s / 14 + rnd(-6, 6), cy = Math.floor(i / 7) * s / 6.5 + rnd(-5, 5); x.fillStyle = i % 3 ? '#b8692a' : '#a85a22'; x.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + rnd(-0.3, 0.3), r = rnd(12, 17); k ? x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.9) : x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.9); } x.fill(); } }
+    // pelo: trazos cortos de luz y sombra
+    for (let i = 0; i < 2200; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)'; x.fillRect(Math.random() * s, Math.random() * s, 1, 3 + Math.random() * 3); }
+    if (F.includes('shell')) { x.strokeStyle = 'rgba(40,30,10,0.55)'; x.lineWidth = 3; for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) { const cx = i * s / 4, cy = j * s / 3 + (i % 2) * s / 6; x.beginPath(); for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI * 2; k ? x.lineTo(cx + Math.cos(a) * 26, cy + Math.sin(a) * 26) : x.moveTo(cx + 26, cy); } x.stroke(); } }
+  });
+  coatCache.set(sp, t); return t;
+}
+const coatMat = new Map();
+function cmat(sp, color = '#ffffff') { const k = sp + color; if (!coatMat.has(k)) coatMat.set(k, new THREE.MeshLambertMaterial({ map: coat(sp), color })); return coatMat.get(k); }
+const EYE_W = mat('#f4f0e8'), EYE_P = mat('#14100c'), EYE_H = mat('#ffffff', { emissive: '#ffffff' }), NOSE = mat('#2a2220'), HOOF = mat('#2e2620'), PINK = mat('#d89a9a');
 // Animales generados a partir de su descripción
 const animalMeshes = new Map();
 function animalModel(sp) {
   const S = SPECIES[sp]; const [L, H, W] = S.body; const [c1, c2, c3] = S.colors; const F = S.feat;
   const g = new THREE.Group(); const body = new THREE.Group(); g.add(body);
-  const m1 = mat(c1), m2 = mat(c2), m3 = mat(c3);
+  const patterned = F.includes('stripes') || F.includes('spots') || F.includes('shell');
+  const m1 = patterned || !F.includes('penguin') ? cmat(sp) : mat(c1), m2 = mat(c2), m3 = mat(c3);
+  const plain1 = F.includes('stripes') ? mat(c1) : m1;
   const legH = S.legs; const bodyY = S.biped ? legH + H * 0.5 : legH + H * 0.4;
+  const round = F.includes('panda') || F.includes('ears_round') || F.includes('mane') || F.includes('face');
   let torso;
-  if (F.includes('penguin')) { torso = new THREE.Mesh(new THREE.CapsuleGeometry(W * 0.55, H * 0.6, 4, 10), m1); torso.position.y = H * 0.55 + legH; const belly = new THREE.Mesh(new THREE.SphereGeometry(W * 0.48, 10, 8), m2); belly.scale.set(1, 1.5, 0.6); belly.position.set(0, H * 0.5 + legH, W * 0.25); body.add(belly); }
-  else { torso = new THREE.Mesh(new THREE.CapsuleGeometry(Math.min(W, H) * 0.5, L * 0.7, 4, 10), F.includes('shell') ? mat('#5a6a3a') : m1); torso.rotation.x = Math.PI / 2; torso.position.y = bodyY; torso.scale.set(W / Math.min(W, H), 1, H / Math.min(W, H)); }
-  body.add(torso);
-  if (F.includes('shell')) { const sh = new THREE.Mesh(new THREE.SphereGeometry(L * 0.55, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), m1); sh.scale.set(W / L * 1.1, 0.8, 1); sh.position.y = bodyY - 0.02; body.add(sh); }
-  if (F.includes('stripes') || F.includes('spots') || F.includes('panda')) {
-    for (let i = 0; i < 5; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(W * 1.02, F.includes('spots') ? 0.07 : H * 0.95, 0.05), m2); if (F.includes('spots')) { s.scale.set(0.3, 1, 1.4); s.position.set(rnd(-W * 0.4, W * 0.4), bodyY + H * 0.45, -L * 0.35 + i * L * 0.18); } else s.position.set(0, bodyY, -L * 0.35 + i * L * 0.17); if (!F.includes('panda') || i === 0 || i === 1) body.add(s); }
+  if (F.includes('penguin')) { torso = new THREE.Mesh(new THREE.CapsuleGeometry(W * 0.55, H * 0.6, 6, 14), mat(c1)); torso.position.y = H * 0.55 + legH; const belly = new THREE.Mesh(new THREE.SphereGeometry(W * 0.48, 14, 10), m2); belly.scale.set(1, 1.5, 0.62); belly.position.set(0, H * 0.5 + legH, W * 0.24); body.add(belly); }
+  else {
+    const geo = new THREE.CapsuleGeometry(Math.min(W, H) * 0.5, L * 0.7, 6, 14);
+    // pecho más profundo delante y lomo que baja hacia atrás
+    const p = geo.attributes.position, uv = geo.attributes.uv, half = L * 0.35 + Math.min(W, H) * 0.5; for (let i = 0; i < p.count; i++) { uv.setY(i, (p.getY(i) + half) / (2 * half)); const along = p.getY(i) / (L * 0.7); const k = 1 + along * 0.14; p.setX(i, p.getX(i) * k); p.setZ(i, p.getZ(i) * k + (p.getZ(i) < 0 ? along * 0.02 : 0)); } geo.computeVertexNormals();
+    torso = new THREE.Mesh(geo, F.includes('panda') ? mat(c1) : m1); torso.rotation.x = Math.PI / 2; torso.position.y = bodyY; torso.scale.set(W / Math.min(W, H), 1, H / Math.min(W, H));
   }
+  body.add(torso);
+  if (F.includes('panda')) { const band = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(W, H) * 0.53, Math.max(W, H) * 0.55, L * 0.3, 16, 1, true), m2); band.rotation.x = Math.PI / 2; band.scale.set(W / Math.max(W, H), 1, H / Math.max(W, H)); band.position.set(0, bodyY, L * 0.2); body.add(band); }
+  if (F.includes('shell')) { const sh = new THREE.Mesh(new THREE.SphereGeometry(L * 0.55, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), m1); sh.scale.set(W / L * 1.1, 0.8, 1); sh.position.y = bodyY - 0.02; body.add(sh); const rimS = new THREE.Mesh(new THREE.TorusGeometry(L * 0.55, 0.025, 6, 24), mat('#5a5030')); rimS.rotation.x = Math.PI / 2; rimS.scale.set(W / L * 1.1, 1, 1); rimS.position.y = bodyY - 0.02; body.add(rimS); }
+  if (F.includes('fluffy')) for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(H * 0.42, 1), m1); f.position.set(rnd(-0.05, 0.05), bodyY + H * 0.12, -L * 0.3 + i * L * 0.15); body.add(f); }
+  // patas con rodilla, y pezuña o zarpa
   const legs = [];
-  const legPos = S.biped ? [[-W * 0.25, 0], [W * 0.25, 0]] : [[-W * 0.32, L * 0.32], [W * 0.32, L * 0.32], [-W * 0.32, -L * 0.32], [W * 0.32, -L * 0.32]];
+  const legPos = S.biped ? [[-W * 0.25, 0], [W * 0.25, 0]] : [[-W * 0.3, L * 0.33], [W * 0.3, L * 0.33], [-W * 0.3, -L * 0.33], [W * 0.3, -L * 0.33]];
+  const paw = round || F.includes('tail_long') && !F.includes('stripes');
+  const legMat = F.includes('panda') ? m2 : S.biped && !F.includes('penguin') ? m3 : F.includes('penguin') ? mat(c3) : m1;
   for (const [lx, lz] of legPos) {
     const pv = new THREE.Group(); pv.position.set(lx, legH, lz); body.add(pv);
-    const thick = S.biped ? 0.025 : Math.max(0.035, W * 0.16);
-    const lg = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick * 0.85, legH, 6), F.includes('panda') ? m2 : (S.biped && !F.includes('penguin') ? m3 : m1)); lg.position.y = -legH / 2; pv.add(lg);
-    if (F.includes('penguin')) { lg.material = m3; }
-    legs.push(pv);
+    const thick = S.biped ? 0.022 : Math.max(0.035, W * 0.17);
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick * 0.72, legH * 0.55, 8), legMat); up.position.y = -legH * 0.275; pv.add(up);
+    const knee = new THREE.Group(); knee.position.y = -legH * 0.55; pv.add(knee);
+    const lo = new THREE.Mesh(new THREE.CylinderGeometry(thick * 0.68, thick * 0.55, legH * 0.45, 8), legMat); lo.position.y = -legH * 0.225; knee.add(lo);
+    if (!S.biped) {
+      if (paw) { const pw = new THREE.Mesh(new THREE.SphereGeometry(thick * 0.9, 8, 6), legMat); pw.scale.set(1, 0.6, 1.3); pw.position.set(0, -legH * 0.43, thick * 0.3); knee.add(pw); }
+      else if (!F.includes('shell')) { const hf = new THREE.Mesh(new THREE.CylinderGeometry(thick * 0.58, thick * 0.66, Math.min(0.06, legH * 0.12), 8), HOOF); hf.position.y = -legH * 0.43; knee.add(hf); }
+    } else { const ft = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.015, 0.09), F.includes('penguin') ? mat(c3) : m3); ft.position.set(0, -legH * 0.45, 0.03); knee.add(ft); }
+    pv.userData.knee = knee; pv.userData.back = lz < 0; legs.push(pv);
   }
   // cuello y cabeza
   const neck = new THREE.Group(); neck.position.set(0, S.biped ? bodyY + H * 0.3 : bodyY + H * 0.2, S.biped ? W * 0.1 : L * 0.42); body.add(neck);
-  if (S.neck > 0.05) { const nk = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.03, S.head * 0.4), Math.max(0.04, S.head * 0.55), S.neck, 8), F.includes('spots') ? m1 : m1); nk.position.set(0, S.neck / 2, S.neck * 0.15); nk.rotation.x = 0.25; neck.add(nk); }
+  if (S.neck > 0.05) { const nk = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.03, S.head * 0.42), Math.max(0.045, Math.min(W, H) * 0.32), S.neck, 10), m1); nk.position.set(0, S.neck / 2, S.neck * 0.15); nk.rotation.x = 0.25; neck.add(nk); }
   const head = new THREE.Group(); head.position.set(0, S.neck, S.neck * 0.3 + S.head * 0.3); neck.add(head);
-  const hd = new THREE.Mesh(new THREE.SphereGeometry(S.head, 12, 10), F.includes('panda') ? m1 : m1); hd.scale.set(1, 0.95, 1.2); head.add(hd);
-  if (!F.includes('beak') && !F.includes('penguin')) { const sn = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.55, 10, 8), F.includes('face') ? m2 : (F.includes('stripes') ? m2 : m1)); sn.position.set(0, -S.head * 0.25, S.head * 0.85); sn.scale.set(0.9, 0.7, 1); head.add(sn); }
-  if (F.includes('beak')) { const bk = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.35, S.head * 1.2, 6), m3); bk.rotation.x = Math.PI / 2; bk.position.set(0, -S.head * 0.1, S.head * 1.1); head.add(bk); }
-  for (const sd of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.012, S.head * 0.12), 6, 5), mat('#111')); eye.position.set(sd * S.head * 0.55, S.head * 0.2, S.head * 0.75); head.add(eye);
-    if (F.includes('panda')) { const p = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.25, 8, 6), m2); p.scale.set(1, 1.2, 0.4); p.position.set(sd * S.head * 0.5, S.head * 0.15, S.head * 0.78); head.add(p); }
-    if (F.includes('ears_up')) { const e = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.25, S.head * 0.9, 6), m1); e.position.set(sd * S.head * 0.45, S.head * 1.0, 0); head.add(e); }
-    if (F.includes('ears_round') || F.includes('panda')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.3, 8, 6), F.includes('panda') ? m2 : m1); e.position.set(sd * S.head * 0.7, S.head * 0.75, -S.head * 0.1); head.add(e); }
-    if (F.includes('ears_big')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.75, 10, 8), m3); e.scale.set(0.15, 1, 0.9); e.position.set(sd * S.head * 1.0, 0, -S.head * 0.2); head.add(e); }
-    if (F.includes('horns')) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.14, 5), m3); h.position.set(sd * 0.05, S.head * 1.0, -0.02); h.rotation.x = -0.4; head.add(h); }
-    if (F.includes('ossicones')) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.12, 5), m3); h.position.set(sd * 0.05, S.head * 1.1, 0); head.add(h); }
-    if (F.includes('tusks')) { const t = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.3, 6), mat('#f4f0e0')); t.rotation.x = Math.PI / 2 + 0.4; t.position.set(sd * 0.14, -S.head * 0.45, S.head * 0.9); head.add(t); }
+  const hd = new THREE.Mesh(new THREE.SphereGeometry(S.head, 16, 12), F.includes('panda') ? mat(c1) : m1); hd.scale.set(1, 0.95, round ? 1.05 : 1.15); head.add(hd);
+  const long = !round && !F.includes('beak') && !F.includes('penguin') && !F.includes('trunk') && !F.includes('shell');
+  if (long) { // hocico alargado (cebra, jirafa, cabra, alpaca, canguro)
+    const sn = new THREE.Mesh(new THREE.CylinderGeometry(S.head * 0.42, S.head * 0.62, S.head * 1.3, 10), F.includes('stripes') ? mat('#2a2a2a') : m1); sn.rotation.x = Math.PI / 2 + 0.35; sn.position.set(0, -S.head * 0.35, S.head * 0.95); head.add(sn);
+    const ns = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.42, 10, 8), F.includes('stripes') ? mat('#1a1a1a') : mat(c3)); ns.scale.set(1, 0.75, 0.6); ns.position.set(0, -S.head * 0.6, S.head * 1.55); head.add(ns);
+  } else if (!F.includes('beak') && !F.includes('penguin') && !F.includes('trunk')) {
+    const sn = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.5, 12, 10), F.includes('face') || F.includes('panda') ? mat(F.includes('panda') ? c1 : c2) : m1); sn.position.set(0, -S.head * 0.28, S.head * 0.82); sn.scale.set(1, 0.72, 0.9); head.add(sn);
+    const ns = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.17, 8, 6), NOSE); ns.scale.set(1.3, 0.8, 0.8); ns.position.set(0, -S.head * 0.12, S.head * 1.25); head.add(ns);
   }
-  if (F.includes('trunk')) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 0.6, 8), m1); t.position.set(0, -S.head * 0.6, S.head * 1.05); t.rotation.x = 0.35; head.add(t); }
-  if (F.includes('mane')) { const m = new THREE.Mesh(new THREE.SphereGeometry(S.head * 1.45, 12, 10), m3); m.position.set(0, 0, -S.head * 0.25); head.add(m); }
-  if (F.includes('mane_short')) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.08, S.neck * 1.1), m2); m.position.set(0, S.neck * 0.55, 0); m.rotation.x = -1.2; neck.add(m); }
-  if (F.includes('fluffy')) { const f = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.6, 8, 6), m2); f.position.set(0, S.head * 0.8, 0); head.add(f); }
-  if (F.includes('beard')) { const b = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 5), m2); b.rotation.x = Math.PI; b.position.set(0, -S.head * 0.6, S.head * 0.7); head.add(b); }
-  // cola
+  if (F.includes('beak')) { const bk = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.35, S.head * 1.3, 8), m3); bk.rotation.x = Math.PI / 2 + (F.includes('penguin') ? 0 : 0.5); bk.position.set(0, -S.head * 0.2, S.head * 1.1); head.add(bk); }
+  for (const sd of [-1, 1]) {
+    const er = Math.max(0.012, S.head * 0.13), ex = sd * S.head * (long ? 0.62 : 0.5), ey = S.head * (long ? 0.25 : 0.2), ez = S.head * (long ? 0.62 : 0.78);
+    if (F.includes('panda')) { const p = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.27, 10, 8), m2); p.scale.set(1, 1.3, 0.4); p.position.set(sd * S.head * 0.45, S.head * 0.12, S.head * 0.84); p.rotation.z = sd * 0.5; head.add(p); }
+    const ew = new THREE.Mesh(new THREE.SphereGeometry(er, 10, 8), EYE_W); ew.position.set(ex, ey, ez); head.add(ew);
+    const pu = new THREE.Mesh(new THREE.SphereGeometry(er * 0.72, 10, 8), EYE_P); pu.position.set(ex + sd * er * 0.18, ey, ez + er * 0.42); head.add(pu);
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(er * 0.22, 6, 4), EYE_H); hl.position.set(ex + sd * er * 0.12, ey + er * 0.35, ez + er * 0.95); head.add(hl);
+    if (F.includes('ears_up')) { const e = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.24, S.head * 0.95, 8), plain1); e.scale.z = 0.5; e.position.set(sd * S.head * 0.45, S.head * 1.0, -S.head * 0.1); e.rotation.z = -sd * 0.25; head.add(e); const ei = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.14, S.head * 0.65, 6), PINK); ei.scale.z = 0.3; ei.position.set(sd * S.head * 0.45, S.head * 0.95, -S.head * 0.03); ei.rotation.z = -sd * 0.25; head.add(ei); }
+    if (F.includes('stripes') || (long && !F.includes('ears_up') && !F.includes('horns'))) { const e = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.2, S.head * 0.7, 8), plain1); e.scale.z = 0.5; e.position.set(sd * S.head * 0.55, S.head * 0.85, -S.head * 0.15); e.rotation.z = -sd * 0.6; head.add(e); }
+    if (F.includes('ears_round') || F.includes('panda')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.3, 10, 8), F.includes('panda') ? m2 : m1); e.scale.z = 0.55; e.position.set(sd * S.head * 0.68, S.head * 0.75, -S.head * 0.1); head.add(e); }
+    if (F.includes('ears_big')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.85, 14, 10), m3); e.scale.set(0.12, 1, 0.85); e.position.set(sd * S.head * 1.0, 0.02, -S.head * 0.25); e.rotation.y = sd * 0.35; head.add(e); }
+    if (F.includes('horns')) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.16, 6), m3); h.position.set(sd * 0.05, S.head * 1.0, -0.03); h.rotation.x = -0.6; head.add(h); }
+    if (F.includes('ossicones')) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.13, 6), m3); h.position.set(sd * 0.05, S.head * 1.15, -0.02); head.add(h); const tip = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 5), m3); tip.position.set(sd * 0.05, S.head * 1.15 + 0.07, -0.02); head.add(tip); }
+    if (F.includes('tusks')) { const tk = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.32, 8), mat('#f4f0e0')); tk.rotation.x = Math.PI / 2 + 0.5; tk.position.set(sd * 0.14, -S.head * 0.45, S.head * 0.9); head.add(tk); }
+  }
+  if (F.includes('trunk')) { let parent = head, y = -S.head * 0.35, z = S.head * 0.95; for (let i = 0; i < 4; i++) { const seg = new THREE.Group(); seg.position.set(0, y, z); seg.rotation.x = i ? 0.28 : 0.2; parent.add(seg); const r0 = 0.1 - i * 0.017; const c = new THREE.Mesh(new THREE.CylinderGeometry(r0 - 0.017, r0, 0.18, 10), m1); c.position.y = -0.09; seg.add(c); parent = seg; y = -0.17; z = 0; } }
+  if (F.includes('mane')) { for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; const m = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 0.55, 1), m3); m.position.set(Math.cos(a) * S.head * 0.85, Math.sin(a) * S.head * 0.85, -S.head * 0.35); head.add(m); } const back = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 1.05, 1), m3); back.position.z = -S.head * 0.55; head.add(back); }
+  if (F.includes('mane_short')) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, S.neck * 1.15), mat('#1a1a1a')); m.position.set(0, S.neck * 0.55, 0); m.rotation.x = -1.2; neck.add(m); }
+  if (F.includes('fluffy')) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 0.6, 1), m2); f.position.set(0, S.head * 0.8, 0); head.add(f); }
+  if (F.includes('beard')) { const b = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 6), m2); b.rotation.x = Math.PI; b.position.set(0, -S.head * 0.75, S.head * 0.9); head.add(b); }
+  // cola, con borla en las especies que la tienen
   const tail = new THREE.Group(); tail.position.set(0, bodyY + H * 0.1, -L * 0.48); body.add(tail);
-  const tl = F.includes('tail_long') ? 0.45 : 0.15;
-  const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.015, F.includes('tail_long') && S.hop ? 0.07 : 0.025, tl, 5), m1); tm.position.y = -tl / 2; tail.add(tm); tail.rotation.x = S.hop ? -2.3 : 0.6;
+  const tl = F.includes('tail_long') ? 0.45 : F.includes('stripes') || F.includes('spots') || F.includes('trunk') ? 0.32 : 0.15;
+  const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.014, F.includes('tail_long') && S.hop ? 0.08 : 0.026, tl, 6), plain1); tm.position.y = -tl / 2; tail.add(tm); tail.rotation.x = S.hop ? -2.3 : 0.5;
+  if (F.includes('stripes') || F.includes('spots') || F.includes('mane') || F.includes('trunk')) { const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 6), mat(F.includes('mane') ? c3 : '#1a1a1a')); tuft.rotation.x = Math.PI; tuft.position.y = -tl - 0.03; tail.add(tuft); }
   g.add(blob(Math.max(W, 0.3) * 1.8, Math.max(L, 0.3) * 1.5, 0.35));
   return { g, body, legs, head, tail, neck, torso, neckRx: neck.rotation.x };
 }
@@ -369,14 +441,17 @@ function syncAnimals(t) {
   const seen = new Set();
   for (const a of st.animals) {
     seen.add(a.id); let m = animalMeshes.get(a.id);
-    if (!m) { m = animalModel(a.sp); m.g.userData.animal = a.id; animalMeshes.set(a.id, m); groups.animals.add(m.g); }
+    if (!m) { m = animalModel(a.sp); Look.shadows(m.g, eng.hq, false); m.g.userData.animal = a.id; animalMeshes.set(a.id, m); groups.animals.add(m.g); }
     const moving = a.tx != null && (Math.abs(a.tx - a.x) > 0.05 || Math.abs(a.tz - a.z) > 0.05);
     m.g.position.set(a.x, 0.05, a.z); if (a.dir != null) m.g.rotation.y = a.dir;
+    // mientras se mueve: el animal cogido va con el dedo; los de un recinto que se mueve, con él
+    if (mv && mv.kind === 'animal' && mv.ref === a) m.g.position.set(mv.px, 0.55 + Math.sin(t * 6) * 0.04, mv.pz);
+    else if (mv && mv.kind === 'enc' && a.enc === mv.ref.id) m.g.position.set(a.x + mv.x - mv.ref.x, 0.2, a.z + mv.z - mv.ref.z);
     const k = a.baby ? 0.55 : 1; m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
     const sleeping = a.state === 'sleep' && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
     m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -S.legs * 0.85 : 0;
-    m.legs.forEach((l, i) => { l.visible = !sleeping; l.rotation.x = S.hop ? 0 : (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5; });
+    m.legs.forEach((l, i) => { l.visible = !sleeping; l.rotation.x = S.hop ? 0 : (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5; const k = l.userData.knee; if (k) k.rotation.x = l.userData.back ? -Math.max(0, l.rotation.x) * 1.1 : Math.max(0, -l.rotation.x) * 1.1; });
     m.neck.rotation.x = m.neckRx + (headDown ? 0.9 + Math.sin(t * 3 + a.x) * 0.08 : sleeping ? 0.6 : 0);
     m.head.rotation.x = moving ? 0 : headDown ? 0.4 : sleeping ? 0.3 : Math.sin(t * 0.8 + a.z) * 0.25 + 0.1;
     m.tail.rotation.z = Math.sin(t * (a.state === 'play' ? 8 : 3) + a.x) * (sleeping ? 0.05 : 0.3);
@@ -420,17 +495,27 @@ function syncExtras() {
     }
   }
 }
+// Matas de hierba en las casillas libres del parque (se rehacen solo al construir)
+const waterT = Look.waterTex();
+function rebuildTufts() {
+  const g = groups.tufts; g.clear(); const P = pathSet(), pts = [];
+  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < 2 + (k % 3); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); }
+  g.add(Look.grassTufts(pts));
+}
 function sync(t) {
   syncExtras();
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
   const s2 = JSON.stringify(st.enclosures); if (s2 !== sig.enc) { sig.enc = s2; rebuildEnclosures(); }
   const s3 = JSON.stringify(st.buildings); if (s3 !== sig.bld) { sig.bld = s3; rebuildBuildings(); }
   const s4 = st.litter.length; if (s4 !== sig.litter) { sig.litter = s4; rebuildLitter(); }
+  const s5 = s1 + s2.length + s3; if (s5 !== sig.tufts) { sig.tufts = s5; rebuildTufts(); }
+  waterT.offset.set(t * 0.02, Math.sin(t * 0.3) * 0.04);
   syncAnimals(t); syncPeople(t);
   // luz del día
   const h = hourOf(st.time); const night = h < 6 ? 1 : h < 7.5 ? (7.5 - h) / 1.5 : h > 21 ? 1 : h > 19.5 ? (h - 19.5) / 1.5 : 0;
   eng.sun.intensity = 1.6 * (1 - night * 0.8); eng.hemi.intensity = 1.1 - night * 0.6;
   document.body.style.background = night > 0.5 ? 'linear-gradient(#1a2148,#3b3f72)' : 'linear-gradient(#8fcdf0,#d8eef8)';
+  if (S3.fog) S3.fog.color.set(night > 0.5 ? '#3b3f72' : '#d4eaf4');
 }
 // capa 2D: avisos sobre los recintos
 function overlay() {
@@ -472,11 +557,80 @@ eng.onDoubleTap = (sx, sy) => {
   if (e && !close) return enterClose(e);
   const p = eng.ground(sx, sy); if (p) { eng.cam.follow = null; eng.cam.tx = new THREE.Vector3(p.x, 0, p.z); eng.cam.distT = Math.max(eng.cam.min, eng.cam.dist * 0.55); }
 };
-eng.onDragStart = (sx, sy) => { if (view.tool === 'path') { paintPath(tileAt(sx, sy)); return true; } return false; };
-eng.onDragMove = (sx, sy) => { if (view.tool === 'path') paintPath(tileAt(sx, sy)); };
-eng.onDragEnd = () => { hud(); save(); };
+// ---------- mover cosas ----------
+// Mantén pulsado un recinto, un objeto, una tienda o un animal y arrástralo. También con el botón "Mover" de su ficha.
+let mv = null;
+const LABEL = { enc: (r) => `el recinto de ${BIOMES[r.biome].label.toLowerCase()}`, bld: (r) => BUILDINGS[r.type].label.toLowerCase(), item: (r) => ENRICH[r.type].label.toLowerCase(), animal: (r) => `a ${r.name}` };
+function moveTarget(sx, sy) {
+  const aId = eng.pick(sx, sy, groups.animals.children, 'animal'); if (aId) return { kind: 'animal', ref: st.animals.find((a) => a.id === aId) };
+  const it = eng.pick(sx, sy, groups.enc.children, 'item'); if (it) { const [eid, i] = it.split(':'); const e = st.enclosures.find((q) => q.id === eid); if (e && e.items[+i]) return { kind: 'item', ref: e.items[+i], enc: e }; }
+  const b = eng.pick(sx, sy, groups.bld.children, 'bld'); if (b) return { kind: 'bld', ref: st.buildings.find((q) => q.id === b) };
+  const t = tileAt(sx, sy); const e = t && encAt(t.x, t.z); if (e) return { kind: 'enc', ref: e };
+  return null;
+}
+const without = (arr, item, fn) => { const i = arr.indexOf(item); if (i >= 0) arr.splice(i, 1); try { return fn(); } finally { if (i >= 0) arr.splice(i, 0, item); } };
+function moveValid() {
+  const r = mv.ref, x = mv.x, z = mv.z;
+  if (mv.kind === 'enc') return without(st.enclosures, r, () => canPlaceEnclosure(x, z, r.n));
+  if (mv.kind === 'bld') return inGrid(x, z) && without(st.buildings, r, () => !occupied(x, z)) && (BUILDINGS[r.type].cat !== 'Tiendas' || nextToPath(x, z));
+  if (mv.kind === 'item') { const e = mv.enc; return x >= e.x && x < e.x + e.n && z >= e.z && z < e.z + e.n && !e.items.some((i) => i !== r && i.x === x && i.z === z); }
+  if (mv.kind === 'animal') return !!mv.dest;
+  return false;
+}
+function beginMove(target, sx, sy) {
+  if (!target || !target.ref) return false;
+  const t = tileAt(sx, sy); if (!t) return false; const r = target.ref;
+  mv = { ...target, gx: t.x - Math.floor(r.x), gz: t.z - Math.floor(r.z), x: r.x, z: r.z, ok: true };
+  if (target.kind === 'animal') { mv.dest = st.enclosures.find((q) => q.id === r.enc); mv.px = r.x; mv.pz = r.z; }
+  $('#toolinfo').hidden = false; $('#toolinfo').innerHTML = `${icon('move')} Moviendo ${LABEL[target.kind](r)} · suelta para colocar`;
+  moveDrag(sx, sy); return true;
+}
+function moveDrag(sx, sy) {
+  const r = mv.ref; let ghost = null;
+  if (mv.kind === 'animal') {
+    const p = eng.ground(sx, sy); if (!p) return; mv.px = p.x; mv.pz = p.z;
+    mv.dest = encAt(Math.floor(p.x), Math.floor(p.z)); mv.ok = moveValid();
+    ghost = mv.dest ? { x: mv.dest.x, z: mv.dest.z, w: mv.dest.n, h: mv.dest.n, ok: true } : { x: Math.floor(p.x), z: Math.floor(p.z), w: 1, h: 1, ok: false };
+  } else {
+    const t = tileAt(sx, sy); if (!t) return; const n = mv.kind === 'enc' ? r.n : 1;
+    mv.x = Math.max(0, Math.min(N - n, t.x - mv.gx)); mv.z = Math.max(0, Math.min(N - n, t.z - mv.gz)); mv.ok = moveValid();
+    ghost = { x: mv.x, z: mv.z, w: n, h: n, ok: mv.ok };
+    // el objeto real sigue al dedo, un poco levantado
+    if (mv.kind === 'enc') { const g = groups.enc.children.find((c) => c.userData.enc === r.id); if (g) g.position.set(mv.x - r.x, 0.15, mv.z - r.z); }
+    if (mv.kind === 'bld') { const g = groups.bld.children.find((c) => c.userData.bld === r.id); if (g) g.position.set(mv.x + 0.5, 0.35, mv.z + 0.5); }
+    if (mv.kind === 'item') { const eg = groups.enc.children.find((c) => c.userData.enc === mv.enc.id); const g = eg && eg.children.find((c) => c.userData.item === mv.enc.id + ':' + mv.enc.items.indexOf(r)); if (g) g.position.set(mv.x + 0.5, 0.35, mv.z + 0.5); }
+  }
+  showGhost(ghost);
+}
+function endMove(cancel) {
+  const r = mv.ref, m = mv; mv = null; showGhost(null);
+  if (!cancel && m.ok) {
+    if (m.kind === 'enc') {
+      const dx = m.x - r.x, dz = m.z - r.z; r.x = m.x; r.z = m.z;
+      for (const i of r.items) { i.x += dx; i.z += dz; }
+      for (const n of r.nests || []) { n.x += dx; n.z += dz; }
+      if (r.food) { r.food.x += dx; r.food.z += dz; }
+      for (const a of animalsIn(r)) { a.x += dx; a.z += dz; a.tx = null; a.restUntil = 0; }
+      if (!encTouchesPath(r)) toast('Recuerda unirlo a un camino para que lo vean los visitantes', 'warn', 'path');
+    } else if (m.kind === 'animal') {
+      const e = m.dest; r.enc = e.id; r.x = Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, m.px)); r.z = Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, m.pz)); r.tx = null; r.restUntil = 0; r.state = 'wander';
+      if (e.biome !== SPECIES[r.sp].biome) toast(`${r.name} prefiere el hábitat de ${BIOMES[SPECIES[r.sp].biome].label.toLowerCase()}`, 'warn', 'paw');
+    } else { r.x = m.x; r.z = m.z; }
+    navigator.vibrate?.(10);
+  } else if (!cancel) toast(m.kind === 'animal' ? 'Suéltalo dentro de un recinto' : m.kind === 'bld' && BUILDINGS[r.type].cat === 'Tiendas' ? 'Ahí no cabe: las tiendas van junto a un camino' : 'Ahí no cabe', 'warn');
+  sig.enc = sig.bld = null; if (view.tool === 'move') setTool(null); else renderToolInfo(); hud(); save();
+}
+// Desde una ficha: el siguiente arrastre mueve ese objeto
+function armMove(target) { closeModal(); sheet.close(); setTool('move', target); }
+eng.onLongPress = (sx, sy) => { if (view.tool || modalOpen()) return false; return beginMove(moveTarget(sx, sy), sx, sy); };
+eng.onDragStart = (sx, sy) => {
+  if (view.tool === 'move') return beginMove(view.opt, sx, sy);
+  if (view.tool === 'path') { paintPath(tileAt(sx, sy)); return true; } return false;
+};
+eng.onDragMove = (sx, sy) => { if (mv) return moveDrag(sx, sy); if (view.tool === 'path') paintPath(tileAt(sx, sy)); };
+eng.onDragEnd = (cancel) => { if (mv) return endMove(cancel); hud(); save(); };
 eng.onTap = (sx, sy) => {
-  if (modalOpen()) return;
+  if (modalOpen() || view.tool === 'move') return;
   const t = tileAt(sx, sy);
   if (view.tool === 'path') { paintPath(t); hud(); return; }
   if (view.tool === 'enc' && t) {
@@ -505,10 +659,10 @@ eng.onTap = (sx, sy) => {
   }
   // sin herramienta: información
   const aId = eng.pick(sx, sy, groups.animals.children, 'animal');
-  if (close) { const nest = eng.pick(sx, sy, groups.extra.children, 'nest'); if (nest) { nestCard = nest; followId = null; eng.cam.follow = null; return animalCardTick(true); } if (aId) return followAnimal(aId); return; }
+  if (close) { const nest = eng.pick(sx, sy, groups.extra.children, 'nest'); if (nest) { nestCard = nest; followId = null; eng.cam.follow = null; return animalCardTick(true); } if (aId) return followAnimal(aId); const it = eng.pick(sx, sy, groups.enc.children, 'item'); if (it) return itemCard(it); return; }
   if (aId) return animalCard(aId);
   const e = t && encAt(t.x, t.z); if (e) return encCard(e);
-  const b = t && buildingAt(t.x, t.z); if (b) return confirm(`¿Quitar ${BUILDINGS[b.type].label.toLowerCase()}? Recuperas la mitad.`, () => { st.buildings = st.buildings.filter((q) => q !== b); st.money += Math.round(BUILDINGS[b.type].price / 2); hud(); save(); });
+  const b = t && buildingAt(t.x, t.z); if (b) return bldCard(b);
 };
 
 // ---------- interfaz ----------
@@ -566,6 +720,7 @@ function renderToolInfo() {
   if (view.tool === 'enc') txt = `${icon('fence')} Recinto ${SIZES[view.opt.size].label.toLowerCase()} de ${BIOMES[view.opt.biome].label.toLowerCase()} · toca el terreno ${view.pending ? `<button class="btn sm mint" id="ti_ok">Construir · ${eur(SIZES[view.opt.size].price)}</button>` : ''}`;
   if (view.tool === 'animal') txt = `${icon('paw')} Toca un recinto para soltar: ${SPECIES[view.opt].label} (${eur(SPECIES[view.opt].price)})`;
   if (view.tool === 'enrich') txt = `${icon('tree')} Toca dentro de un recinto: ${ENRICH[view.opt].label}`;
+  if (view.tool === 'move') txt = `${icon('move')} Arrastra el dedo para mover ${LABEL[view.opt.kind](view.opt.ref)}`;
   if (view.tool === 'build') txt = `${icon('shop')} Toca una casilla libre${BUILDINGS[view.opt].cat === 'Tiendas' ? ' junto a un camino' : ''}: ${BUILDINGS[view.opt].label}`;
   el.innerHTML = `${txt}<button class="x" id="ti_x" aria-label="Terminar">${icon('x')}</button>`;
   $('#ti_x').onclick = () => setTool(null);
@@ -635,13 +790,32 @@ function encCard(e) {
   const as = animalsIn(e); const happy = Math.round(encHappy(e));
   const box2 = modal(`<h2>Recinto de ${BIOMES[e.biome].label.toLowerCase()}</h2><p class="hint">${e.n}×${e.n} · ${e.items.length} objetos · ánimo medio ${happy}%</p>
     <div class="list">${as.map((a) => `<div class="li"><span class="tilebox">${icon('paw')}</span><div style="flex:1"><b>${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}</b> <span class="hint">${a.sex === 'm' ? '♂' : '♀'}</span>
-      <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div></div><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
-    <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
+      <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div></div><button class="btn sm alt" data-mva="${a.id}" aria-label="Mover">${icon('move')}</button><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
+    <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button>${e.items.length ? `<div class="chips" style="justify-content:center">${e.items.map((it, i) => `<button class="chip" data-mvi="${i}">${icon('move')} ${ENRICH[it.type].label}</button>`).join('')}</div>` : ''}<button class="btn alt" id="mvenc">${icon('move')} Mover recinto</button><p class="hint" style="text-align:center;margin:0">También puedes mantener pulsado cualquier recinto, objeto, tienda o animal y arrastrarlo.</p><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
   box2.querySelector('#close').onclick = closeModal;
   box2.querySelector('#seeclose').onclick = () => enterClose(e);
+  box2.querySelector('#mvenc').onclick = () => armMove({ kind: 'enc', ref: e });
+  box2.querySelectorAll('[data-mvi]').forEach((x) => (x.onclick = () => armMove({ kind: 'item', ref: e.items[+x.dataset.mvi], enc: e })));
+  box2.querySelectorAll('[data-mva]').forEach((x) => (x.onclick = () => armMove({ kind: 'animal', ref: st.animals.find((a) => a.id === x.dataset.mva) })));
   box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); st.money -= as.length * 5; putFood(e); closeModal(); toast('Has dejado comida en el recinto', 'good', 'food'); hud(); };
   box2.querySelector('#demo').onclick = () => { closeModal(); confirm(`Se venderán los ${as.length} animales. ¿Derribar?`, () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === e.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== e.id); st.enclosures = st.enclosures.filter((q) => q !== e); hud(); save(); }); };
   box2.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.sell); st.money += Math.round(SPECIES[a.sp].price * (a.baby ? 0.4 : 0.6)); st.animals = st.animals.filter((q) => q !== a); closeModal(); encCard(e); hud(); save(); }));
+}
+function bldCard(b) {
+  const B = BUILDINGS[b.type];
+  const bx = modal(`<h2>${B.label}</h2><p class="hint">${B.cat === 'Tiendas' ? (B.sells ? `Cada visitante que compra deja ${eur(B.sells)}.` : 'Gratis para los visitantes: los deja más contentos.') : 'Decoración: alegra a los visitantes que pasan cerca.'}</p>
+    <div class="actions" style="flex-direction:column"><button class="btn" id="bmv">${icon('move')} Mover</button><button class="btn alt" id="bdel">${icon('trash')} Quitar (recuperas ${eur(B.price / 2)})</button><button class="btn alt" id="bx">Cerrar</button></div>`);
+  bx.querySelector('#bx').onclick = closeModal;
+  bx.querySelector('#bmv').onclick = () => armMove({ kind: 'bld', ref: b });
+  bx.querySelector('#bdel').onclick = () => { closeModal(); st.buildings = st.buildings.filter((q) => q !== b); st.money += Math.round(B.price / 2); hud(); save(); };
+}
+function itemCard(key) {
+  const [eid, i] = key.split(':'); const e = st.enclosures.find((q) => q.id === eid); const it = e && e.items[+i]; if (!it) return;
+  const bx = modal(`<h2>${ENRICH[it.type].label}</h2><p class="hint">Los animales lo usan para entretenerse.</p>
+    <div class="actions" style="flex-direction:column"><button class="btn" id="imv">${icon('move')} Mover</button><button class="btn alt" id="idel">${icon('trash')} Quitar</button><button class="btn alt" id="ix">Cerrar</button></div>`);
+  bx.querySelector('#ix').onclick = closeModal;
+  bx.querySelector('#imv').onclick = () => armMove({ kind: 'item', ref: it, enc: e });
+  bx.querySelector('#idel').onclick = () => { closeModal(); e.items.splice(+i, 1); st.money += Math.round(ENRICH[it.type].price / 2); hud(); save(); };
 }
 function animalCard(aid) { const a = st.animals.find((q) => q.id === aid); if (!a) return; encCard(st.enclosures.find((e) => e.id === a.enc)); }
 
