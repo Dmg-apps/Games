@@ -483,7 +483,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     if (!hadController || reloaded) return; reloaded = true;
     window.game?.save?.(); location.reload();
   });
-  navigator.serviceWorker.register('sw.js').then((reg) => {
+  navigator.serviceWorker.register('../sw.js', { scope: '../' }).then((reg) => {
     reg.update().catch(() => {});
     document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
   }).catch(() => {});

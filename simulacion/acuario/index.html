@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#8fcdf0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Arrecife · Simulación</title>
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="../shared/fonts/nunito.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../shared/ui.css">
+  <style>body { background: linear-gradient(#bfe6f0, #eaf6f8); } .album { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; } .album .cell { aspect-ratio: 1; border-radius: 8px; background: var(--fill); display: grid; place-items: center; font-size: 12px; font-weight: 900; color: var(--ink-3); } .album .cell.on { color: rgba(0,0,0,0.45); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1); } #tools .dot { position: absolute; top: 6px; right: 14px; width: 9px; height: 9px; border-radius: 50%; background: var(--red); }</style>
+</head>
+<body>
+  <canvas id="stage" class="stage"></canvas>
+  <header class="hudbar">
+    <div id="back" class="hud glass back"><a href="../" aria-label="Menú de juegos"></a></div>
+    <div id="money" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#ffc94a,#f59e0b)"></span><b></b></div>
+    <div id="clock" class="hud glass grow"><span class="badge" style="background:linear-gradient(160deg,#7cc4ff,#3b8fe0)"></span><div class="t"><b></b><span></span></div></div>
+    <div id="rep" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#ffb84a,#f08a1c)"></span><b></b></div>
+  </header>
+  <div class="hudbar" style="top:52px;justify-content:flex-end;padding-top:calc(var(--safe-t) + 10px)"><div id="speeds" class="hud glass speeds"></div></div>
+  <div id="camctl" class="camctl"></div>
+  <nav class="toolbar">
+    <div id="toolinfo" class="info glass" hidden></div>
+    <div id="tools" class="tools glass"></div>
+  </nav>
+  <script type="module" src="acuario.js"></script>
+</body>
+</html>

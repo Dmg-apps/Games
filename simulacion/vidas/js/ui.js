@@ -452,6 +452,8 @@ export class UI {
         <p class="hint">Si el móvil se calienta o va lento, usa Ligera o Equilibrada. Cambiarla recarga el juego (la partida se guarda).</p></div>
       <div class="sec">${icon('bell')} Notificaciones</div><div id="notif"></div>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloud"></div>
+      <div class="sec">Simulación</div>
+      <a class="btn alt" href="../" style="text-decoration:none">${icon('home')} Volver al menú de juegos</a>
       <div class="sec">Partida</div>
       <div class="row"><button class="btn alt" id="msave">${icon('save')} Guardar</button><button class="btn red" id="mnew">${icon('trash')} Nueva</button></div>
       <div class="sec">Cómo se juega</div>
@@ -625,6 +627,7 @@ export class UI {
     const t = $('#title'); t.hidden = false; t.classList.remove('out');
     t.innerHTML = `<div class="logo"><div class="mark">${icon('home')}</div><h1>Vidas</h1><p>Cuida de tu familia, día a día.</p>
       <div class="pride">${PRIDE.map((c) => `<i style="background:${c}"></i>`).join('')}</div></div>
+      <a href="../" class="backhub">${icon('logout')} Simulación</a>
       <div class="acts">${hasSave ? `<button class="btn coral" id="tcont">${icon(cloudFamily ? 'cloud' : 'play')} Continuar${cloudFamily ? ` · familia ${esc(cloudFamily)}` : ''}</button>` : ''}<button class="btn ${hasSave ? 'ghost' : 'coral'}" id="tnew">${icon('plus')} Nueva familia</button></div>`;
     const hide = () => { t.classList.add('out'); setTimeout(() => (t.hidden = true), 400); };
     if (hasSave) t.querySelector('#tcont').onclick = () => { hide(); onContinue(); };

@@ -1,8 +1,8 @@
 // Renderizador 3D (Three.js). Misma interfaz que el isométrico 2D, así la simulación no cambia:
 // resize(), fit(), render(state, view), screenToTile(), pickSim(), pickObject(), centerOn(), pan(), zoomAt(), rotate(),
 // addHearts(), addMarker(), insetRight
-import * as THREE from '../vendor/three.module.min.js';
-import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
+import * as THREE from '../../shared/vendor/three.module.min.js';
+import { RoundedBoxGeometry } from '../../shared/vendor/RoundedBoxGeometry.js';
 import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES, SEASONS } from './data.js';
 import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf, seasonOf, weatherOf } from './sim.js';
 import { iconImage } from './icons.js';

@@ -1,40 +1,28 @@
-# Vidas
+# Simulación
 
-Simulador de vida para el móvil (PWA), inclusivo: cualquier persona puede amar a quien quiera y formar una familia. Crea una familia de hasta 4 miembros, atiende sus necesidades, sus preocupaciones y a sus bebés, trabaja, decora la casa y forma relaciones.
+App de juegos de simulación para el móvil (PWA, funciona sin conexión). Publicada en https://dmg-apps.github.io/Games/
 
-## Probarlo
-- En local: `cd vidas && python3 -m http.server 8000` y abre `http://localhost:8000`.
-- En el móvil: publica la carpeta `vidas/` (por ejemplo con GitHub Pages: Settings → Pages → Source: GitHub Actions; el workflow incluido la publica al hacer push a `main`). Ábrela en el navegador y usa "Añadir a pantalla de inicio".
+## Juegos
+- **Vidas** (`simulacion/vidas/`): simulador de vida inclusivo con familia, necesidades, trabajo, relaciones, hijos, mascotas, barrio, construcción, 3D con modo ligero, copia en la nube (Firebase) y notificaciones.
+- **Parque Salvaje** (`simulacion/zoo/`): gestión de un parque de animales: caminos, recintos por hábitat, especies que se desbloquean con la fama, crías, visitantes con necesidades, tiendas, personal y economía diaria.
+- **Arrecife** (`simulacion/acuario/`): tienda de peces: cuidado de acuarios (comida, agua, temperatura), cría con herencia y mutaciones, álbum de 96 variedades, clientes con encargos y mejoras.
 
 ## Estructura
-- `js/sim.js`: simulación pura (necesidades, autonomía, trabajo, relaciones, bebés, facturas, tiempo sin conexión). No dibuja nada.
-- `js/render.js`: renderizador isométrico 2D en canvas. Para pasar a 3D se sustituye esta clase por otra con la misma interfaz.
-- `js/ui.js`: interfaz (paneles, menús, creador de familia).
-- `js/data.js`: objetos, acciones, interacciones, trabajos, rasgos.
+- `simulacion/index.html` y `hub.js`: menú de juegos.
+- `simulacion/shared/`: motor 3D ligero (`engine3d.js`), interfaz común (`ui.css`, `ui.js`), iconos, tipografía y Three.js.
+- `simulacion/sw.js`: un único service worker para toda la app. **Regenerarlo al añadir o cambiar archivos**: `python3 tools/build-sw.py`.
 
-## Copia en la nube (Firebase)
-La partida se guarda siempre en el móvil (funciona sin conexión) y, si inicias sesión, se sube a Firebase al volver internet.
-Para activarla, rellena `vidas/js/cloud-config.js` con `apiKey` y `databaseURL` (Realtime Database), activa
-Authentication → Correo/contraseña y pon estas reglas en Realtime Database:
+## Añadir un juego nuevo
+1. Crea `simulacion/<juego>/index.html` y su módulo, usando `../shared/engine3d.js` y `../shared/ui.js`.
+2. Añádelo a la lista `GAMES` de `simulacion/hub.js`.
+3. Ejecuta `python3 tools/build-sw.py`.
 
+## Rendimiento
+Los juegos dibujan solo cuando hace falta (pocas imágenes por segundo en reposo), usan materiales baratos, sin sombras en tiempo real en calidad ahorro y resolución contenida, para no calentar el móvil.
+
+## Copia en la nube y notificaciones (Vidas)
+Ver `simulacion/vidas/js/cloud-config.js` y `notifier/`. Reglas de Realtime Database:
 ```
-{
-  "rules": {
-    "partidas": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    }
-  }
-}
+{ "rules": { "partidas": { "$uid": { ".read": "auth != null && auth.uid === $uid", ".write": "auth != null && auth.uid === $uid" } } } }
 ```
-También funciona con Firestore si se rellena `projectId` en vez de `databaseURL`.
-
-## Notificaciones
-- Con la app abierta o en segundo plano: avisos locales.
-- Con la app cerrada: al cerrarse, la app calcula qué irá pasando y deja una cola de avisos en
-  `partidas/<uid>/push`. El workflow `notify.yml` (cada 30 min) los envía con Web Push.
-  Necesita dos secretos en GitHub (Settings → Secrets and variables → Actions):
-  `FIREBASE_SERVICE_ACCOUNT` (JSON de la cuenta de servicio de Firebase) y `VAPID_PRIVATE_KEY`.
-- En iPhone solo funcionan con la app añadida a la pantalla de inicio (iOS 16.4 o superior).
+El workflow `notify.yml` necesita los secretos `FIREBASE_SERVICE_ACCOUNT` y `VAPID_PRIVATE_KEY`.
