@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, SKILLS, ASPIRATIONS, REWARDS, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -54,6 +54,7 @@ export function makeSim(state, def) {
     location: def.location || (def.home ? 'casa' : 'fuera'), alerted: {}, bubble: null, nextThink: 0,
     neglect: 0, warnings: 0, visitUntil: 0, cribId: null, sleeping: false, perfWarn: 0,
     attraction: def.attraction || [...ALL_GENDERS],
+    aspiration: def.aspiration || null, aspDone: 0, points: 0, rewards: [], skills: {}, paintings: 0,
     canCarry: def.canCarry ?? defaultFertility(def.gender || 'f').canCarry,
     canSire: def.canSire ?? defaultFertility(def.gender || 'f').canSire,
   };
@@ -436,6 +437,7 @@ export function computeMood(state, s) {
   const lowest = Math.min(...list.map((n) => s.needs[n]));
   if (lowest < 20) m -= (20 - lowest) * 0.8;
   for (const t of s.traits) m += TRAITS[t]?.mood || 0;
+  for (const r of s.rewards || []) m += REWARDS[r]?.mood || 0;
   for (const ml of s.moodlets) m += MOODLETS[ml.id]?.mood || 0;
   for (const w of s.worries) m += WORRIES[w]?.mood || 0;
   for (const d of derivedMoodlets(state, s)) m += d.mood;
@@ -662,8 +664,58 @@ export function tick(state, dt) {
 function needMult(s, n) {
   let m = 1;
   for (const t of s.traits) m *= TRAITS[t]?.decay?.[n] || 1;
+  for (const r of s.rewards || []) m *= REWARDS[r]?.decay?.[n] || 1;
   return m;
 }
+// ---------- habilidades ----------
+export const skillLevel = (s, k) => Math.floor(s.skills?.[k] || 0);
+export function gainSkill(state, s, k, amount) {
+  if (!s.home || s.age === 'bebe') return;
+  s.skills ||= {}; const before = Math.floor(s.skills[k] || 0);
+  let learn = 1; for (const r of s.rewards || []) learn *= REWARDS[r]?.learn || 1;
+  s.skills[k] = Math.min(10, (s.skills[k] || 0) + amount * learn / (1 + before * 0.5));
+  const after = Math.floor(s.skills[k]);
+  if (after > before) toast(`${s.name} sube a nivel ${after} de ${SKILLS[k].label}`, 'good', s.id);
+}
+// ---------- recuerdos ----------
+export function addMemory(state, text, ic = 'star', simIds = []) {
+  state.memories ||= [];
+  state.memories.unshift({ t: state.time, text, ic, simIds });
+  if (state.memories.length > 80) state.memories.length = 80;
+}
+// ---------- aspiraciones ----------
+export function ensureAspiration(s) {
+  if (!isAdult(s) || !s.home || s.aspiration) return;
+  s.aspiration = pick(Object.keys(ASPIRATIONS)); s.aspDone = 0; s.points ||= 0; s.rewards ||= [];
+}
+function friendsCount(state, s, min) { return Object.entries(s.rel).filter(([id, r]) => state.sims[id] && r.a >= min).length; }
+function aspStepMet(state, s, i) {
+  const st = state, k = s.aspiration;
+  if (k === 'familia') return [() => !!s.partner, () => s.married, () => householdSims(st).some((o) => o.parents.includes(s.id)), () => householdSims(st).length >= 4][i]();
+  if (k === 'fortuna') return [() => st.money >= 8000, () => st.money >= 20000, () => decorScore(st) >= 30, () => st.money >= 50000][i]();
+  if (k === 'social') return [() => friendsCount(st, s, 40) >= 3, () => friendsCount(st, s, 75) >= 1, () => skillLevel(s, 'carisma') >= 5, () => friendsCount(st, s, 40) >= 6][i]();
+  if (k === 'carrera') return [() => !!s.job, () => s.job && s.job.level >= 2, () => s.job && s.job.level >= 4, () => s.job && skillLevel(s, CAREERS[s.job.id].skill) >= 8][i]();
+  if (k === 'artista') return [() => skillLevel(s, 'creatividad') >= 3, () => (s.paintings || 0) >= 5, () => skillLevel(s, 'creatividad') >= 7, () => (s.paintings || 0) >= 25][i]();
+  return false;
+}
+function checkAspirations(state) {
+  for (const s of householdSims(state)) {
+    ensureAspiration(s);
+    if (!s.aspiration || s.aspDone >= 4) continue;
+    if (aspStepMet(state, s, s.aspDone)) {
+      const A = ASPIRATIONS[s.aspiration]; const step = A.steps[s.aspDone];
+      s.aspDone++; s.points = (s.points || 0) + 100 * s.aspDone; addMoodlet(s, 'objetivo');
+      if (s.aspDone >= 4) { s.points += 500; toast(`🏆 ¡${s.name} ha cumplido su aspiración «${A.label}»! +600 puntos`, 'good', s.id); addMemory(state, `${s.name} cumplió su aspiración «${A.label}»`, 'star', [s.id]); }
+      else { toast(`⭐ ${s.name}: «${step}» conseguido (+${100 * s.aspDone} puntos)`, 'good', s.id); addMemory(state, `${s.name}: ${step.toLowerCase()}`, 'flag', [s.id]); }
+    }
+  }
+}
+export function buyReward(state, s, id) {
+  const r = REWARDS[id]; if (!r || (s.rewards || []).includes(id)) return false;
+  if ((s.points || 0) < r.cost) { toast('No tiene puntos suficientes', 'warn', s.id); return false; }
+  s.points -= r.cost; s.rewards = [...(s.rewards || []), id]; toast(`${s.name} consigue «${r.label}»`, 'good', s.id); return true;
+}
+export function setAspiration(s, k) { s.aspiration = k; s.aspDone = 0; }
 
 function updateNeeds(state, s, dt, factor = 1) {
   const baby = s.age === 'bebe';
@@ -751,9 +803,21 @@ function runObj(state, s, c, dt) {
     interrupt(state, s); return;
   }
   if (a.rate) for (const [n, r] of Object.entries(a.rate)) if (n in s.needs) s.needs[n] = clamp(s.needs[n] + r * dt);
+  if (a.skill) gainSkill(state, s, a.skill[0], a.skill[1] * dt);
   const done = c.t >= a.dur || (a.until && c.t >= (a.minDur || 0) && s.needs[a.until] >= 99.5);
   if (done) {
-    if (a.moodlet) addMoodlet(s, a.moodlet);
+    if (c.act === 'cocinar') {
+      const lv = skillLevel(s, 'cocina');
+      if (lv < 2 && Math.random() < 0.3 - lv * 0.1) { addMoodlet(s, 'quemada'); toast(`A ${s.name} se le ha quemado la comida`, 'warn', s.id); s.needs.hambre = clamp(s.needs.hambre - 25); }
+      else addMoodlet(s, lv >= 5 ? 'gourmet' : 'comida_rica');
+    } else if (a.moodlet) addMoodlet(s, a.moodlet);
+    if (a.sells) {
+      const lv = s.skills?.creatividad || 0; const price = Math.round(12 + lv * 14 + Math.random() * 20);
+      state.money += price; s.paintings = (s.paintings || 0) + 1;
+      toast(`🎨 ${s.name} ha vendido un cuadro por ${price} €`, 'good', s.id);
+      if (s.paintings === 1) addMemory(state, `${s.name} vendió su primer cuadro`, 'brush', [s.id]);
+      if (lv >= 6 && Math.random() < 0.3) addMoodlet(s, 'inspirado');
+    }
     if (a.resolves) {
       resolveWorry(state, s, a.resolves);
       if (a.resolves === 'deberes' && s.school) s.school.grade = clamp(s.school.grade + 6);
@@ -797,8 +861,11 @@ function resolveSocial(state, a, t, id) {
     if (d.romantic && rel.a < 0) chance -= 0.3;
     if (d.romantic && !attractedTo(t, a)) chance -= 0.75;
   }
+  chance += skillLevel(a, 'carisma') * 0.015;
+  for (const r of a.rewards || []) chance *= REWARDS[r]?.social || 1;
   if (d.bad) chance = 1;
   const ok = Math.random() < chance;
+  if (ok && !d.care && !d.bad && t.age !== 'bebe') gainSkill(state, a, 'carisma', 0.12);
   const showHeart = d.romantic && ok;
   if (ok) {
     let rm = 1; for (const tr of a.traits) rm *= TRAITS[tr]?.romance || 1;
@@ -827,10 +894,10 @@ function special(state, a, t, sp) {
   if (sp === 'pareja') {
     for (const x of [a, t]) if (x.partner && x.partner !== a.id && x.partner !== t.id) { const ex = state.sims[x.partner]; if (ex) { ex.partner = null; ex.married = false; addMoodlet(ex, 'ruptura'); } }
     a.partner = t.id; t.partner = a.id; addMoodlet(a, 'pareja'); addMoodlet(t, 'pareja');
-    toast(`💞 ${a.name} y ${t.name} ahora son pareja`, 'good', a.id);
+    toast(`💞 ${a.name} y ${t.name} ahora son pareja`, 'good', a.id); addMemory(state, `${a.name} y ${t.name} empezaron a salir`, 'heart', [a.id, t.id]);
   } else if (sp === 'boda') {
     a.married = t.married = true; addMoodlet(a, 'boda'); addMoodlet(t, 'boda');
-    toast(`💍 ¡${a.name} y ${t.name} se han casado!`, 'good', a.id); emit('hearts', { x: a.x, y: a.y });
+    toast(`💍 ¡${a.name} y ${t.name} se han casado!`, 'good', a.id); addMemory(state, `Boda de ${a.name} y ${t.name}`, 'ring', [a.id, t.id]); emit('hearts', { x: a.x, y: a.y });
   } else if (sp === 'romper') {
     a.partner = t.partner = null; a.married = t.married = false; addMoodlet(a, 'ruptura'); addMoodlet(t, 'ruptura');
     toast(`💔 ${a.name} y ${t.name} lo han dejado`, 'bad', a.id);
@@ -845,7 +912,7 @@ function special(state, a, t, sp) {
     } else toast(`Esta vez no ha habido suerte. Podéis volver a intentarlo.`, 'info', a.id);
   } else if (sp === 'mudarse') {
     t.home = true; t.surname = state.surname; state.household.push(t.id); t.visitUntil = 0; t.queue = [];
-    toast(`🏠 ${t.name} se muda con la familia`, 'good', t.id);
+    toast(`🏠 ${t.name} se muda con la familia`, 'good', t.id); addMemory(state, `${t.name} se mudó a casa`, 'home', [t.id]);
   } else if (sp === 'despedir') {
     t.visitUntil = state.time;
   }
@@ -1002,13 +1069,13 @@ export function adoptBaby(state) {
   state.money -= 1000;
   const b = makeBaby(state, null, null);
   b.look.skin = pick(SKINS);
-  emit('birth', { babyId: b.id, adopted: true });
+  emit('birth', { babyId: b.id, adopted: true }); addMemory(state, `Llegó un bebé a la familia por adopción`, 'baby', [b.id]);
 }
 
 // ---------- trabajo y escuela ----------
 export function setJob(state, s, careerId) {
   s.job = careerId ? { id: careerId, level: 0, perf: 40 } : null;
-  if (careerId) { toast(`💼 ${s.name} trabaja ahora en ${CAREERS[careerId].label} como ${CAREERS[careerId].levels[0]}`, 'good', s.id); resolveWorry(state, s, 'sin_trabajo'); }
+  if (careerId) { toast(`💼 ${s.name} trabaja ahora en ${CAREERS[careerId].label} como ${CAREERS[careerId].levels[0]}`, 'good', s.id); resolveWorry(state, s, 'sin_trabajo'); addMemory(state, `${s.name} empezó a trabajar en ${CAREERS[careerId].label}`, 'briefcase', [s.id]); }
 }
 export function skipToday(state, s) { s.skipDay = dayOf(state.time); }
 function scheduleOf(s) {
@@ -1060,13 +1127,14 @@ function finishWork(state, s, offline) {
   if (!s.job) return { pay: 0 };
   const c = CAREERS[s.job.id];
   let wm = 1; for (const t of s.traits) wm *= TRAITS[t]?.work || 1;
-  s.job.perf = clamp(s.job.perf + ((avg - 45) / 3.5) * wm + (s.late ? -8 : 0));
+  s.job.perf = clamp(s.job.perf + ((avg - 45) / 3.5) * wm + (s.late ? -8 : 0) + skillLevel(s, c.skill) * 0.8);
+  if (c.skill) gainSkill(state, s, c.skill, 0.25);
   const pay = c.pay[s.job.level];
   state.money += pay;
   if (!offline) toast(`💼 ${s.name} vuelve del trabajo: +${pay} €`, 'good', s.id);
   if (s.job.perf >= 100 && s.job.level < c.levels.length - 1) {
     s.job.level++; s.job.perf = 35; addMoodlet(s, 'ascenso'); resolveWorry(state, s, 'ascenso');
-    toast(`🎉 ¡${s.name} ha ascendido a ${c.levels[s.job.level]}!`, 'good', s.id);
+    toast(`🎉 ¡${s.name} ha ascendido a ${c.levels[s.job.level]}!`, 'good', s.id); addMemory(state, `${s.name} ascendió a ${c.levels[s.job.level]}`, 'briefcase', [s.id]);
   }
   if (s.job.perf < 30 && Math.random() < 0.3) addWorry(state, s, 'estres');
   checkFired(state, s);
@@ -1111,7 +1179,7 @@ function hourly(state, offline) {
       const father = state.sims[s.pregnant.father];
       s.pregnant = null; s.moodlets = s.moodlets.filter((m) => m.id !== 'embarazo');
       const b = makeBaby(state, s, father);
-      emit('birth', { babyId: b.id, adopted: false, offline });
+      emit('birth', { babyId: b.id, adopted: false, offline }); addMemory(state, `Nació ${b.name}, hijo/a de ${s.name}`, 'baby', [b.id, s.id]);
       if (offline) state._offlineLog?.push(`Ha nacido ${b.name} 👶`);
     }
   }
@@ -1139,6 +1207,12 @@ function hourly(state, offline) {
     if (s.age === 'nino' && h >= 19) c.push('miedo', 'miedo');
     if (c.length) addWorry(state, s, pick(c));
   }
+  checkAspirations(state);
+  // sucesos inesperados (como mucho uno al día)
+  if (h >= 10 && h <= 21 && state.lastEventDay !== day && Math.random() < 0.05) {
+    const ev = pickEvent(state);
+    if (ev) { state.lastEventDay = day; state.pendingEvent = ev; emit('choice', { event: ev }); }
+  }
   // visitas espontáneas
   const visitors = neighbors(state).filter((n) => n.location === 'casa');
   if (h >= 10 && h <= 20 && visitors.length < 2 && Math.random() < 0.06) {
@@ -1147,6 +1221,53 @@ function hourly(state, offline) {
   }
   if (h === 23) for (const v of visitors) v.visitUntil = Math.min(v.visitUntil, t);
 }
+// ---------- sucesos con decisión ----------
+const EVENTS = {
+  tarta: { need: (st) => neighbors(st).some((n) => n.location === 'fuera'), make: (st) => { const n = pick(neighbors(st).filter((q) => q.location === 'fuera')); return { who: n.id, title: 'Llaman a la puerta', text: `${n.name} trae una tarta casera para la familia.`, options: ['Invitar a pasar', 'Darle las gracias'] }; } },
+  cartera: { make: () => ({ title: 'Una cartera en la calle', text: 'Alguien de la familia encuentra una cartera con 150 € y un carné.', options: ['Devolverla', 'Quedarse el dinero'] }) },
+  extra: { need: (st) => householdSims(st).some((s) => s.job), make: (st) => { const s = pick(householdSims(st).filter((q) => q.job)); return { who: s.id, title: 'Trabajo extra', text: `A ${s.name} le ofrecen un encargo este fin de semana por 250 €. Le dejará agotado/a.`, options: ['Aceptar', 'Rechazar'] }; } },
+  loteria: { make: () => ({ title: 'Lotería del barrio', text: '¿Compráis un boleto por 20 €? Dicen que este año toca mucho.', options: ['Comprar un boleto', 'No, gracias'] }) },
+  averia: { need: (st) => st.objects.some((o) => OBJECTS[o.type].power), make: (st) => { const o = pick(st.objects.filter((q) => OBJECTS[q.type].power)); return { obj: o.id, title: 'Algo se ha roto', text: `${OBJECTS[o.type].name}: hace un ruido raro y deja de funcionar bien.`, options: ['Llamar al técnico (120 €)', 'Intentar arreglarlo'] }; } },
+  gatito: { make: () => ({ title: 'Un gatito en la puerta', text: 'Un gatito callejero maúlla en la entrada. Parece tener hambre.', options: ['Darle de comer', 'Dejarlo estar'] }) },
+};
+function pickEvent(state) {
+  const opts = Object.entries(EVENTS).filter(([, e]) => !e.need || e.need(state));
+  if (!opts.length) return null;
+  const [id, e] = pick(opts); return { id, ...e.make(state) };
+}
+export function resolveEvent(state, ev, choice) {
+  state.pendingEvent = null;
+  const fam = householdSims(state).filter((s) => s.age !== 'bebe');
+  const all = (fn) => fam.forEach(fn); const who = state.sims[ev.who];
+  if (ev.id === 'tarta') {
+    if (choice === 0 && who) { arriveVisitor(state, who, 'entra con la tarta'); fam.forEach((s) => { setRel(state, s, who, 8, 0); s.needs.hambre = clamp(s.needs.hambre + 20); }); }
+    else if (who) fam.forEach((s) => setRel(state, s, who, 3, 0));
+  } else if (ev.id === 'cartera') {
+    if (choice === 0) { all((s) => addMoodlet(s, 'buena_persona')); const n = pick(neighbors(state)); if (n) fam.forEach((s) => setRel(state, s, n, 10, 0)); toast('El dueño era del barrio y está muy agradecido', 'good'); addMemory(state, 'La familia devolvió una cartera perdida', 'heart'); }
+    else { state.money += 150; all((s) => addMoodlet(s, 'culpa')); }
+  } else if (ev.id === 'extra') {
+    if (choice === 0 && who) { state.money += 250; who.needs.energia = clamp(who.needs.energia - 35); who.needs.diversion = clamp(who.needs.diversion - 20); toast(`${who.name} cobra 250 € extra`, 'good', who.id); }
+    else if (who) who.needs.diversion = clamp(who.needs.diversion + 10);
+  } else if (ev.id === 'loteria') {
+    if (choice === 0) {
+      if (state.money < 20) return toast('No hay dinero', 'warn');
+      state.money -= 20;
+      if (Math.random() < 0.05) { state.money += 3000; all((s) => addMoodlet(s, 'premio')); toast('🎉 ¡Os ha tocado la lotería: 3.000 €!', 'good'); addMemory(state, 'Nos tocó la lotería: 3.000 €', 'coin'); }
+      else toast('Esta vez no ha tocado', 'info');
+    }
+  } else if (ev.id === 'averia') {
+    if (choice === 0) { state.money -= 120; toast('El técnico lo deja como nuevo (−120 €)', 'info'); }
+    else {
+      const fixer = fam.filter(isAdult).sort((a, b) => (b.skills?.logica || 0) - (a.skills?.logica || 0))[0];
+      const ok = Math.random() < 0.4 + skillLevel(fixer || {}, 'logica') * 0.07;
+      if (ok) { toast(`${fixer?.name || 'Alguien'} lo arregla sin gastar nada`, 'good', fixer?.id); if (fixer) gainSkill(state, fixer, 'logica', 0.5); }
+      else { state.money -= 60; if (fixer) addMoodlet(fixer, 'frustrado'); toast('Lo empeora y toca comprar piezas (−60 €)', 'bad', fixer?.id); }
+    }
+  } else if (ev.id === 'gatito') {
+    if (choice === 0) { state.money -= 5; all((s) => addMoodlet(s, 'ternura')); addMemory(state, 'Dimos de comer a un gatito callejero', 'heart'); }
+  }
+}
+
 export function arriveVisitor(state, n, why = 'ha venido de visita') {
   if (n.location === 'casa') return;
   n.location = 'casa'; n.x = EXIT.x; n.y = EXIT.y; n.cur = null; n.queue = []; n.path = [];
@@ -1179,6 +1300,8 @@ function daily(state, offline) {
       }
       if (prev === 'nino') { s.school = null; s.worries = s.worries.filter((w) => WORRIES[w].ages.includes('adulto')); }
       const msg = `🎂 ¡${s.name} ha crecido y ahora es ${AGES[next].label.toLowerCase()}!`;
+      addMemory(state, `${s.name} cumplió años y pasó a ser ${AGES[next].label.toLowerCase()}`, 'star', [s.id]);
+      if (next === 'adulto') ensureAspiration(s);
       toast(msg, 'good', s.id);
       if (offline) state._offlineLog?.push(msg);
     }

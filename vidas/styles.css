@@ -285,3 +285,16 @@ body.sheet-open #camctl { display: none; }
 
 .item .thumb { width: 72px; height: 72px; object-fit: contain; display: block; margin: -4px 0 0; filter: drop-shadow(0 3px 4px rgba(31,37,64,0.15)); }
 #buildbar .acts { flex-wrap: wrap; justify-content: center; }
+
+.photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 6px; }
+.photos figure { margin: 0; position: relative; border-radius: 14px; overflow: hidden; background: var(--fill); }
+.photos img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
+.photos figcaption { position: absolute; left: 6px; bottom: 6px; font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+.photos button { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; border-radius: 8px; background: rgba(0,0,0,0.35); color: #fff; display: grid; place-items: center; font-size: 12px; }
+.memo { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.memo:last-child { border-bottom: 0; }
+.memo .tilebox { width: 32px; height: 32px; border-radius: 10px; background: #fff3dc; color: #b7791f; font-size: 16px; flex: none; }
+.memo b { font-size: 14px; }
+#camctl { flex-wrap: wrap; justify-content: flex-end; max-width: 110px; }
+#flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 30; transition: opacity 400ms ease; }
+#flash.on { opacity: 0.85; transition: none; }

@@ -1,7 +1,7 @@
 // Interfaz DOM: HUD, paneles, menús contextuales, modales y creador de personajes.
 import {
   NEEDS, BABY_NEEDS, NEED_INFO, NEED_IC, NEED_COLOR, TRAITS, AGES, OBJECTS, OBJ_IC, CATEGORIES, CAREERS, SCHOOL, MOODLETS, WORRIES,
-  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS,
+  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS, SKILLS, ASPIRATIONS, REWARDS,
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
@@ -36,8 +36,13 @@ export class UI {
     window.addEventListener('resize', () => this.movePill());
     if (game.is3D) {
       const cc = document.createElement('div'); cc.id = 'camctl'; cc.hidden = true;
-      cc.innerHTML = `<button class="glass" data-a="1" aria-label="Girar a la izquierda">${icon('rotate')}</button><button class="glass" data-a="-1" aria-label="Girar a la derecha" style="transform:scaleX(-1)">${icon('rotate')}</button>`;
-      cc.onclick = (e) => { const b = e.target.closest('button'); if (b) this.g.renderer.spin(+b.dataset.a * Math.PI / 4); };
+      cc.innerHTML = `<button class="glass" data-w="1" aria-label="Subir o bajar paredes">${icon('walls')}</button><button class="glass" data-p="1" aria-label="Hacer foto">${icon('camera')}</button><button class="glass" data-a="1" aria-label="Girar a la izquierda">${icon('rotate')}</button><button class="glass" data-a="-1" aria-label="Girar a la derecha" style="transform:scaleX(-1)">${icon('rotate')}</button>`;
+      cc.onclick = (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.w) { const r = this.g.renderer; r.setWallsUp(!r.wallsUp); this.toast(r.wallsUp ? 'Paredes altas' : 'Paredes bajas: se ve mejor el interior', 'info'); return; }
+        if (b.dataset.p) return this.g.takePhoto();
+        this.g.renderer.spin(+b.dataset.a * Math.PI / 4);
+      };
       document.body.appendChild(cc);
     }
   }
@@ -168,7 +173,7 @@ export class UI {
     this.setTab(name);
     const sh = $('#sheet'); sh.classList.remove('closed'); sh.setAttribute('aria-hidden', 'false');
     document.body.classList.add('sheet-open');
-    $('#sheet h2').textContent = { needs: 'Estado', rels: 'Relaciones', build: 'Catálogo', menu: 'Menú' }[name];
+    $('#sheet h2').textContent = { needs: 'Estado', rels: 'Gente', build: 'Catálogo', menu: 'Menú' }[name];
     $('#sheet .sheet-body').scrollTop = 0;
     this.reframe(true);
     if (name === 'needs') this.renderNeeds();
@@ -197,7 +202,7 @@ export class UI {
   renderNeeds() {
     const s = this.active; const body = $('#sheet .sheet-body'); const st = this.state; if (!s) return;
     const der = Sim.derivedMoodlets(st, s);
-    const sig = [s.id, s.age, s.name, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
+    const sig = [s.id, s.age, s.name, s.aspDone, s.points, (s.rewards || []).join(), Object.values(s.skills || {}).map(Math.floor).join(), s.paintings, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
     if (sig !== this.sig) {
       this.sig = sig;
       const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
@@ -222,10 +227,21 @@ export class UI {
             <div class="row" style="margin-top:8px"><button class="btn alt" id="nskip" ${s.skipDay === Sim.dayOf(st.time) ? 'disabled' : ''}>${icon('moon')} Faltar hoy</button><button class="btn alt" id="nquit">${icon('logout')} Dejarlo</button></div>`;
         } else h += `<p class="hint">Sin trabajo. Usa el ordenador o el teléfono para buscar uno.</p>`;
       }
+      if (s.aspiration && ASPIRATIONS[s.aspiration]) {
+        const A = ASPIRATIONS[s.aspiration];
+        h += `<div class="sec">${icon('flag')} Aspiración</div><div class="card"><div class="h"><span class="tilebox" style="background:#fff3dc;color:#b7791f">${icon(A.ic)}</span><div style="flex:1"><b>${A.label}</b><div class="hint">${s.points || 0} puntos para recompensas</div></div></div>
+          <div style="margin-top:8px">${A.steps.map((st, i) => `<div class="hint" style="display:flex;gap:8px;align-items:center;margin:4px 0;color:${i < s.aspDone ? '#127a52' : 'inherit'}">${icon(i < s.aspDone ? 'check' : i === s.aspDone ? 'flag' : 'clock')}<span>${st}</span></div>`).join('')}</div></div>`;
+        h += `<div class="chips" style="margin-top:6px">${Object.entries(REWARDS).map(([k, r]) => (s.rewards || []).includes(k) ? `<span class="chip good" title="${esc(r.desc)}">${icon('check')} ${r.label}</span>` : `<button class="chip" data-rw="${k}" title="${esc(r.desc)}" ${(s.points || 0) < r.cost ? 'style="opacity:.5"' : ''}>${r.label} · ${r.cost}</button>`).join('')}</div>`;
+      }
+      if (s.age !== 'bebe') {
+        h += `<div class="sec">${icon('star')} Habilidades</div>` + Object.entries(SKILLS).map(([k, sk]) => { const v = s.skills?.[k] || 0; return `<div class="need"><span class="tile" style="background:#8b7cf6">${icon(sk.ic)}</span><span>${sk.label} <b style="color:var(--ink-3)">${Math.floor(v)}</b></span><div class="bar"><i style="transform:scaleX(${v / 10});background:#8b7cf6"></i></div></div>`; }).join('');
+        if (s.paintings) h += `<p class="hint">Cuadros vendidos: <b>${s.paintings}</b></p>`;
+      }
       if (s.home) h += `<div class="row" style="margin-top:16px"><button class="btn alt" id="nlook">${icon('sparkle')} Cambiar aspecto</button></div>`;
       body.innerHTML = h;
       drawPortrait(body.querySelector('#np'), s, 60);
       const lk = body.querySelector('#nlook'); if (lk) lk.onclick = () => this.editLook(s);
+      body.querySelectorAll('[data-rw]').forEach((b) => (b.onclick = () => { const r = REWARDS[b.dataset.rw]; this.confirm(`¿Canjear ${r.cost} puntos por «${r.label}»? ${r.desc}.`, () => { if (Sim.buyReward(st, s, b.dataset.rw)) { this.sig = ''; this.renderNeeds(); } }); }));
       const sk = body.querySelector('#nskip'); if (sk) sk.onclick = () => { Sim.skipToday(st, s); this.toast(`${s.name} se queda hoy en casa (bajará su rendimiento)`, 'warn', s.id); this.sig = ''; };
       const q = body.querySelector('#nquit'); if (q) q.onclick = () => this.confirm(`¿Seguro que ${s.name} deja su trabajo?`, () => { Sim.setJob(st, s, null); this.sig = ''; });
     }
@@ -242,12 +258,14 @@ export class UI {
 
   renderRels(force) {
     const s = this.active; const body = $('#sheet .sheet-body'); const st = this.state; if (!s) return;
+    if (this.relTab === 'mem') return force ? this.renderMemories(body) : undefined;
     const others = Object.values(st.sims).filter((o) => o !== s && (o.home || s.rel[o.id]));
     others.sort((a, b) => (b.home - a.home) || (Sim.getRel(s, b).a + Sim.getRel(s, b).r) - (Sim.getRel(s, a).a + Sim.getRel(s, a).r));
     const sig = s.id + others.map((o) => o.id + o.location + Math.round(Sim.getRel(s, o).a / 5) + Math.round(Sim.getRel(s, o).r / 5) + Sim.relLabel(st, s, o)).join();
     if (!force && sig === this.sig) return;
     this.sig = sig;
-    body.innerHTML = `<p class="hint" style="margin-top:0">Las relaciones de <b>${esc(s.name)}</b>. Invita a gente desde el teléfono.</p>`;
+    body.innerHTML = `${this.relTabs()}<p class="hint" style="margin-top:0">Las relaciones de <b>${esc(s.name)}</b>. Invita a gente desde el teléfono.</p>`;
+    this.bindRelTabs(body);
     for (const o of others) {
       const r = Sim.getRel(s, o);
       const row = document.createElement('div'); row.className = 'relrow';
@@ -262,6 +280,24 @@ export class UI {
     }
   }
 
+  relTabs() { const t = this.relTab || 'rel'; return `<div class="tabs" id="rtabs"><button data-t="rel" class="${t === 'rel' ? 'on' : ''}">Relaciones</button><button data-t="mem" class="${t === 'mem' ? 'on' : ''}">Recuerdos</button></div>`; }
+  bindRelTabs(body) { body.querySelector('#rtabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { this.relTab = b.dataset.t; this.sig = ''; this.renderRels(true); } }; }
+  renderMemories(body) {
+    const st = this.state; const photos = this.g.photos();
+    let h = this.relTabs();
+    h += `<button class="btn coral" id="mphoto" style="width:100%;margin-bottom:10px">${icon('camera')} Hacer una foto ahora</button>`;
+    if (photos.length) h += `<div class="photos">${photos.map((p, i) => `<figure><img src="${p.img}" alt=""><figcaption>Día ${Sim.dayOf(p.t) + 1}</figcaption><button data-del="${i}" aria-label="Borrar">${icon('x')}</button></figure>`).join('')}</div>`;
+    const mem = st.memories || [];
+    h += `<div class="sec">${icon('book')} Diario de la familia</div>`;
+    h += mem.length ? mem.map((m) => `<div class="memo"><span class="tilebox">${icon(m.ic)}</span><div><b>${esc(m.text)}</b><div class="hint">Día ${Sim.dayOf(m.t) + 1} · ${DAYS[Sim.dowOf(m.t)]}</div></div></div>`).join('') : '<p class="hint">Aquí se irán guardando los grandes momentos: parejas, bodas, nacimientos, ascensos, cumpleaños…</p>';
+    body.innerHTML = h; this.bindRelTabs(body);
+    body.querySelector('#mphoto').onclick = () => { this.hideSheetOnly(); this.setTab(null); setTimeout(() => this.g.takePhoto(), 350); };
+    body.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => this.confirm('¿Borrar esta foto?', () => { this.g.deletePhoto(+b.dataset.del); this.renderMemories(body); })));
+  }
+  chooseEvent(ev) {
+    const box = this.modal(`<h2>${esc(ev.title)}</h2><p>${esc(inflect(ev.text, this.state.sims[ev.who]))}</p><div class="actions" style="flex-direction:column">${ev.options.map((o, i) => `<button class="btn ${i ? 'alt' : 'coral'}" data-i="${i}">${esc(o)}</button>`).join('')}</div>`);
+    box.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { this.closeModal(); Sim.resolveEvent(this.state, ev, +b.dataset.i); this.update(); }));
+  }
   renderBuild(cat = this.buildCat || CATEGORIES[0]) {
     this.buildCat = cat; const st = this.state; const body = $('#sheet .sheet-body');
     body.innerHTML = `<div class="tabs">${CATEGORIES.map((c) => `<button data-c="${c}" class="${c === cat ? 'on' : ''}">${c}</button>`).join('')}</div><div class="grid"></div><p class="hint">Toca un mueble de la casa para moverlo o venderlo. El tiempo se para mientras construyes.</p>`;
@@ -555,6 +591,7 @@ export class UI {
         </div>
         <div class="group">
           <div class="field"><label>Personalidad · elige 2</label>${segH('ft', Object.entries(TRAITS).map(([k, t]) => [k, inflect(t.label, d)]))}<p class="hint" id="ftd"></p></div>
+          ${d.age !== 'nino' ? `<div class="field"><label>Aspiración en la vida</label>${segH('fasp', Object.entries(ASPIRATIONS).map(([k, a]) => [k, a.label]))}<p class="hint">${d.aspiration ? ASPIRATIONS[d.aspiration].steps.join(' → ') : ''}</p></div>` : ''}
         </div>
         ${d.age !== 'nino' ? `<div class="group">
           <div class="field"><label>Le atraen</label>${segH('fat', [['f', 'Mujeres'], ['m', 'Hombres'], ['x', 'Personas no binarias']])}<p class="hint">Sin ninguna marcada: no siente atracción romántica.</p></div>
@@ -586,6 +623,7 @@ export class UI {
       seg('#fsh', d.look.shirt, (v) => (d.look.shirt = v));
       seg('#fpa', d.look.pants, (v) => (d.look.pants = v));
       seg('#ft', d.traits, (v) => { if (d.traits.includes(v)) d.traits = d.traits.filter((t) => t !== v); else { d.traits.push(v); if (d.traits.length > 2) d.traits.shift(); } });
+      seg('#fasp', d.aspiration, (v) => (d.aspiration = v));
       seg('#fat', d.attraction, (v) => { d.attraction = d.attraction.includes(v) ? d.attraction.filter((x) => x !== v) : [...d.attraction, v]; });
       seg('#fcc', d.canCarry ? '1' : '0', (v) => (d.canCarry = v === '1'));
       seg('#fcs', d.canSire ? '1' : '0', (v) => (d.canSire = v === '1'));
@@ -606,6 +644,6 @@ export class UI {
     render();
   }
   newMember(g) {
-    return { name: Sim.randomName(g), nameAuto: true, gender: g, age: 'adulto', look: Sim.randomLook(g), traits: [], attraction: [...Sim.ALL_GENDERS], ...Sim.defaultFertility(g) };
+    return { aspiration: Object.keys(ASPIRATIONS)[Math.floor(Math.random() * 5)], name: Sim.randomName(g), nameAuto: true, gender: g, age: 'adulto', look: Sim.randomLook(g), traits: [], attraction: [...Sim.ALL_GENDERS], ...Sim.defaultFertility(g) };
   }
 }

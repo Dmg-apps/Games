@@ -240,3 +240,50 @@ OBJECTS.camita.tint = ['#e07a7a'];
 OBJECTS.cuadro.tint = ['#b05a5a', '#d08a6a'];
 OBJECTS.juguetes.tint = ['#e8c04a'];
 CATEGORIES.push('Paredes', 'Estilo');
+
+// ---------- Habilidades ----------
+export const SKILLS = {
+  cocina: { label: 'Cocina', ic: 'food' },
+  carisma: { label: 'Carisma', ic: 'chat' },
+  logica: { label: 'Lógica', ic: 'book' },
+  forma: { label: 'Forma física', ic: 'zap' },
+  creatividad: { label: 'Creatividad', ic: 'brush' },
+};
+// Qué habilidad mejora cada acción y a qué ritmo (por minuto de juego)
+const SKILL_OF = { cocinar: ['cocina', 0.03], leer: ['logica', 0.025], deberes: ['logica', 0.02], jugarpc: ['logica', 0.008], bailar: ['forma', 0.03], juguetes: ['creatividad', 0.025] };
+for (const [k, v] of Object.entries(SKILL_OF)) ACTIONS[k].skill = v;
+CAREERS.oficina.skill = 'logica'; CAREERS.cocina.skill = 'cocina'; CAREERS.medicina.skill = 'logica'; CAREERS.arte.skill = 'creatividad';
+
+// Pintar: mejora la creatividad y los cuadros se venden
+OBJECTS.caballete = { name: 'Caballete', price: 350, cat: 'Salón', w: 1, h: 1, decor: 2, acts: ['pintar'],
+  boxes: [[0.45, 0.62, 0.08, 0.08, 0, 62, '#8a6a42'], [0.2, 0.3, 0.07, 0.07, 0, 56, '#8a6a42'], [0.73, 0.3, 0.07, 0.07, 0, 56, '#8a6a42'],
+    [0.14, 0.27, 0.72, 0.05, 26, 3, '#8a6a42'], [0.16, 0.24, 0.68, 0.04, 29, 34, '#f6f1e7'], [0.24, 0.23, 0.5, 0.02, 34, 22, '#e8a05a']] };
+ACTIONS.pintar = { label: 'Pintar un cuadro', icon: '🎨', dur: 90, rate: { diversion: 0.6 }, ages: ['nino', 'adulto', 'anciano'], skill: ['creatividad', 0.025], sells: true, ic: 'brush' };
+OBJ_IC.caballete = 'brush';
+
+// ---------- Aspiraciones (objetivos de vida) ----------
+export const ASPIRATIONS = {
+  familia: { label: 'Gran familia', ic: 'home', steps: ['Tener pareja', 'Casarse', 'Tener un hijo o hija', 'Familia de 4'] },
+  fortuna: { label: 'Fortuna', ic: 'coin', steps: ['Ahorrar 8.000 €', 'Ahorrar 20.000 €', 'Casa preciosa (decoración 30)', 'Ahorrar 50.000 €'] },
+  social: { label: 'Alma social', ic: 'users', steps: ['3 amistades', 'Una mejor amistad', 'Carisma nivel 5', '6 amistades'] },
+  carrera: { label: 'Cima profesional', ic: 'briefcase', steps: ['Conseguir trabajo', 'Llegar al nivel 3', 'Llegar a lo más alto', 'Habilidad de su trabajo a 8'] },
+  artista: { label: 'Artista', ic: 'brush', steps: ['Creatividad nivel 3', 'Vender 5 cuadros', 'Creatividad nivel 7', 'Vender 25 cuadros'] },
+};
+export const REWARDS = {
+  metabolismo: { label: 'Metabolismo rápido', desc: 'El hambre baja un 30% más despacio', cost: 300, decay: { hambre: 0.7 } },
+  incansable: { label: 'Incansable', desc: 'La energía dura un 25% más', cost: 400, decay: { energia: 0.75 } },
+  encanto: { label: 'Encanto natural', desc: 'Las interacciones salen mejor', cost: 350, social: 1.15 },
+  aprendiz: { label: 'Aprende rápido', desc: 'Sube habilidades un 50% más rápido', cost: 450, learn: 1.5 },
+  optimista: { label: 'Optimista', desc: '+8 de ánimo siempre', cost: 500, mood: 8 },
+};
+Object.assign(MOODLETS, {
+  objetivo: { label: '¡Objetivo cumplido!', mood: 15, dur: 720 },
+  gourmet: { label: 'Comida de chef', mood: 15, dur: 300 },
+  quemada: { label: 'Se le quemó la comida', mood: -8, dur: 180 },
+  buena_persona: { label: 'Ha hecho lo correcto', mood: 10, dur: 720 },
+  culpa: { label: 'Se siente culpable', mood: -8, dur: 720 },
+  frustrado: { label: 'Frustrado/a', mood: -10, dur: 360 },
+  ternura: { label: 'Le ha dado ternura', mood: 12, dur: 360 },
+  premio: { label: '¡Le ha tocado la lotería!', mood: 30, dur: 1440 },
+  inspirado: { label: 'Inspirado/a', mood: 10, dur: 360 },
+});

@@ -97,12 +97,25 @@ const dirtTex = () => canvasTex(128, (ctx, s) => {
 }, [4, 1]);
 
 // ---------- materiales ----------
+// En modo ahorro se usa un material mucho más barato (Lambert) con casi el mismo aspecto
+let LOW = false;
+function std(p = {}) {
+  if (!LOW) return new THREE.MeshStandardMaterial(p);
+  const { roughness, metalness, ...r } = p; return new THREE.MeshLambertMaterial(r);
+}
+let blobTexture = null;
+function blobTex() {
+  if (blobTexture) return blobTexture;
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 4, 32, 32, 32); g.addColorStop(0, 'rgba(40,25,15,0.55)'); g.addColorStop(1, 'rgba(40,25,15,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64); blobTexture = new THREE.CanvasTexture(c); return blobTexture;
+}
 const matCache = new Map();
 function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
   if (matCache.has(key)) return matCache.get(key);
   const [r, g, b, a] = rgba(color);
-  const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(`rgb(${r | 0},${g | 0},${b | 0})`), roughness: opts.rough ?? 0.75, metalness: opts.metal ?? 0, transparent: a < 1 || !!opts.opacity, opacity: opts.opacity ?? a });
+  const m = std({ color: new THREE.Color(`rgb(${r | 0},${g | 0},${b | 0})`), roughness: opts.rough ?? 0.75, metalness: opts.metal ?? 0, transparent: a < 1 || !!opts.opacity, opacity: opts.opacity ?? a });
   if (opts.emissive) m.emissive = new THREE.Color(opts.emissive);
   if (a < 1) m.depthWrite = false;
   matCache.set(key, m); return m;
@@ -114,6 +127,10 @@ function buildObject(o) {
   const add = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.objId = o.id; g.add(mesh); return mesh; };
   const f = footprint(o.type, o.rot);
   const cx = f.w / 2, cz = f.h / 2;
+  if (LOW && !def.walkable) {
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(f.w + 0.35, f.h + 0.35), new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }));
+    sh.rotation.x = -Math.PI / 2; sh.position.set(cx, 0.008, cz); g.add(sh);
+  }
   if (o.type === 'arbol') {
     add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 1.1, 8), mat('#7a5232'))).position.set(cx, 0.55, cz);
     const leaf = mat('#3e8a3e', { rough: 0.9 }), leaf2 = mat('#4ea04e', { rough: 0.9 });
@@ -133,7 +150,7 @@ function buildObject(o) {
   if (o.type === 'lampara') {
     add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.04, 20), mat('#444', { metal: 0.5, rough: 0.4 }))).position.set(cx, 0.02, cz);
     add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.35, 8), mat('#666', { metal: 0.6, rough: 0.35 }))).position.set(cx, 0.7, cz);
-    const shade = add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 0.32, 24, 1, true), new THREE.MeshStandardMaterial({ color: 0xf4e2a0, side: THREE.DoubleSide, roughness: 0.9, emissive: 0x000000 })));
+    const shade = add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 0.32, 24, 1, true), std({ color: 0xf4e2a0, side: THREE.DoubleSide, roughness: 0.9, emissive: 0x000000 })));
     shade.position.set(cx, 1.45, cz); g.userData.shade = shade;
     return g;
   }
@@ -146,7 +163,7 @@ function buildObject(o) {
     const r = Math.min(0.04, w / 3, d / 3, H / 3);
     const geo = r > 0.006 ? new RoundedBoxGeometry(w, H, d, 2, r) : new THREE.BoxGeometry(w, H, d);
     const screen = col === '#1a1a22' || col === '#1e1e26';
-    const m = screen ? new THREE.MeshStandardMaterial({ color: 0x15161c, roughness: 0.25, emissive: 0x000000 })
+    const m = screen ? std({ color: 0x15161c, roughness: 0.25, emissive: 0x000000 })
       : mat(col, { rough: col === '#e9eef2' || col === '#f4f6f8' || col === '#e6eaee' ? 0.3 : col.startsWith('rgba') ? 0.1 : 0.75 });
     const mesh = add(new THREE.Mesh(geo, m));
     mesh.position.set(x + w / 2, z * PX + H / 2, y + d / 2);
@@ -166,9 +183,9 @@ const BLOB_MAT = new THREE.MeshBasicMaterial({ color: 0x2a1a10, transparent: tru
 class Person {
   constructor(sim) {
     this.id = sim.id; this.root = new THREE.Group(); this.root.userData.simId = sim.id; this.lookSig = '';
-    this.m = { skin: new THREE.MeshStandardMaterial({ roughness: 0.6 }), shirt: new THREE.MeshStandardMaterial({ roughness: 0.85 }), pants: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
-      hair: new THREE.MeshStandardMaterial({ roughness: 0.55 }), iris: new THREE.MeshStandardMaterial({ roughness: 0.3 }), shoe: new THREE.MeshStandardMaterial({ color: 0x3b2b25, roughness: 0.6 }),
-      white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }), dark: new THREE.MeshStandardMaterial({ color: 0x1d1512, roughness: 0.4 }), lip: new THREE.MeshStandardMaterial({ color: 0xa0524a, roughness: 0.5 }) };
+    this.m = { skin: std({ roughness: 0.6 }), shirt: std({ roughness: 0.85 }), pants: std({ roughness: 0.85 }),
+      hair: std({ roughness: 0.55 }), iris: std({ roughness: 0.3 }), shoe: std({ color: 0x3b2b25, roughness: 0.6 }),
+      white: std({ color: 0xffffff, roughness: 0.3 }), dark: std({ color: 0x1d1512, roughness: 0.4 }), lip: std({ color: 0xa0524a, roughness: 0.5 }) };
     const M = this.m; const cast = Person.castShadows; const mk = (geo, m, parent, x = 0, y = 0, z = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = cast; me.userData.simId = sim.id; parent.add(me); return me; };
     const R = this.root;
     // cadera
@@ -217,14 +234,14 @@ class Person {
     this.props = {};
     const prop = (name, geo, m, hand, x, y, z) => { const p = mk(geo, m, this.arms[hand].hand, x, y, z); p.visible = false; this.props[name] = p; return p; };
     prop('plate', new THREE.CylinderGeometry(0.11, 0.08, 0.02, 20), M.white, 0, 0, -0.04, 0.08);
-    prop('pan', new THREE.CylinderGeometry(0.12, 0.1, 0.04, 20), new THREE.MeshStandardMaterial({ color: 0x2d2d33, metalness: 0.4, roughness: 0.4 }), 1, 0, -0.04, 0.2);
+    prop('pan', new THREE.CylinderGeometry(0.12, 0.1, 0.04, 20), std({ color: 0x2d2d33, metalness: 0.4, roughness: 0.4 }), 1, 0, -0.04, 0.2);
     prop('phone', new RoundedBoxGeometry(0.04, 0.13, 0.012, 2, 0.006), M.dark, 1, 0, 0.02, 0.03);
-    prop('book', new RoundedBoxGeometry(0.2, 0.15, 0.03, 2, 0.006), new THREE.MeshStandardMaterial({ color: 0xc0504d }), 0, 0.09, 0, 0.05);
-    prop('can', new THREE.CylinderGeometry(0.06, 0.07, 0.14, 14), new THREE.MeshStandardMaterial({ color: 0x4caf6a }), 1, 0, -0.06, 0.06);
+    prop('book', new RoundedBoxGeometry(0.2, 0.15, 0.03, 2, 0.006), std({ color: 0xc0504d }), 0, 0.09, 0, 0.05);
+    prop('can', new THREE.CylinderGeometry(0.06, 0.07, 0.14, 14), std({ color: 0x4caf6a }), 1, 0, -0.06, 0.06);
     prop('bottle', new THREE.CylinderGeometry(0.025, 0.025, 0.11, 12), M.white, 1, 0, -0.03, 0.04);
-    prop('slice', new THREE.ConeGeometry(0.06, 0.13, 3), new THREE.MeshStandardMaterial({ color: 0xf2c14e }), 1, 0, 0.04, 0.04);
+    prop('slice', new THREE.ConeGeometry(0.06, 0.13, 3), std({ color: 0xf2c14e }), 1, 0, 0.04, 0.04);
     // manta (para dormir) y cristal de ducha
-    this.blanket = mk(new RoundedBoxGeometry(0.66, 1.3, 0.28, 3, 0.1), new THREE.MeshStandardMaterial({ color: 0x7fa2df, roughness: 0.95 }), R, 0, 0.64, 0.05); this.blanket.visible = false;
+    this.blanket = mk(new RoundedBoxGeometry(0.66, 1.3, 0.28, 3, 0.1), std({ color: 0x7fa2df, roughness: 0.95 }), R, 0, 0.64, 0.05); this.blanket.visible = false;
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 40), new THREE.MeshBasicMaterial({ color: 0x25c48f, transparent: true, opacity: 0.9, depthWrite: false }));
     this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.015; this.ring.visible = false; R.add(this.ring);
     this.blob = new THREE.Mesh(BLOB_GEO, BLOB_MAT); this.blob.rotation.x = -Math.PI / 2; this.blob.position.y = 0.012; this.blob.visible = !cast; R.add(this.blob);
@@ -332,11 +349,11 @@ function poseOf(state, s) {
 Person.castShadows = true;
 export class Renderer3D {
   constructor(canvas, quality = 'alta') {
-    Person.castShadows = quality === 'alta';
-    this.c = canvas; this.hq = quality === 'alta';
+    Person.castShadows = quality === 'alta'; LOW = quality !== 'alta';
+    this.c = canvas; this.hq = quality === 'alta'; this.wallsUp = localStorage.getItem('vidas_walls') === 'up';
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: this.hq ? 'high-performance' : 'low-power' });
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 2 : 1.3));
-    this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = this.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.gl.shadowMap.enabled = this.hq; this.gl.shadowMap.type = this.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     // en modo ahorro las sombras solo se recalculan cuando cambia algo
     this.gl.shadowMap.autoUpdate = this.hq; this.shadowT = 0;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.05;
@@ -351,7 +368,7 @@ export class Renderer3D {
     canvas.after(this.ov); this.ctx = this.ov.getContext('2d');
     // luces
     this.hemi = new THREE.HemisphereLight(0xdfefff, 0x8a7a60, 0.9); this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff2dd, 2.2); this.sun.castShadow = true;
+    this.sun = new THREE.DirectionalLight(0xfff2dd, 2.2); this.sun.castShadow = this.hq;
     const sc = this.sun.shadow; const ms = this.hq ? 2048 : 1024; sc.mapSize.set(ms, ms); sc.camera.left = -10; sc.camera.right = 10; sc.camera.top = 10; sc.camera.bottom = -10; sc.camera.near = 1; sc.camera.far = 60; sc.bias = -0.0006; sc.normalBias = 0.02;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
     this.indoor = new THREE.PointLight(0xffc98a, 0, 14, 1.6); this.indoor.position.set(5, 2.2, 5); this.scene.add(this.indoor);
@@ -372,8 +389,8 @@ export class Renderer3D {
   }
   // ---------- escena fija ----------
   buildIsland() {
-    const top = new THREE.MeshStandardMaterial({ map: grassTex(), roughness: 0.95 });
-    const side = new THREE.MeshStandardMaterial({ map: dirtTex(), roughness: 1 });
+    const top = std({ map: grassTex(), roughness: 0.95 });
+    const side = std({ map: dirtTex(), roughness: 1 });
     const isl = new THREE.Mesh(new THREE.BoxGeometry(GRID, 0.7, GRID), [side, side, top, side, side, side]);
     isl.position.set(GRID / 2, -0.35, GRID / 2); isl.receiveShadow = true; this.world.add(isl);
     this.island = isl;
@@ -387,7 +404,7 @@ export class Renderer3D {
     const g = new THREE.Group(); this.house = g; this.scene.add(g);
     const w = H.w || HOUSE, h = H.h || HOUSE; this.hw = w; this.hh = h;
     const F = FLOOR_STYLES.find((f) => f.id === H.floor) || FLOOR_STYLES[0];
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, h), new THREE.MeshStandardMaterial({ map: floorTexture(F, w, h), roughness: F.type === 'baldosa' ? 0.35 : 0.7 }));
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, h), std({ map: floorTexture(F, w, h), roughness: F.type === 'baldosa' ? 0.35 : 0.7 }));
     floor.position.set(w / 2, 0.025, h / 2); floor.receiveShadow = true; g.add(floor); this.floorMesh = floor;
     // camino de piedras hasta la salida
     const stone = mat('#d3cbbb', { rough: 0.9 });
@@ -407,7 +424,7 @@ export class Renderer3D {
     this.walls = [];
     const mkWall = (axis, len) => {
       const wg = new THREE.Group(); g.add(wg);
-      const wm = new THREE.MeshStandardMaterial({ map: wallTexture(wall.color, wall.pattern, len), roughness: 0.9 });
+      const wm = std({ map: wallTexture(wall.color, wall.pattern, len), roughness: 0.9 });
       const outer = mat(shadeHex(wall.color, 0.18), { rough: 0.95 });
       const list = wins.filter((q) => q.axis === axis).map((q) => Math.min(Math.max(0.3, q.pos), len - 1.6)).sort((a, b) => a - b);
       const seg = (a, b, y0, y1) => {
@@ -419,7 +436,7 @@ export class Renderer3D {
       for (const p of list) {
         if (p < cur) continue;
         seg(cur, p, 0, WALL_H); seg(p, p + WW, 0, SILL); seg(p, p + WW, TOP, WALL_H);
-        const glass = new THREE.Mesh(new THREE.BoxGeometry(WW, TOP - SILL, 0.02), new THREE.MeshStandardMaterial({ color: 0xbfe3f5, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.1, emissive: 0x000000 }));
+        const glass = new THREE.Mesh(new THREE.BoxGeometry(WW, TOP - SILL, 0.02), std({ color: 0xbfe3f5, transparent: true, opacity: 0.35, roughness: 0.05, metalness: 0.1, emissive: 0x000000 }));
         glass.position.set(p + WW / 2, (SILL + TOP) / 2, -WALL_T / 2); wg.add(glass); (this.glasses ||= []).push(glass);
         const frame = mat('#fffaf2', { rough: 0.5 });
         for (const [fw, fh, fx, fy] of [[WW, 0.05, p + WW / 2, SILL], [WW, 0.05, p + WW / 2, TOP], [0.05, TOP - SILL, p, (SILL + TOP) / 2], [0.05, TOP - SILL, p + WW, (SILL + TOP) / 2], [0.04, TOP - SILL, p + WW / 2, (SILL + TOP) / 2]]) {
@@ -441,7 +458,7 @@ export class Renderer3D {
     // cuadro
     if ((H.frame ?? true) && h >= 8 && !wins.some((q) => q.axis === 'y' && Math.abs(q.pos - (h - 2.4)) < 1.6)) {
       const fr = new THREE.Mesh(new RoundedBoxGeometry(0.04, 0.6, 0.85, 2, 0.01), mat('#8a5a3a')); fr.position.set(0.02, 1.55, h - 1.9); g.add(fr);
-      const pic = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.48), new THREE.MeshStandardMaterial({ map: canvasTex(128, (ctx, s) => { const gr = ctx.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, '#f0c27a'); gr.addColorStop(1, '#f6dca8'); ctx.fillStyle = gr; ctx.fillRect(0, 0, s, s); ctx.fillStyle = '#6aa36a'; ctx.beginPath(); ctx.moveTo(0, s); ctx.lineTo(s * 0.4, s * 0.45); ctx.lineTo(s * 0.7, s * 0.7); ctx.lineTo(s, s * 0.4); ctx.lineTo(s, s); ctx.fill(); }) }));
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.48), std({ map: canvasTex(128, (ctx, s) => { const gr = ctx.createLinearGradient(0, 0, 0, s); gr.addColorStop(0, '#f0c27a'); gr.addColorStop(1, '#f6dca8'); ctx.fillStyle = gr; ctx.fillRect(0, 0, s, s); ctx.fillStyle = '#6aa36a'; ctx.beginPath(); ctx.moveTo(0, s); ctx.lineTo(s * 0.4, s * 0.45); ctx.lineTo(s * 0.7, s * 0.7); ctx.lineTo(s, s * 0.4); ctx.lineTo(s, s); ctx.fill(); }) }));
       pic.rotation.y = Math.PI / 2; pic.position.set(0.045, 1.55, h - 1.9); g.add(pic);
     }
     // felpudo de la salida
@@ -455,7 +472,7 @@ export class Renderer3D {
     const steamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, depthWrite: false });
     g.userData.steam = [];
     for (let i = 0; i < 8; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), steamMat.clone()); s.userData.o = i / 8; g.add(s); g.userData.steam.push(s); }
-    const frost = new THREE.Mesh(new THREE.BoxGeometry(0.92, 1.3, 0.92), new THREE.MeshStandardMaterial({ color: 0xe8f2fa, transparent: true, opacity: 0.82, roughness: 0.2, depthWrite: false }));
+    const frost = new THREE.Mesh(new THREE.BoxGeometry(0.92, 1.3, 0.92), std({ color: 0xe8f2fa, transparent: true, opacity: 0.82, roughness: 0.2, depthWrite: false }));
     frost.position.y = 0.7; g.add(frost); g.userData.frost = frost;
     return g;
   }
@@ -464,7 +481,7 @@ export class Renderer3D {
   resize() {
     this.w = this.c.clientWidth || window.innerWidth; this.h = this.c.clientHeight || window.innerHeight;
     this.gl.setSize(this.w, this.h, false);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5); this.dpr = dpr;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5); this.dpr = dpr;
     this.ov.width = this.w * dpr; this.ov.height = this.h * dpr;
     this.camera.aspect = this.w / this.h; this.camera.updateProjectionMatrix();
     if (!this.inited) { this.fit(); this.inited = true; }
@@ -672,12 +689,6 @@ export class Renderer3D {
     // paredes de espaldas a la cámara: se bajan para ver el interior
     const dir = new THREE.Vector3().subVectors(this.camera.position, this.cam.target).setY(0).normalize();
     for (const w of this.walls || []) { const facing = dir.dot(w.userData.normal) > -0.15; w.scale.y = facing ? 1 : 0.08; }
-    // paredes construidas: las que quedan entre la cámara y lo que miras se bajan
-    for (const g of this.segs || []) {
-      const v = new THREE.Vector3(g.userData.cx - this.cam.target.x, 0, g.userData.cz - this.cam.target.z);
-      const front = v.dot(dir) > 0.4;
-      const k = front ? 0.07 : 1; g.scale.y += (k - g.scale.y) * 0.25;
-    }
   }
   // Paredes construidas (exteriores e interiores) con sus puertas
   buildWalls(state) {
@@ -686,7 +697,7 @@ export class Renderer3D {
     if (this.wallGroup) { this.scene.remove(this.wallGroup); this.wallGroup.traverse((o) => o.geometry?.dispose()); }
     const G = new THREE.Group(); this.wallGroup = G; this.scene.add(G); this.segs = [];
     const style = H.wall || { color: '#f3e7d6', pattern: 'rayas' };
-    const wm = new THREE.MeshStandardMaterial({ map: wallTexture(style.color, style.pattern, 1.5), roughness: 0.9 });
+    const wm = std({ map: wallTexture(style.color, style.pattern, 1.5), roughness: 0.9 });
     const top = mat(shadeHex(style.color, 0.2), { rough: 0.95 });
     const frame = mat('#fffaf2', { rough: 0.5 }), leaf = mat('#a8784a', { rough: 0.6 }), knob = mat('#d4b04a', { metal: 0.6, rough: 0.3 });
     for (const q of state.walls || []) {
@@ -704,9 +715,11 @@ export class Renderer3D {
       } else box(1 + WALL_T, WALL_H, WALL_T, 0.5, WALL_H / 2, 0);
       if (q.d === 'h') { g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x + 0.5; g.userData.cz = q.y; }
       else { g.rotation.y = -Math.PI / 2; g.position.set(q.x, 0.05, q.y); g.userData.cx = q.x; g.userData.cz = q.y + 0.5; }
+      g.scale.y = this.wallsUp ? 1 : 0.14; // paredes bajas por defecto: se ve el interior y cuesta menos
       this.segs.push(g);
     }
   }
+  setWallsUp(up) { this.wallsUp = up; localStorage.setItem('vidas_walls', up ? 'up' : 'down'); for (const g of this.segs || []) g.scale.y = up ? 1 : 0.14; if (this.gl.shadowMap.enabled) this.gl.shadowMap.needsUpdate = true; }
 
   // ---------- fotograma ----------
   render(state, view) {
@@ -716,7 +729,7 @@ export class Renderer3D {
     this.syncObjects(state, view);
     this.syncPeople(state, view, t, dt);
     this.lighting(state, t);
-    this.updateCamera(); this.cutaway();
+    this.updateCamera(); if (this.cam.yaw !== this.cutYaw) { this.cutYaw = this.cam.yaw; this.cutaway(); }
     if (!this.hq) {
       const skey = this.objKeySig + '|' + this.houseSig + '|' + this.wallSig + '|' + Math.round(hourOf(state.time) * 4);
       if (skey !== this.shadowKey) { this.shadowKey = skey; this.gl.shadowMap.needsUpdate = true; }

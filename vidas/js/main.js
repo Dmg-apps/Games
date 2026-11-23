@@ -71,6 +71,7 @@ class Game {
   loadState(saved) {
     if (!saved || saved.v !== 1) return this.showTitle();
     Sim.ensureWalls(saved);
+    if (saved.pendingEvent) setTimeout(() => this.ui.chooseEvent(saved.pendingEvent), 800);
     this.demo = null; this.state = saved;
     globalThis.__simTime = saved.time;
     const sum = Sim.offlineProgress(saved, Date.now() - saved.lastSaved);
@@ -388,12 +389,36 @@ class Game {
   }
 
   // ---------- bucle ----------
+  // ---------- fotos de la familia ----------
+  photos() { try { return JSON.parse(localStorage.getItem('vidas_photos')) || []; } catch { return []; } }
+  deletePhoto(i) { const p = this.photos(); p.splice(i, 1); localStorage.setItem('vidas_photos', JSON.stringify(p)); }
+  takePhoto() {
+    if (!this.state) return;
+    this.renderer.render(this.state, this.view); // dibuja y captura en el mismo instante
+    const src = this.canvas, ov = document.getElementById('overlay');
+    const W = 360, H = Math.round(W * src.clientHeight / src.clientWidth);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+    x.fillStyle = getComputedStyle(document.body).backgroundImage.includes('gradient') ? '#9fd0ee' : '#7fc3ee'; x.fillRect(0, 0, W, H);
+    try { x.drawImage(src, 0, 0, W, H); if (ov) x.drawImage(ov, 0, 0, W, H); } catch (e) { return this.ui.toast('No se ha podido hacer la foto', 'warn'); }
+    const img = c.toDataURL('image/jpeg', 0.72);
+    const list = this.photos(); list.unshift({ t: this.state.time, img }); if (list.length > 9) list.length = 9;
+    try { localStorage.setItem('vidas_photos', JSON.stringify(list)); } catch { list.pop(); localStorage.setItem('vidas_photos', JSON.stringify(list)); }
+    let f = document.getElementById('flash'); if (!f) { f = document.createElement('div'); f.id = 'flash'; document.body.appendChild(f); }
+    f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
+    this.ui.toast('Foto guardada en Gente → Recuerdos', 'good');
+  }
   setQuality(q) { localStorage.setItem('vidas_quality', q); this.save(); location.reload(); }
   // ¿Toca dibujar? Limita las imágenes por segundo y casi para cuando no se mueve nada
   shouldRender(t) {
     const st = this.state;
-    const idle = (!st || st.speed === 0) && t - this.lastInput > 2500 && !this.renderer.cam?.tx && this.renderer.cam?.yawT == null;
-    const fps = idle ? 6 : (st && !document.getElementById('modal').hidden ? 12 : this.maxFps);
+    const camMoving = !!this.renderer.cam?.tx || this.renderer.cam?.yawT != null || t - this.lastInput < 1200;
+    const shown = st || this.demo;
+    const walking = shown && Object.values(shown.sims).some((s) => s.location === 'casa' && s.path?.length);
+    // solo a tope mientras tocas o se mueve la cámara; si nada se mueve, muy pocas imágenes
+    let fps = camMoving ? this.maxFps : walking ? 20 : 10;
+    if (st && st.speed === 0 && !camMoving) fps = 4;
+    if (!document.getElementById('modal').hidden) fps = Math.min(fps, 8);
+    if (this.view.build && !camMoving) fps = Math.min(fps, 12);
     if (t - this.lastRender < 1000 / fps - 2) return false;
     this.lastRender = t; return true;
   }
@@ -424,6 +449,7 @@ class Game {
     else if (ev.type === 'fade') this.ui.fade();
     else if (ev.type === 'hearts') this.renderer.addHearts(ev.x, ev.y);
     else if (ev.type === 'birth') this.ui.nameBaby(ev.babyId, ev.adopted);
+    else if (ev.type === 'choice') this.ui.chooseEvent(ev.event);
     else if (ev.type === 'ui') {
       if (ev.ui === 'job') this.ui.chooseJob(ev.simId);
       if (ev.ui === 'invite') this.ui.chooseInvite();

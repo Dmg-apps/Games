@@ -65,6 +65,9 @@ const P = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5h.01"/>',
   bolt: '<path d="M13 2.5 4.5 13.5H11L10 21.5l8.5-11H12z"/>',
   plug: '<path d="M9 2.5v5M15 2.5v5M6 7.5h12v3a6 6 0 0 1-12 0zM12 16.5v5"/>',
+  brush: '<path d="M14.5 4.5l5 5L11 18l-5-5z"/><path d="M6 13c-2 0-3 1.5-3 3.5S2 21 2 21s3.5 0 5-1 2.5-2 2-4"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
+  walls: '<path d="M3 20V9l9-5 9 5v11"/><path d="M3 13h18M9 13v7M15 13v7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
 };
 
