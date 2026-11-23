@@ -16,7 +16,7 @@ const noEmoji = (t) => String(t).replace(/[\p{Extended_Pictographic}]️?(‍[\p
 export const moodColor = (m) => (m >= 70 ? '#25c48f' : m >= 45 ? '#f5c13a' : m >= 25 ? '#f08a3c' : '#e5484d');
 const moodIcon = (m) => (m >= 60 ? 'smile' : m >= 35 ? 'meh' : 'frown');
 const moodWord = (m) => (m >= 80 ? 'Feliz' : m >= 60 ? 'Bien' : m >= 40 ? 'Regular' : m >= 20 ? 'Mal' : 'Fatal');
-const PANELS = [['needs', 'heart', 'Estado'], ['rels', 'users', 'Gente'], ['build', 'hammer', 'Construir'], ['menu', 'menu', 'Menú']];
+const PANELS = [['needs', 'heart', 'Estado'], ['rels', 'users', 'Gente'], ['barrio', 'map', 'Barrio'], ['build', 'hammer', 'Construir'], ['menu', 'menu', 'Menú']];
 const SPEED_IC = ['pause', 'play', 'ff', 'fff'];
 const KIND_IC = { info: 'bell', good: 'check', warn: 'alert', bad: 'alert', worry: 'cloud' };
 const PRIDE = ['#e40303', '#ff8c00', '#ffed00', '#008026', '#24408e', '#732982', '#5bcefa', '#f5a9b8', '#ffffff'];
@@ -69,6 +69,7 @@ export class UI {
     this.renderFamily(); this.renderQueue();
     if (this.panel === 'needs') this.renderNeeds();
     if (this.panel === 'rels') this.renderRels(false);
+    if (this.panel === 'barrio') this.renderBarrio(false);
   }
   movePill() {
     const bar = $('#tabbar'); const on = bar.querySelector('button.on'); const pill = bar.querySelector('.pill');
@@ -176,11 +177,12 @@ export class UI {
     this.setTab(name);
     const sh = $('#sheet'); sh.classList.remove('closed'); sh.setAttribute('aria-hidden', 'false');
     document.body.classList.add('sheet-open');
-    $('#sheet h2').textContent = { needs: 'Estado', rels: 'Gente', build: 'Catálogo', menu: 'Menú' }[name];
+    $('#sheet h2').textContent = { needs: 'Estado', rels: 'Gente', barrio: 'Barrio', build: 'Catálogo', menu: 'Menú' }[name];
     $('#sheet .sheet-body').scrollTop = 0;
     this.reframe(true);
     if (name === 'needs') this.renderNeeds();
     if (name === 'rels') this.renderRels(true);
+    if (name === 'barrio') this.renderBarrio(true);
     if (name === 'build') this.renderBuild();
     if (name === 'menu') this.renderMenu();
   }
@@ -290,6 +292,57 @@ export class UI {
     }
   }
 
+  // ---------- el barrio ----------
+  renderBarrio(force) {
+    const st = this.state; const body = $('#sheet .sheet-body');
+    const fam = Sim.householdSims(st); const ns = Sim.neighbors(st);
+    const placeOf = (s) => s.location === 'casa' ? 'casa' : s.location === 'trabajo' ? 'trabajo' : s.location === 'escuela' ? 'cole' : s.location === 'salida' ? (s.outing?.dest === 'visita' ? 'n:' + s.outing.host : s.outing?.dest === 'paseo' ? 'parque' : s.outing?.dest) : 'casa';
+    const sig = fam.map((s) => s.id + placeOf(s)).join() + ns.map((n) => n.id + n.location + Sim.whereIs(st, n)).join() + (st.news?.length || 0) + (st.news?.[0]?.t || 0);
+    if (!force && sig === this.sig) return; this.sig = sig;
+    const who = (key) => fam.filter((s) => placeOf(s) === key);
+    const P = { casa: [50, 50, 'home', `Casa ${st.surname}`], parque: [24, 38, 'tree', 'Parque'], cine: [76, 38, 'tv', 'Cine'], restaurante: [27, 78, 'food', 'Restaurante'], gimnasio: [73, 78, 'zap', 'Gimnasio'], trabajo: [91, 60, 'briefcase', 'Trabajo'], cole: [9, 60, 'backpack', 'Cole'] };
+    const NPOS = [[14, 13], [38, 11], [62, 11], [86, 13], [50, 92]];
+    let pins = '';
+    const pin = (key, x, y, ic, label, cls = '', color = '') => `<button class="pin ${cls}" data-k="${key}" style="left:${x}%;top:${y}%"><span class="pi" ${color ? `style="background:${color};color:#fff"` : ''}>${icon(ic)}</span><span class="pl">${esc(label)}</span><span class="pw">${who(key).map((s) => `<canvas data-face="${s.id}"></canvas>`).join('')}</span></button>`;
+    for (const [k, [x, y, ic, l]] of Object.entries(P)) pins += pin(k, x, y, ic, l, k === 'casa' ? 'home' : '');
+    const HOUSE_COLORS = ['#e07a5a', '#5a8ad0', '#6ab07a', '#c9a04a', '#9a6ac0'];
+    ns.forEach((n, i) => { const [x, y] = NPOS[i % NPOS.length]; pins += pin('n:' + n.id, x, y, 'home', n.name, 'nb', HOUSE_COLORS[i % 5]); });
+    let h = `<div class="map">${pins}</div><p class="hint">Toca un sitio para ir, o la casa de un vecino para invitarle o hacerle una visita.</p>`;
+    h += `<div class="sec">${icon('users')} Vecinos</div>` + ns.map((n) => `<button class="relrow nbrow" data-n="${n.id}"><canvas data-face="${n.id}" class="big"></canvas><div style="text-align:left"><div class="top"><b>${esc(n.name)}</b><span class="chip">${Sim.relLabel(st, this.active, n)}</span></div><div class="hint">${esc(Sim.whereIs(st, n))}${n.partner && st.sims[n.partner] ? ` · ${n.married ? 'casado/a con' : 'sale con'} ${esc(st.sims[n.partner].name)}` : ''}</div></div></button>`).join('');
+    h += `<div class="sec">${icon('news')} Periódico del barrio</div>` + ((st.news || []).length ? st.news.slice(0, 8).map((x) => `<div class="memo"><span class="tilebox">${icon('news')}</span><div><b>${esc(x.text.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim())}</b><div class="hint">Día ${Sim.dayOf(x.t) + 1}</div></div></div>`).join('') : '<p class="hint">Aún no hay noticias. Los vecinos tienen su propia vida: se enamoran, ascienden, cambian de trabajo… y aquí te enterarás.</p>');
+    body.innerHTML = h;
+    body.querySelectorAll('canvas[data-face]').forEach((c) => drawPortrait(c, st.sims[c.dataset.face], c.classList.contains('big') ? 48 : 22));
+    body.querySelectorAll('.pin').forEach((b) => (b.onclick = () => this.barrioTap(b.dataset.k)));
+    body.querySelectorAll('.nbrow').forEach((b) => (b.onclick = () => this.neighborCard(b.dataset.n)));
+  }
+  barrioTap(k) {
+    const st = this.state;
+    if (k === 'casa') { this.closePanel(); return this.g.renderer.centerOn(4.5, 4.5); }
+    if (k.startsWith('n:')) return this.neighborCard(k.slice(2));
+    if (k === 'trabajo' || k === 'cole') { const there = Sim.householdSims(st).filter((s) => s.location === (k === 'cole' ? 'escuela' : 'trabajo')); return this.toast(there.length ? there.map((s) => `${s.name}: ${Sim.whereIs(st, s)}`).join(' · ') : k === 'cole' ? 'Nadie está en el cole ahora' : 'Nadie está trabajando ahora', 'info'); }
+    const me = this.active;
+    if (!me || !Sim.isAdult(me) || !Sim.canGoOut(st, me)) return this.toast(me ? `${me.name} está ${Sim.whereIs(st, me)}` : 'Elige a alguien de la familia', 'warn');
+    this.chooseOuting(me.id);
+  }
+  neighborCard(id) {
+    const st = this.state; const n = st.sims[id]; const me = this.active; if (!n) return;
+    const where = Sim.whereIs(st, n); const r = Sim.getRel(me, n); const home = where === 'en su casa';
+    const box = this.modal(`<div class="who"><canvas id="ncard"></canvas><div><div class="n">${esc(n.name)}</div><div class="s">${Sim.relLabel(st, me, n)} · ${GENDERS[n.gender].label} · ${esc(where)}</div>
+      <div class="chips" style="margin-top:6px">${n.traits.map((t) => `<span class="chip">${inflect(TRAITS[t].label, n)}</span>`).join('')}${n.job ? `<span class="chip">${inflect(CAREERS[n.job.id].levels[n.job.level], n)}</span>` : ''}</div></div></div>
+      <div class="bars" style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:center;margin-top:14px"><span>${icon('smile')}</span><div class="bar"><i style="transform:scaleX(${(r.a + 100) / 200});background:${r.a >= 0 ? '#25c48f' : '#e5484d'}"></i></div></div>
+      <div class="actions" style="flex-direction:column">
+        <button class="btn coral" id="nvisit" ${home && n.location === 'fuera' ? '' : 'disabled'}>${icon('home')} Ir de visita con ${esc(me.name)}</button>
+        <button class="btn alt" id="ninvite" ${n.location === 'fuera' ? '' : 'disabled'}>${icon('phone')} Invitar a casa</button>
+        <button class="btn alt" id="nclose">Cerrar</button></div>`);
+    drawPortrait(box.querySelector('#ncard'), n, 60);
+    box.querySelector('#nclose').onclick = () => this.closeModal();
+    box.querySelector('#ninvite').onclick = () => { this.closeModal(); Sim.inviteNeighbor(st, n.id); };
+    box.querySelector('#nvisit').onclick = () => {
+      if (!Sim.isAdult(me) || !Sim.canGoOut(st, me)) return this.toast(`${me.name} está ${Sim.whereIs(st, me)}`, 'warn');
+      const h = Sim.hourOf(st.time); if (h >= 22 || h < 9) return this.toast('Es muy tarde para ir de visita', 'warn');
+      this.closeModal(); Sim.startOuting(st, [me], 'visita', n.id); this.sig = ''; this.update();
+    };
+  }
   relTabs() { const t = this.relTab || 'rel'; return `<div class="tabs" id="rtabs"><button data-t="rel" class="${t === 'rel' ? 'on' : ''}">Relaciones</button><button data-t="mem" class="${t === 'mem' ? 'on' : ''}">Recuerdos</button></div>`; }
   bindRelTabs(body) { body.querySelector('#rtabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { this.relTab = b.dataset.t; this.sig = ''; this.renderRels(true); } }; }
   renderMemories(body) {
@@ -506,7 +559,7 @@ export class UI {
     const pick = new Set();
     const render = () => {
       let h = `<p class="hint">¿A dónde va ${esc(me.name)}? Puede ir con más gente de la familia.</p><div class="list">`;
-      for (const [k, o] of Object.entries(OUTINGS)) h += `<button class="li" data-d="${k}"><span class="tilebox">${icon(o.ic)}</span><div><b>${o.label}</b><div class="hint">${Math.round(o.dur / 60 * 10) / 10} h · ${o.cost ? o.cost + ' € por persona' : 'Gratis'}${o.outdoor && ['lluvia', 'nieve'].includes(Sim.weatherOf(st).type) ? ' · hoy hace mal tiempo' : ''}</div></div></button>`;
+      for (const [k, o] of Object.entries(OUTINGS)) if (!o.hidden) h += `<button class="li" data-d="${k}"><span class="tilebox">${icon(o.ic)}</span><div><b>${o.label}</b><div class="hint">${Math.round(o.dur / 60 * 10) / 10} h · ${o.cost ? o.cost + ' € por persona' : 'Gratis'}${o.outdoor && ['lluvia', 'nieve'].includes(Sim.weatherOf(st).type) ? ' · hoy hace mal tiempo' : ''}</div></div></button>`;
       h += '</div>';
       if (fam.length) h += `<div class="field"><label>Acompañantes</label><div class="seg" id="ocomp">${fam.map((s) => `<button data-id="${s.id}" class="${pick.has(s.id) ? 'on' : ''}">${esc(s.name)}</button>`).join('')}</div></div>`;
       h += `<div class="actions"><button class="btn alt" id="oc">Cancelar</button></div>`;

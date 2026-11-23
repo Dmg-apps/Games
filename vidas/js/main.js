@@ -172,7 +172,7 @@ class Game {
     const s = this.state.sims[id]; if (!s) return;
     this.state.active = id; this.view.active = id;
     if (center && s.location === 'casa') this.renderer.centerOn(s.x, s.y);
-    if (s.location !== 'casa') this.ui.toast(`${s.name} está ${s.location === 'escuela' ? 'en el cole' : 'trabajando'}`);
+    if (s.location !== 'casa') this.ui.toast(`${s.name} está ${Sim.whereIs(this.state, s)}`, 'info', s.id);
     this.ui.sig = ''; this.ui.update();
   }
   centerOnSim(id) { const s = this.state.sims[id]; if (s && s.location === 'casa') this.renderer.centerOn(s.x, s.y); }
@@ -357,7 +357,7 @@ class Game {
     const target = this.renderer.pickSim(st, x, y);
     const needMe = () => {
       if (!me) return false;
-      if (me.location !== 'casa') { this.ui.toast(`${me.name} no está en casa`, 'warn'); return false; }
+      if (me.location !== 'casa') { this.ui.toast(`${me.name} está ${Sim.whereIs(st, me)}`, 'warn'); return false; }
       if (me.age === 'bebe') { this.ui.toast('Un bebé no puede hacer nada solo. Elige a un adulto.', 'warn'); return false; }
       return true;
     };

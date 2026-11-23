@@ -68,6 +68,8 @@ const P = {
   brush: '<path d="M14.5 4.5l5 5L11 18l-5-5z"/><path d="M6 13c-2 0-3 1.5-3 3.5S2 21 2 21s3.5 0 5-1 2.5-2 2-4"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
   walls: '<path d="M3 20V9l9-5 9 5v11"/><path d="M3 13h18M9 13v7M15 13v7"/>',
+  map: '<path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
+  news: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
 };
 

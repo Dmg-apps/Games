@@ -161,7 +161,8 @@ export function newGame(familyDefs, surname) {
   // vecinos
   for (let i = 0; i < 5; i++) {
     const g = i === 4 ? 'x' : i % 2 ? 'f' : 'm';
-    const n = makeSim(state, { gender: g, traits: pickTraits(), home: false, location: 'fuera', attraction: randomAttraction(g) });
+    const used = new Set(Object.values(state.sims).map((q) => q.name)); let nm = randomName(g); for (let k = 0; k < 20 && used.has(nm); k++) nm = randomName(g);
+    const n = makeSim(state, { name: nm, gender: g, traits: pickTraits(), home: false, location: 'fuera', attraction: randomAttraction(g) });
     if (Math.random() < 0.7) n.job = { id: pick(Object.keys(CAREERS)), level: Math.floor(rnd(0, 3)), perf: 50 };
   }
   for (const s of householdSims(state)) {
@@ -666,18 +667,54 @@ export function tick(state, dt) {
   for (const p of state.pets || []) petTick(state, p, dt);
 }
 
+// ---------- dónde está cada cual ----------
+const hhmm = (t) => `${String(Math.floor(hourOf(t))).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+export function whereIs(state, s) {
+  if (s.location === 'casa') return s.home ? 'en casa' : 'de visita en tu casa';
+  if (s.location === 'trabajo') return `trabajando (vuelve a las ${CAREERS[s.job?.id]?.end ?? '?'}:00)`;
+  if (s.location === 'escuela') return `en el cole (vuelve a las ${SCHOOL.end}:00)`;
+  if (s.location === 'salida' && s.outing) {
+    const back = `vuelve a las ${hhmm(s.outing.until)}`;
+    if (s.outing.dest === 'paseo') return `de paseo con la mascota (${back})`;
+    if (s.outing.dest === 'visita') return `en casa de ${state.sims[s.outing.host]?.name || 'un vecino'} (${back})`;
+    return `en el ${OUTINGS[s.outing.dest]?.label.toLowerCase() || 'barrio'} (${back})`;
+  }
+  // vecinos en su vida diaria
+  if (!s.home) { const c = s.job && CAREERS[s.job.id]; const h = hourOf(state.time); if (c && dowOf(state.time) <= 4 && h >= c.start && h < c.end) return 'trabajando'; return h >= 23 || h < 7 ? 'durmiendo en su casa' : 'en su casa'; }
+  return 'fuera de casa';
+}
+
+// ---------- periódico del barrio: los vecinos viven aunque no los veas ----------
+export function addNews(state, text) { state.news ||= []; state.news.unshift({ t: state.time, text }); if (state.news.length > 30) state.news.length = 30; }
+function neighborhoodLife(state) {
+  if (Math.random() > 0.035) return;
+  const ns = neighbors(state).filter((n) => n.location !== 'casa'); if (!ns.length) return;
+  const n = pick(ns); const r = Math.random();
+  if (r < 0.25) {
+    const m = ns.find((q) => q !== n && !q.partner && !n.partner && isAdult(q) && isAdult(n) && attractedTo(n, q) && attractedTo(q, n));
+    if (m) { n.partner = m.id; m.partner = n.id; setRel(state, n, m, 60, 70, true); return addNews(state, `💞 ${n.name} y ${m.name} han empezado a salir. ¡Todo el barrio lo comenta!`); }
+  }
+  if (r < 0.4 && n.partner && !n.married && state.sims[n.partner]) { n.married = state.sims[n.partner].married = true; return addNews(state, `💍 ¡${n.name} y ${state.sims[n.partner].name} se casan este fin de semana!`); }
+  if (r < 0.55 && n.job) { n.job.level = Math.min(4, n.job.level + 1); return addNews(state, `🎉 ${n.name} ha ascendido a ${CAREERS[n.job.id].levels[n.job.level]}.`); }
+  if (r < 0.65 && !n.job) { n.job = { id: pick(Object.keys(CAREERS)), level: 0, perf: 50 }; return addNews(state, `💼 ${n.name} ha encontrado trabajo en ${CAREERS[n.job.id].label}.`); }
+  if (r < 0.75) return addNews(state, pick([`🌻 ${n.name} ha plantado un huerto en su jardín.`, `🐶 ${n.name} pasea un perro nuevo por el barrio.`, `🎨 ${n.name} ha empezado clases de pintura.`, `🏃 ${n.name} ha corrido su primera media maratón.`, `🍰 ${n.name} ganó el concurso de tartas del barrio.`]));
+  if (r < 0.85 && n.partner) return addNews(state, `👶 ${n.name} y ${state.sims[n.partner]?.name} esperan un bebé.`);
+  const fam = householdSims(state).filter(isAdult); const f = fam.length && pick(fam);
+  if (f) { const rel = getRel(f, n).a; return addNews(state, rel > 40 ? `💬 ${n.name} va diciendo que ${f.name} es de lo mejor del barrio.` : rel < -20 ? `🙄 Dicen que ${n.name} no soporta a ${f.name}.` : `👋 ${n.name} pregunta por la familia ${state.surname}.`); }
+}
+
 // ---------- salidas ----------
 export function canGoOut(state, s) {
   if (s.location !== 'casa' || s.age === 'bebe') return false;
   return !s.cur || !['ko', 'leave', 'partner'].includes(s.cur.kind);
 }
-export function startOuting(state, group, dest) {
+export function startOuting(state, group, dest, host = null) {
   const O = OUTINGS[dest]; const cost = O.cost * group.length;
   if (state.money < cost) { toast('No hay dinero suficiente', 'warn'); return false; }
   state.money -= cost;
-  for (const s of group) { interrupt(state, s); s.queue = []; s.location = 'salida'; s.outing = { dest, until: state.time + O.dur, with: group.map((g) => g.id) }; s.bubble = null; }
+  for (const s of group) { interrupt(state, s); s.queue = []; s.location = 'salida'; s.outing = { dest, until: state.time + O.dur, with: group.map((g) => g.id), host }; s.bubble = null; }
   const names = group.map((g) => g.name).join(', ');
-  toast(`🚶 ${names} ${group.length > 1 ? 'se van' : 'se va'} al ${O.label.toLowerCase()}`, 'info', group[0].id);
+  toast(dest === 'visita' ? `🏡 ${names} ${group.length > 1 ? 'van' : 'va'} a casa de ${state.sims[host]?.name}` : `🚶 ${names} ${group.length > 1 ? 'se van' : 'se va'} al ${O.label.toLowerCase()}`, 'info', group[0].id);
   return true;
 }
 function outingTick(state, s, dt) {
@@ -695,7 +732,10 @@ function outingTick(state, s, dt) {
   const others = o.with.map((id) => state.sims[id]).filter((q) => q && q !== s);
   for (const q of others) setRel(state, s, q, 2, s.partner === q.id ? 3 : 0);
   if (o.with[0] === s.id) {
-    if (o.dest === 'paseo') {
+    if (o.dest === 'visita') {
+      const hostSim = state.sims[o.host];
+      if (hostSim) { for (const id of o.with) { const q = state.sims[id]; if (q) setRel(state, q, hostSim, 10, 0); } if (!hostSim.visited) { hostSim.visited = true; addMemory(state, `Primera visita a casa de ${hostSim.name}`, 'home', o.with); } }
+    } else if (o.dest === 'paseo') {
       const pet = (state.pets || []).find((p) => p.id === o.pet); if (pet) { pet.out = 0; pet.x = EXIT.x; pet.y = EXIT.y; pet.needs.diversion = 100; pet.needs.carino = clamp(pet.needs.carino + 30); }
       if (Math.random() < 0.4) { const n = pick(neighbors(state)); if (n) { setRel(state, s, n, 8, 0); toast(`Durante el paseo, ${s.name} ha charlado con ${n.name}`, 'good', s.id); } }
     } else if (others.length >= 2) addMemory(state, `Tarde de ${OUTINGS[o.dest].label.toLowerCase()} en familia`, OUTINGS[o.dest].ic, o.with);
@@ -1405,6 +1445,7 @@ function hourly(state, offline) {
   }
   checkAspirations(state);
   updateWeather(state);
+  if (h >= 8 && h <= 22) neighborhoodLife(state);
   if (h === 23) writeDiary(state);
   deliverLetters(state);
   if (['lluvia', 'nieve'].includes(weatherOf(state).type) && h >= 9 && h <= 21) for (const s of householdSims(state)) if (s.location === 'casa' && s.age !== 'bebe' && Math.random() < 0.3) addMoodlet(s, s.needs.diversion > 50 ? 'acogedor' : 'gris');

@@ -311,6 +311,8 @@ export const SEASONS = [
 ];
 export const WEATHER = { sol: { label: 'Soleado', ic: 'sun' }, nubes: { label: 'Nublado', ic: 'cloud' }, lluvia: { label: 'Lluvia', ic: 'drop' }, nieve: { label: 'Nieve', ic: 'sparkle' } };
 export const WINDOW_PRICE = 100;
+OUTINGS.visita = { label: 'Casa de un vecino', ic: 'home', dur: 120, cost: 0, rate: { social: 0.55, diversion: 0.3, hambre: 0.25 }, moodlet: 'visita', hidden: true };
+MOODLETS.visita = { label: 'Buena visita', mood: 10, dur: 360 };
 ACTIONS.salir = { label: 'Salir (parque, cine…)', icon: '🚶', dur: 3, ages: ['adulto', 'anciano'], ui: 'outing', ic: 'pin' };
 ACTIONS.mascota = { label: 'Adoptar mascota (200 €)', icon: '🐾', dur: 5, ages: ['adulto', 'anciano'], ui: 'pet', ic: 'heart' };
 ACTIONS.carta = { label: 'Escribir carta al futuro', icon: '✉️', dur: 30, ages: ['adulto', 'anciano'], ui: 'letter', ic: 'pencil' };
