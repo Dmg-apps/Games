@@ -46,7 +46,7 @@ function canvasTex(size, draw, repeat = [1, 1]) {
   const c = document.createElement('canvas'); c.width = c.height = size;
   draw(c.getContext('2d'), size);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = 4;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = 2;
   return t;
 }
 function noise(ctx, s, alpha, n = 3000) {
@@ -160,14 +160,16 @@ function buildObject(o) {
 }
 
 // ---------- personas ----------
-const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 4, 10);
+const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
+const BLOB_GEO = new THREE.CircleGeometry(0.3, 20);
+const BLOB_MAT = new THREE.MeshBasicMaterial({ color: 0x2a1a10, transparent: true, opacity: 0.28, depthWrite: false });
 class Person {
   constructor(sim) {
     this.id = sim.id; this.root = new THREE.Group(); this.root.userData.simId = sim.id; this.lookSig = '';
     this.m = { skin: new THREE.MeshStandardMaterial({ roughness: 0.6 }), shirt: new THREE.MeshStandardMaterial({ roughness: 0.85 }), pants: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
       hair: new THREE.MeshStandardMaterial({ roughness: 0.55 }), iris: new THREE.MeshStandardMaterial({ roughness: 0.3 }), shoe: new THREE.MeshStandardMaterial({ color: 0x3b2b25, roughness: 0.6 }),
       white: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }), dark: new THREE.MeshStandardMaterial({ color: 0x1d1512, roughness: 0.4 }), lip: new THREE.MeshStandardMaterial({ color: 0xa0524a, roughness: 0.5 }) };
-    const M = this.m; const mk = (geo, m, parent, x = 0, y = 0, z = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = true; me.userData.simId = sim.id; parent.add(me); return me; };
+    const M = this.m; const cast = Person.castShadows; const mk = (geo, m, parent, x = 0, y = 0, z = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = cast; me.userData.simId = sim.id; parent.add(me); return me; };
     const R = this.root;
     // cadera
     this.hips = new THREE.Group(); this.hips.position.y = 0.92; R.add(this.hips);
@@ -225,6 +227,7 @@ class Person {
     this.blanket = mk(new RoundedBoxGeometry(0.66, 1.3, 0.28, 3, 0.1), new THREE.MeshStandardMaterial({ color: 0x7fa2df, roughness: 0.95 }), R, 0, 0.64, 0.05); this.blanket.visible = false;
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 40), new THREE.MeshBasicMaterial({ color: 0x25c48f, transparent: true, opacity: 0.9, depthWrite: false }));
     this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.015; this.ring.visible = false; R.add(this.ring);
+    this.blob = new THREE.Mesh(BLOB_GEO, BLOB_MAT); this.blob.rotation.x = -Math.PI / 2; this.blob.position.y = 0.012; this.blob.visible = !cast; R.add(this.blob);
     this.yaw = 0; this.applyLook(sim);
   }
   applyLook(sim) {
@@ -326,12 +329,16 @@ function poseOf(state, s) {
   }
 }
 
+Person.castShadows = true;
 export class Renderer3D {
-  constructor(canvas) {
-    this.c = canvas;
-    this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
+  constructor(canvas, quality = 'alta') {
+    Person.castShadows = quality === 'alta';
+    this.c = canvas; this.hq = quality === 'alta';
+    this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: this.hq ? 'high-performance' : 'low-power' });
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 2 : 1.3));
+    this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = this.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // en modo ahorro las sombras solo se recalculan cuando cambia algo
+    this.gl.shadowMap.autoUpdate = this.hq; this.shadowT = 0;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.05;
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
@@ -345,7 +352,7 @@ export class Renderer3D {
     // luces
     this.hemi = new THREE.HemisphereLight(0xdfefff, 0x8a7a60, 0.9); this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff2dd, 2.2); this.sun.castShadow = true;
-    const sc = this.sun.shadow; const big = Math.min(screen.width, screen.height) > 700; sc.mapSize.set(big ? 2048 : 1024, big ? 2048 : 1024); sc.camera.left = -10; sc.camera.right = 10; sc.camera.top = 10; sc.camera.bottom = -10; sc.camera.near = 1; sc.camera.far = 60; sc.bias = -0.0006; sc.normalBias = 0.02;
+    const sc = this.sun.shadow; const ms = this.hq ? 2048 : 1024; sc.mapSize.set(ms, ms); sc.camera.left = -10; sc.camera.right = 10; sc.camera.top = 10; sc.camera.bottom = -10; sc.camera.near = 1; sc.camera.far = 60; sc.bias = -0.0006; sc.normalBias = 0.02;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
     this.indoor = new THREE.PointLight(0xffc98a, 0, 14, 1.6); this.indoor.position.set(5, 2.2, 5); this.scene.add(this.indoor);
     // grupos
@@ -353,7 +360,8 @@ export class Renderer3D {
     this.objGroup = new THREE.Group(); this.scene.add(this.objGroup);
     this.simGroup = new THREE.Group(); this.scene.add(this.simGroup);
     this.fx = new THREE.Group(); this.scene.add(this.fx);
-    this.objMeshes = new Map(); this.people = new Map(); this.lampLights = [];
+    this.objMeshes = new Map(); this.people = new Map();
+    this.lampLights = Array.from({ length: this.hq ? 2 : 0 }, () => { const L = new THREE.PointLight(0xffb860, 0, 6, 1.8); this.scene.add(L); return L; });
     this.buildIsland();
     this.grid = new THREE.GridHelper(GRID, GRID, 0xffffff, 0xffffff); this.grid.position.set(GRID / 2, 0.025, GRID / 2); this.grid.material.transparent = true; this.grid.material.opacity = 0.35; this.grid.visible = false; this.scene.add(this.grid);
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.3, 32), new THREE.MeshBasicMaterial({ color: 0x25c48f, transparent: true, depthWrite: false })); this.marker.rotation.x = -Math.PI / 2; this.marker.visible = false; this.scene.add(this.marker);
@@ -543,7 +551,13 @@ export class Renderer3D {
       }
     }
     for (const [id, rec] of this.objMeshes) if (!seen.has(id)) { this.objGroup.remove(rec.g); this.objMeshes.delete(id); }
+    this.objKeySig = [...this.objMeshes.values()].map((r) => r.key).join(';');
     // fantasma y resaltado en construcción
+    const hkey = JSON.stringify([view.selected, view.ghost]);
+    for (const [id, rec] of this.objMeshes) if (!view.ghost || view.ghost.objId !== id) rec.g.visible = true;
+    if (view.ghost?.objId) { const rec = this.objMeshes.get(view.ghost.objId); if (rec) rec.g.visible = false; }
+    this.grid.visible = !!view.build;
+    if (hkey === this.hkey) return; this.hkey = hkey;
     this.highlight.traverse((m) => { if (m.geometry && m !== this.highlight) m.geometry.dispose(); });
     this.highlight.clear();
     const tiles = (x, y, w, h, color, op) => {
@@ -604,7 +618,7 @@ export class Renderer3D {
       }
       if (yaw !== null) { let d = yaw - p.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); p.yaw += d * Math.min(1, dt * (lie ? 30 : 10)); }
       R.position.set(x, y, z); R.rotation.set(lie ? -Math.PI / 2 : 0, p.yaw, 0);
-      p.ring.visible = view.active === s.id && !lie;
+      p.ring.visible = view.active === s.id && !lie; p.blob.visible = !Person.castShadows && !lie;
       if (p.ring.visible) { const k = 1 + Math.sin(t * 4) * 0.06; p.ring.scale.set(k, k, 1); }
     }
     // efectos de ducha
@@ -636,9 +650,8 @@ export class Renderer3D {
       const using = o.users.some((u) => state.sims[u]?.cur?.phase === 'do');
       if (rec.g.userData.shade) {
         rec.g.userData.shade.material.emissive.setHex(night > 0.3 && on ? 0xffb860 : 0x000000);
-        if (night > 0.3 && on && li < 4) {
-          let L = this.lampLights[li]; if (!L) { L = new THREE.PointLight(0xffb860, 0, 6, 1.8); this.scene.add(L); this.lampLights[li] = L; }
-          L.position.set(o.x + 0.5, 1.45, o.y + 0.5); L.intensity = 3 * night; li++;
+        if (night > 0.3 && on && li < this.lampLights.length) {
+          const L = this.lampLights[li]; L.position.set(o.x + 0.5, 1.45, o.y + 0.5); L.intensity = 3 * night; li++;
         }
       }
       for (const sc of rec.g.userData.screens || []) {
@@ -663,6 +676,10 @@ export class Renderer3D {
     this.syncPeople(state, view, t, dt);
     this.lighting(state, t);
     this.updateCamera(); this.cutaway();
+    if (!this.hq) {
+      const skey = this.objKeySig + '|' + this.houseSig + '|' + Math.round(hourOf(state.time) * 4);
+      if (skey !== this.shadowKey) { this.shadowKey = skey; this.gl.shadowMap.needsUpdate = true; }
+    }
     if (this.marker.visible) { const a = (performance.now() - this.markerT) / 700; if (a > 1) this.marker.visible = false; else { this.marker.scale.setScalar(1 + a * 1.4); this.marker.material.opacity = 1 - a; } }
     this.gl.render(this.scene, this.camera);
     this.drawOverlay(state, view, t);

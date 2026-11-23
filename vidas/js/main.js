@@ -12,7 +12,11 @@ class Game {
   constructor() {
     this.canvas = document.getElementById('game');
     // 3D si el móvil lo admite; si no, la vista isométrica 2D
-    try { this.renderer = webglAvailable() ? new Renderer3D(this.canvas) : new IsoRenderer(this.canvas); }
+    // Calidad: 'ligera' (2D), 'equilibrada' (3D ahorro, por defecto en móviles) o 'alta' (3D completo)
+    const phone = Math.min(screen.width, screen.height) < 700;
+    this.quality = localStorage.getItem('vidas_quality') || (phone ? 'equilibrada' : 'alta');
+    this.maxFps = this.quality === 'alta' ? 60 : 30; this.lastRender = 0; this.lastInput = performance.now();
+    try { this.renderer = webglAvailable() && this.quality !== 'ligera' ? new Renderer3D(this.canvas, this.quality) : new IsoRenderer(this.canvas); }
     catch (e) { console.warn('Sin 3D:', e); this.renderer = new IsoRenderer(this.canvas); }
     this.is3D = this.renderer instanceof Renderer3D;
     this.ui = new UI(this);
@@ -222,12 +226,14 @@ class Game {
     const c = this.canvas; const ptrs = new Map(); let moved = false, pinchD = 0, pinchA = null, start = null;
     let drag = null; // arrastre de un mueble en modo construcción
     c.addEventListener('pointerdown', (e) => {
+      this.lastInput = performance.now();
       c.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (ptrs.size === 1) { moved = false; start = { x: e.clientX, y: e.clientY }; drag = this.view.build ? this.dragTarget(e.clientX, e.clientY) : null; }
       if (ptrs.size === 2) drag = null;
       if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); pinchA = Math.atan2(b.y - a.y, b.x - a.x); moved = true; }
     });
     c.addEventListener('pointermove', (e) => {
+      this.lastInput = performance.now();
       const p = ptrs.get(e.pointerId); if (!p) return;
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
@@ -345,11 +351,20 @@ class Game {
   }
 
   // ---------- bucle ----------
+  setQuality(q) { localStorage.setItem('vidas_quality', q); this.save(); location.reload(); }
+  // ¿Toca dibujar? Limita las imágenes por segundo y casi para cuando no se mueve nada
+  shouldRender(t) {
+    const st = this.state;
+    const idle = (!st || st.speed === 0) && t - this.lastInput > 2500 && !this.renderer.cam?.tx && this.renderer.cam?.yawT == null;
+    const fps = idle ? 6 : (st && !document.getElementById('modal').hidden ? 12 : this.maxFps);
+    if (t - this.lastRender < 1000 / fps - 2) return false;
+    this.lastRender = t; return true;
+  }
   loop(t) {
     const dtReal = Math.min(0.25, (t - this.last) / 1000); this.last = t;
     if (this.demo && !this.state) {
       Sim.tick(this.demo, dtReal * 1.5); Sim.drainEvents();
-      this.renderer.render(this.demo, { active: null });
+      if (this.shouldRender(t)) this.renderer.render(this.demo, { active: null });
     }
     const st = this.state;
     if (st) {
@@ -357,7 +372,7 @@ class Game {
       if (!document.getElementById('modal').hidden) dt = 0;
       while (dt > 0) { const step = Math.min(dt, 1.5); Sim.tick(st, step); dt -= step; }
       for (const ev of Sim.drainEvents()) this.handleEvent(ev);
-      this.renderer.render(st, this.view);
+      if (this.shouldRender(t)) this.renderer.render(st, this.view);
       this.uiT += dtReal; this.saveT += dtReal;
       if (this.uiT > 0.25) { this.uiT = 0; this.ui.update(); }
       if (this.saveT > 15) { this.saveT = 0; this.save(); }

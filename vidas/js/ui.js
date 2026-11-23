@@ -329,6 +329,8 @@ export class UI {
       <div class="field"><label>Autonomía de tu familia</label><div class="seg" id="aut"><button data-v="baja">Baja · estate pendiente</button><button data-v="normal">Normal</button></div></div>
       <div class="field"><label>Envejecimiento</label><div class="seg" id="age"><button data-v="1">Activado</button><button data-v="0">Desactivado</button></div></div>
       <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y las necesidades nunca llegan a cero.</p>
+      <div class="field"><label>Calidad gráfica</label><div class="seg" id="qual"><button data-v="ligera">Ligera (2D)</button><button data-v="equilibrada">Equilibrada</button><button data-v="alta">Alta</button></div>
+        <p class="hint">Si el móvil se calienta o va lento, usa Ligera o Equilibrada. Cambiarla recarga el juego (la partida se guarda).</p></div>
       <div class="sec">${icon('bell')} Notificaciones</div><div id="notif"></div>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloud"></div>
       <div class="sec">Partida</div>
@@ -338,6 +340,8 @@ export class UI {
     const seg = (id, val, fn) => { const el = body.querySelector(id); el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === val)); el.onclick = (e) => { const b = e.target.closest('button'); if (b) { fn(b.dataset.v); this.renderMenu(); } }; };
     seg('#aut', st.settings.autonomy, (v) => (st.settings.autonomy = v));
     seg('#age', st.settings.aging ? '1' : '0', (v) => (st.settings.aging = v === '1'));
+    const q = body.querySelector('#qual'); q.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === this.g.quality));
+    q.onclick = (e) => { const b = e.target.closest('button'); if (b && b.dataset.v !== this.g.quality) this.g.setQuality(b.dataset.v); };
     this.renderCloud(body.querySelector('#cloud'));
     const nf = body.querySelector('#notif');
     if (!Notify.supported()) nf.innerHTML = `<p class="hint">Este navegador no admite notificaciones.</p>`;
