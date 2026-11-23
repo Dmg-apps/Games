@@ -38,7 +38,7 @@ export class Engine {
   constructor(canvas, opts = {}) {
     this.c = canvas; this.hq = quality() === 'alta';
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: this.hq ? 'high-performance' : 'low-power' });
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 1.75 : 1.3));
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 1.75 : 1.1));
     this.gl.outputColorSpace = THREE.SRGBColorSpace; this.gl.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(opts.fov || 34, 1, 0.1, 300);

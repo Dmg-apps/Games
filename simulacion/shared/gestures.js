@@ -10,6 +10,10 @@ export class Gestures {
     el.addEventListener('pointerdown', (e) => this.down(e));
     el.addEventListener('pointermove', (e) => this.move(e));
     el.addEventListener('pointerup', (e) => this.up(e)); el.addEventListener('pointercancel', (e) => this.up(e));
+    // en el móvil, mantener pulsado abría el menú del navegador y cancelaba el gesto de mover
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('selectstart', (e) => e.preventDefault());
+    el.addEventListener('touchstart', (e) => { if (e.touches.length === 1) e.preventDefault(); }, { passive: false });
     el.addEventListener('wheel', (e) => { e.preventDefault(); h.onInput?.(); h.zoom?.(e.deltaY < 0 ? 1.12 : 0.89, e.clientX, e.clientY); }, { passive: false });
   }
   clearHold() { if (this.hold) clearTimeout(this.hold); this.hold = null; }

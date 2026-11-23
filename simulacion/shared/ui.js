@@ -47,3 +47,19 @@ export const store = {
   load(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } },
   save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* lleno */ } },
 };
+
+// Papelera para soltar lo que se está moviendo y quitarlo
+let trashEl = null;
+export const trash = {
+  show(label = 'Suelta aquí para quitar') {
+    if (!trashEl) { trashEl = document.createElement('div'); trashEl.className = 'trashzone'; document.body.appendChild(trashEl); }
+    trashEl.innerHTML = `${icon('trash')}<span>${label}</span>`; trashEl.hidden = false; trashEl.classList.remove('over');
+  },
+  hide() { if (trashEl) trashEl.hidden = true; },
+  over(x, y) { if (!trashEl || trashEl.hidden) return false; const r = trashEl.getBoundingClientRect(); const o = x > r.left - 12 && x < r.right + 12 && y > r.top - 16 && y < r.bottom + 16; trashEl.classList.toggle('over', o); return o; },
+};
+// Mientras se arrastra algo, si el dedo está cerca del borde la vista se desplaza sola
+export function edgePan(x, y, w = innerWidth, h = innerHeight, m = 56) {
+  const k = (d) => (d < m ? (m - d) / m : 0);
+  return { dx: (k(x) - k(w - x)) * 9, dy: (k(y) - k(h - y)) * 9 };
+}

@@ -129,7 +129,7 @@ function buildObject(o) {
   const add = (mesh) => { mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.objId = o.id; g.add(mesh); return mesh; };
   const f = footprint(o.type, o.rot);
   const cx = f.w / 2, cz = f.h / 2;
-  if (false && LOW && !def.walkable) { // ya hay sombras reales también en modo ahorro
+  if (LOW && !def.walkable) { // en ahorro, sombra suave pintada en vez de sombras reales
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(f.w + 0.35, f.h + 0.35), new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }));
     sh.rotation.x = -Math.PI / 2; sh.position.set(cx, 0.008, cz); g.add(sh);
   }
@@ -354,8 +354,8 @@ export class Renderer3D {
     Person.castShadows = quality === 'alta'; LOW = quality !== 'alta';
     this.c = canvas; this.hq = quality === 'alta'; this.wallsUp = localStorage.getItem('vidas_walls') === 'up';
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: this.hq ? 'high-performance' : 'low-power' });
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 2 : 1.3));
-    this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = this.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.hq ? 2 : 1.1));
+    this.gl.shadowMap.enabled = this.hq; this.gl.shadowMap.type = this.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     // en modo ahorro las sombras solo se recalculan cuando cambia algo
     this.gl.shadowMap.autoUpdate = this.hq; this.shadowT = 0;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.05;
@@ -370,7 +370,7 @@ export class Renderer3D {
     canvas.after(this.ov); this.ctx = this.ov.getContext('2d');
     // luces
     this.hemi = new THREE.HemisphereLight(0xdfefff, 0x8a7a60, 0.9); this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff2dd, 2.2); this.sun.castShadow = true;
+    this.sun = new THREE.DirectionalLight(0xfff2dd, 2.2); this.sun.castShadow = this.hq;
     const sc = this.sun.shadow; const ms = this.hq ? 2048 : 1024; sc.mapSize.set(ms, ms); sc.camera.left = -11; sc.camera.right = 11; sc.camera.top = 11; sc.camera.bottom = -11; sc.radius = 3; sc.camera.near = 1; sc.camera.far = 60; sc.bias = -0.0006; sc.normalBias = 0.02;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
     this.indoor = new THREE.PointLight(0xffc98a, 0, 14, 1.6); this.indoor.position.set(5, 2.2, 5); this.scene.add(this.indoor);
@@ -401,9 +401,9 @@ export class Renderer3D {
     this.field = Look.horizonGround(GRID / 2, GRID / 2, '#9cc27a'); this.field.position.y = -0.03; this.world.add(this.field);
     const R = Look.seeded(11);
     const hp = []; for (let i = -0.3; i <= GRID + 0.3; i += 0.75) hp.push([i, -0.55], [-0.55, i]); this.world.add(Look.hedge(hp, '#2c5e2a', '#5f9a44', 0.4));
-    const trees = []; for (let i = 0; i < 110; i++) { const a = R() * Math.PI * 2, d = 9 + Math.pow(R(), 0.7) * 34; const x = GRID / 2 + Math.cos(a) * d, z = GRID / 2 + Math.sin(a) * d; if (x > -1.5 && x < GRID + 1.5 && z > -1.5 && z < GRID + 1.5) continue; if (x > GRID + 1 && z > GRID + 1 && d < 22) continue; trees.push({ x, z, s: 1.6 + R() * 1.6, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
+    const trees = []; for (let i = 0; i < (this.hq ? 110 : 45); i++) { const a = R() * Math.PI * 2, d = 9 + Math.pow(R(), 0.7) * 34; const x = GRID / 2 + Math.cos(a) * d, z = GRID / 2 + Math.sin(a) * d; if (x > -1.5 && x < GRID + 1.5 && z > -1.5 && z < GRID + 1.5) continue; if (x > GRID + 1 && z > GRID + 1 && d < 22) continue; trees.push({ x, z, s: 1.6 + R() * 1.6, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
     this.world.add(Look.forest(trees));
-    const far = []; for (let i = 0; i < 220; i++) { const x = -10 + R() * (GRID + 20), z = -10 + R() * (GRID + 20); if (x > -0.9 && x < GRID + 0.9 && z > -0.9 && z < GRID + 0.9) continue; far.push([x, z]); } this.world.add(Look.grassTufts(far, { size: 0.22 }));
+    const far = []; for (let i = 0; i < (this.hq ? 220 : 80); i++) { const x = -10 + R() * (GRID + 20), z = -10 + R() * (GRID + 20); if (x > -0.9 && x < GRID + 0.9 && z > -0.9 && z < GRID + 0.9) continue; far.push([x, z]); } this.world.add(Look.grassTufts(far, { size: 0.22 }));
     this.tufts = new THREE.Group(); this.world.add(this.tufts);
     if (!document.querySelector('.vignette')) { const v = document.createElement('div'); v.className = 'vignette'; this.c.after(v); }
   }
@@ -417,7 +417,7 @@ export class Renderer3D {
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, h), std({ map: floorTexture(F, w, h), roughness: F.type === 'baldosa' ? 0.35 : 0.7 }));
     floor.position.set(w / 2, 0.025, h / 2); floor.receiveShadow = true; g.add(floor); this.floorMesh = floor;
     // matas de hierba en el jardín (fuera de la casa y del camino a la salida)
-    if (this.tufts) { this.tufts.clear(); const pts = []; for (let x = 0; x < GRID; x++) for (let z = 0; z < GRID; z++) { if (x < w + 0.3 && z < h + 0.3) continue; if (Math.abs(z - EXIT.y) < 1 && x >= w - 1) continue; const k = (x * 31 + z * 17) % 5; for (let i = 0; i < 2 + (k % 3); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); } this.tufts.add(Look.grassTufts(pts)); }
+    if (this.tufts) { this.tufts.clear(); const pts = []; for (let x = 0; x < GRID; x++) for (let z = 0; z < GRID; z++) { if (x < w + 0.3 && z < h + 0.3) continue; if (Math.abs(z - EXIT.y) < 1 && x >= w - 1) continue; const k = (x * 31 + z * 17) % 5; for (let i = 0; i < (this.hq ? 2 + (k % 3) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); } this.tufts.add(Look.grassTufts(pts)); }
     // camino de piedras hasta la salida
     const stone = mat('#d3cbbb', { rough: 0.9 });
     for (let x = w; x < GRID; x++) for (const dz of [0.28, 0.72]) {

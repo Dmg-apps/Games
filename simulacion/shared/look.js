@@ -10,12 +10,15 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 export function seeded(seed = 1) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
 
 // ---------- luz y sombras ----------
+// Cuánto paisaje dibujar según la calidad
+export const detail = (eng) => (eng.hq ? 1 : 0.4);
 export function setupLook(eng, { cx = 0, cz = 0, size = 12, height = 24, fog = null, exposure = 1.08, sunColor = 0xffe9c8, hemiSky = 0xd6ecff, hemiGround = 0x7a6a50 } = {}) {
   const gl = eng.gl;
   gl.toneMappingExposure = exposure;
   eng.sun.color.set(sunColor); eng.hemi.color.set(hemiSky); eng.hemi.groundColor.set(hemiGround);
-  gl.shadowMap.enabled = true; gl.shadowMap.type = eng.hq ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap; gl.shadowMap.autoUpdate = eng.hq;
-  const sun = eng.sun; sun.castShadow = true;
+  // en Ahorro no hay mapa de sombras (cada objeto lleva su sombra suave pintada): es lo que más calienta
+  gl.shadowMap.enabled = eng.hq; gl.shadowMap.type = THREE.PCFSoftShadowMap; gl.shadowMap.autoUpdate = true;
+  const sun = eng.sun; sun.castShadow = eng.hq;
   sun.position.set(cx + size * 0.55, height, cz + size * 0.8); sun.target.position.set(cx, 0, cz); eng.scene.add(sun.target);
   const sc = sun.shadow; const ms = eng.hq ? 2048 : 1024; sc.mapSize.set(ms, ms);
   Object.assign(sc.camera, { left: -size, right: size, top: size, bottom: -size, near: 1, far: height * 3 }); sc.camera.updateProjectionMatrix();

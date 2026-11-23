@@ -1,7 +1,7 @@
 // Arrecife: cría peces, cuida los acuarios y lleva tu tienda.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
+import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES } from './data.js';
@@ -437,7 +437,7 @@ function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'tank') {
     const t = tankOf(focusTank); if (!t) return sheet.close(); const fs = fishIn(t);
-    b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:8px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button><div class="row" style="margin-bottom:10px"><button class="btn alt sm" style="flex:1" id="tmove">${icon('move')} Mover acuario</button><button class="btn alt sm" style="flex:1" id="trot">${icon('rotate')} Girar</button></div>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
+    b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:8px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button><div class="row" style="margin-bottom:10px"><button class="btn alt sm" style="flex:1" id="tmove">${icon('move')} Mover acuario</button><button class="btn alt sm" style="flex:1" id="trot">${icon('rotate')} Girar</button><button class="btn alt sm" id="tdel" aria-label="Quitar acuario">${icon('trash')}</button></div>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
       <div class="row" style="margin:8px 0"><button class="btn coral" id="feed">${icon('food')} Comida · 2 €</button><button class="btn alt" id="clean">${icon('drop')} Limpiar · 20 €</button></div>
       ${!has('calefactor') ? `<div class="row"><button class="btn alt sm" id="tdown">− Enfriar</button><span class="hint" style="flex:1;text-align:center;align-self:center">Ideal: 24–27 °C</span><button class="btn alt sm" id="tup">+ Calentar</button></div>` : '<p class="hint">El calefactor mantiene la temperatura perfecta.</p>'}
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
@@ -449,6 +449,7 @@ function renderPanel() {
       <div class="grid" style="margin-top:8px">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox">${icon(d.ic)}</span>${d.label}<span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
     b.querySelector('#seeclose').onclick = () => enterClose(t.id);
     b.querySelector('#tmove').onclick = () => armTank(t);
+    b.querySelector('#tdel').onclick = () => removeTank(t);
     b.querySelector('#trot').onclick = () => { const p = tankPos(t), np = { ...p, r: (p.r + 1) % 4 }; if (!tankFits(t, np)) return toast('No cabe girado ahí: muévelo antes', 'warn'); t.pos = np; openTank(t.id); save(); };
     b.querySelectorAll('[data-dk]').forEach((x) => (x.onclick = () => decoCard(t, +x.dataset.dk)));
     b.querySelector('#feed').onclick = () => { if (st.money < 2) return; st.money -= 2; t.food = clamp(t.food + 45); renderPanel(); hud(); };
@@ -520,12 +521,20 @@ function moveFish(fid) {
 // Mantén pulsado un acuario (o, viéndolo de cerca, una decoración) y arrástralo. También desde su panel.
 let tmv = null, armed = null;
 const tankList = () => [...tankGroups.values()].map((r) => r.g);
+function removeDeco(t, k) { const d = DECOS[t.deco[k]]; t.deco.splice(k, 1); if (t.dp) t.dp.splice(k, 1); st.money += Math.round(d.price / 2); toast(`${d.label} quitada · recuperas ${eur(d.price / 2)}`, 'info', 'trash'); if (sheet.name === 'tank') renderPanel(); hud(); save(); }
+function removeTank(t) {
+  if (st.tanks.length <= 1) return toast('Necesitas al menos un acuario', 'warn');
+  if (fishIn(t).length) return toast('Saca antes los peces (véndelos o muévelos a otro acuario)', 'warn');
+  confirm('¿Quitar este acuario? Recuperas la mitad de lo que costó.', () => { const refund = Math.round(TANK_PRICE(st.tanks.length - 1) / 2); st.tanks = st.tanks.filter((q) => q !== t); st.money += refund; if (close === t.id) exitClose(); sheet.close(); toast(`Acuario quitado · recuperas ${eur(refund)}`, 'info', 'trash'); hud(); save(); });
+}
 function beginTankMove(t, sx, sy) {
   const p = eng.ground(sx, sy); if (!p) return false; const tp = tankPos(t);
-  tmv = { kind: 'tank', t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; sheet.close(); return true;
+  tmv = { kind: 'tank', t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; sheet.close(); trash.show(fishIn(t).length ? 'Vacíalo antes de quitarlo' : 'Suelta aquí para quitarlo'); return true;
 }
-function beginDecoMove(t, k) { const rec = tankGroups.get(t.id); const m = rec && rec.deco.children.find((c) => c.userData.deco === t.id + ':' + k); if (!m) return false; tmv = { kind: 'deco', t, k, m, rec }; return true; }
+function beginDecoMove(t, k) { const rec = tankGroups.get(t.id); const m = rec && rec.deco.children.find((c) => c.userData.deco === t.id + ':' + k); if (!m) return false; tmv = { kind: 'deco', t, k, m, rec }; trash.show('Suelta aquí para quitarla'); return true; }
 function tankMoveDrag(sx, sy) {
+  tmv.sx = sx; tmv.sy = sy; tmv.trash = trash.over(sx, sy);
+  if (!tmv.trash && tmv.kind === 'tank' && tmv.t) { const rec = tankGroups.get(tmv.t.id); if (rec?.glass) rec.glass.material.opacity = 0.35; }
   if (tmv.kind === 'tank') {
     const p = eng.ground(sx, sy); if (!p) return; const snap = (v) => Math.round(v * 4) / 4;
     tmv.pos = { x: snap(p.x - tmv.gx), z: snap(p.z - tmv.gz), r: tankPos(tmv.t).r }; tmv.ok = tankFits(tmv.t, tmv.pos);
@@ -539,7 +548,8 @@ function tankMoveDrag(sx, sy) {
   eng.shadowsDirty?.();
 }
 function endTankMove(cancel) {
-  const m = tmv; tmv = null;
+  const m = tmv; tmv = null; trash.hide();
+  if (!cancel && m.trash) { if (m.kind === 'tank') { const rec = tankGroups.get(m.t.id); if (rec?.glass) { rec.glass.material.color.set(0xdff2fa); rec.glass.material.opacity = 0.12; } removeTank(m.t); } else { m.rec.sig = ''; removeDeco(m.t, m.k); } armed = null; $('#toolinfo').hidden = true; return; }
   if (m.kind === 'tank') {
     const rec = tankGroups.get(m.t.id); if (rec?.glass) { rec.glass.material.color.set(0xdff2fa); rec.glass.material.opacity = 0.12; }
     if (!cancel && m.ok) { m.t.pos = m.pos; navigator.vibrate?.(10); } else if (!cancel) toast('Ahí no cabe', 'warn');
@@ -557,7 +567,7 @@ function decoCard(t, k) {
     <div class="actions" style="flex-direction:column"><button class="btn" id="dmv">${icon('move')} Mover</button><button class="btn alt" id="ddel">${icon('trash')} Quitar (recuperas ${eur(d.price / 2)})</button><button class="btn alt" id="dx">Cerrar</button></div>`);
   bx.querySelector('#dx').onclick = closeModal;
   bx.querySelector('#dmv').onclick = () => armDeco(t, k);
-  bx.querySelector('#ddel').onclick = () => { closeModal(); t.deco.splice(k, 1); if (t.dp) t.dp.splice(k, 1); st.money += Math.round(d.price / 2); if (sheet.name === 'tank') renderPanel(); hud(); save(); };
+  bx.querySelector('#ddel').onclick = () => { closeModal(); removeDeco(t, k); };
 }
 eng.onLongPress = (sx, sy) => {
   if (modalOpen()) return false;
@@ -566,7 +576,7 @@ eng.onLongPress = (sx, sy) => {
 };
 eng.onDragStart = (sx, sy) => {
   if (!armed) return false;
-  if (armed.kind === 'tank') { const tp = tankPos(armed.t); const p = eng.ground(sx, sy); if (!p) return false; tmv = { kind: 'tank', t: armed.t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; }
+  if (armed.kind === 'tank') { const tp = tankPos(armed.t); const p = eng.ground(sx, sy); if (!p) return false; tmv = { kind: 'tank', t: armed.t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; trash.show(fishIn(armed.t).length ? 'Vacíalo antes de quitarlo' : 'Suelta aquí para quitarlo'); }
   else if (!beginDecoMove(armed.t, armed.k)) return false;
   tankMoveDrag(sx, sy); return true;
 };
@@ -601,6 +611,7 @@ $('#camctl').onclick = (e) => { const b = e.target.closest('button'); if (b) eng
 
 let uiT = 0, saveT = 0;
 eng.onFrame = (dt) => {
+  if (tmv && tmv.kind === 'tank' && tmv.sx != null) { const { dx, dy } = edgePan(tmv.sx, tmv.sy); if (dx || dy) { eng.pan(dx, dy); eng.lastInput = performance.now(); tankMoveDrag(tmv.sx, tmv.sy); } }
   const paused = modalOpen() || st.speed === 0;
   if (!paused) { let g = dt * SPEEDS[st.speed]; while (g > 0) { const s = Math.min(g, 2); tick(s); g -= s; } }
   eng.activity = close ? 'close' : focusTank ? 'busy' : 'calm';

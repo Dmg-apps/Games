@@ -1,10 +1,11 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store } from '../shared/ui.js';
+import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
+import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
-import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES } from './data.js';
+import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -137,7 +138,11 @@ function animalsTick(dt) {
     a.happy += (animalHappy(a) - a.happy) * Math.min(1, 0.02 * dt);
     if (a.baby && st.time - a.born > 4 * 1440) { a.baby = false; toast(`La cría de ${SPECIES[a.sp].label.toLowerCase()} ya es adulta`, 'good', 'paw'); }
     const e = st.enclosures.find((q) => q.id === a.enc); if (!e) continue;
-    if (a.preg && st.time >= a.preg.until) { a.preg = null; const b = addAnimal(a.sp, e, true); b.mother = a.id; b.x = a.x + 0.2; b.z = a.z + 0.2; toast(`¡${a.name} (${SPECIES[a.sp].label.toLowerCase()}) ha tenido una cría!`, 'good', 'heart'); }
+    if (a.preg && st.time >= a.preg.until) {
+      const child = a.preg.child || a.sp; a.preg = null; const b = addAnimal(child, e, true); b.mother = a.id; b.x = a.x + 0.2; b.z = a.z + 0.2;
+      if (child !== a.sp) { const first = !(st.hybrids ||= []).includes(child); if (first) st.hybrids.push(child); st.fame = clamp(st.fame + (first ? 0.4 : 0.1), 0, 5); toast(`¡Nueva cría híbrida: ${SPECIES[child].label}!${first ? ' Nueva en tu colección de cruces' : ''}`, 'good', 'sparkle'); }
+      else toast(`¡${a.name} (${SPECIES[a.sp].label.toLowerCase()}) ha tenido una cría!`, 'good', 'heart');
+    }
     const arrived = a.tx == null || (Math.abs(a.tx - a.x) < 0.05 && Math.abs(a.tz - a.z) < 0.05);
     if (a.state === 'eat' && arrived) a.hunger = clamp(a.hunger + 1.2 * dt);
     if (arrived && (!a.restUntil || st.time > a.restUntil)) decide(a, e);
@@ -180,6 +185,7 @@ function breeding() {
   for (const e of st.enclosures) {
     const as = animalsIn(e);
     for (const sp of new Set(as.map((a) => a.sp))) {
+      if (SPECIES[sp].sterile) continue;
       const g = as.filter((a) => a.sp === sp && !a.baby);
       if (!g.some((a) => a.sex === 'm') || !g.some((a) => a.sex === 'f')) continue;
       const avg = g.reduce((t, a) => t + a.happy, 0) / g.length;
@@ -243,6 +249,7 @@ const eng = new Engine(canvas, { target: [N / 2, 0, N / 2 + 2], dist: 26, maxDis
 eng.cam.dist = eng.fitDist(15);
 const S3 = eng.scene;
 // Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
+setAnimalDetail(eng.hq ? 0.75 : 0.5);
 Look.setupLook(eng, { cx: N / 2, cz: N / 2, size: N * 0.78, height: 30, fog: { color: '#d4eaf4', near: 45, far: 140 } });
 const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: Look.grassTex(N / 3) }));
 parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); parkGround.receiveShadow = true; S3.add(parkGround);
@@ -252,9 +259,9 @@ S3.add(Look.horizonGround(N / 2, N / 2, '#8fb070'));
   const R = Look.seeded(7); const hedge = [];
   for (let i = -0.5; i <= N + 0.5; i += 0.7) for (const [x, z] of [[i, -0.6], [i, N + 0.6], [-0.6, i], [N + 0.6, i]]) if (!(Math.abs(x - ENTRANCE.x - 0.5) < 1.6 && z > N)) hedge.push([x, z]);
   S3.add(Look.hedge(hedge));
-  const trees = []; for (let i = 0; i < 150; i++) { const a = R() * Math.PI * 2, d = N * 0.62 + 2 + Math.pow(R(), 0.7) * 34; const x = N / 2 + Math.cos(a) * d, z = N / 2 + Math.sin(a) * d; if (z > N + 1 && Math.abs(x - ENTRANCE.x) < 4) continue; trees.push({ x, z, s: 1.4 + R() * 1.4, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
+  const trees = []; for (let i = 0; i < 150 * Look.detail(eng); i++) { const a = R() * Math.PI * 2, d = N * 0.62 + 2 + Math.pow(R(), 0.7) * 34; const x = N / 2 + Math.cos(a) * d, z = N / 2 + Math.sin(a) * d; if (z > N + 1 && Math.abs(x - ENTRANCE.x) < 4) continue; trees.push({ x, z, s: 1.4 + R() * 1.4, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
   S3.add(Look.forest(trees));
-  const field = []; for (let i = 0; i < 260; i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
+  const field = []; for (let i = 0; i < 260 * Look.detail(eng); i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
 }
 // entrada
 const gate = new THREE.Group(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5);
@@ -275,7 +282,7 @@ function rebuildPaths() {
   st.paths.forEach((p, i) => { const [x, z] = p.split(',').map(Number); m.makeTranslation(x + 0.5, 0.03, z + 0.5); inst.setMatrixAt(i, m); });
   g.add(inst);
 }
-const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico: 'pino', humedal: 'abedul' };
+const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico: 'pino', humedal: 'abedul', bosque: 'pino' };
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
 function enrichMesh(type, biome = 'sabana', seed = 1) {
   const g = new THREE.Group();
@@ -300,7 +307,7 @@ function groundTex(b) {
   const base = BIOMES[b].color;
   biomeTex[b] = canvasTexture(128, (x, s) => {
     x.fillStyle = base; x.fillRect(0, 0, s, s);
-    const dots = { granja: ['#86b25a', '#b8d07a', '#d8c070'], sabana: ['#c4ac5e', '#e2d290', '#a89a50'], selva: ['#3e8a3e', '#5aa84e', '#2f6e34'], artico: ['#ffffff', '#d8e6ee', '#c4d6e2'], humedal: ['#6aa898', '#9ccab8', '#5a7a5a'] }[b];
+    const dots = { granja: ['#86b25a', '#b8d07a', '#d8c070'], sabana: ['#c4ac5e', '#e2d290', '#a89a50'], selva: ['#3e8a3e', '#5aa84e', '#2f6e34'], artico: ['#ffffff', '#d8e6ee', '#c4d6e2'], humedal: ['#6aa898', '#9ccab8', '#5a7a5a'], bosque: ['#4e7a3e', '#7aa45a', '#6a5a3a'] }[b];
     for (let i = 0; i < 900; i++) { x.fillStyle = dots[i % 3]; const r = b === 'selva' ? 3 : 1.5; x.fillRect(Math.random() * s, Math.random() * s, r, b === 'sabana' || b === 'granja' ? 4 : r); }
     if (b === 'humedal') { x.fillStyle = 'rgba(80,150,200,0.45)'; for (let i = 0; i < 5; i++) { x.beginPath(); x.ellipse(Math.random() * s, Math.random() * s, 14, 8, 0, 0, 7); x.fill(); } }
   }, [2, 2]);
@@ -339,104 +346,9 @@ function buildingMesh(b) {
 }
 function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = buildingMesh(b); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.userData.bld = b.id; g.add(m); } }
 
-// Pelaje dibujado (rayas, manchas, pelo) en vez de piezas sueltas: más natural y sin coste extra
-const coatCache = new Map();
-function coat(sp) {
-  if (coatCache.has(sp)) return coatCache.get(sp);
-  const S = SPECIES[sp], F = S.feat, [c1, c2] = S.colors;
-  const t = canvasTexture(256, (x, s) => {
-    x.fillStyle = c1; x.fillRect(0, 0, s, s);
-    if (F.includes('stripes')) { x.fillStyle = c2; for (let i = 0; i < 16; i++) { const y0 = i * s / 16; x.beginPath(); x.moveTo(0, y0); for (let px = 0; px <= s; px += 8) x.lineTo(px, y0 + Math.sin(px * 0.045 + i) * 5 + Math.sin(px * 0.13) * 2); for (let px = s; px >= 0; px -= 8) x.lineTo(px, y0 + 6 + Math.sin(px * 0.05 + i * 1.3) * 4); x.fill(); } }
-    else if (F.includes('spots')) { x.fillStyle = '#f2dcae'; x.fillRect(0, 0, s, s); for (let i = 0; i < 46; i++) { const cx = (i % 7) * s / 7 + (Math.floor(i / 7) % 2) * s / 14 + rnd(-6, 6), cy = Math.floor(i / 7) * s / 6.5 + rnd(-5, 5); x.fillStyle = i % 3 ? '#b8692a' : '#a85a22'; x.beginPath(); for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + rnd(-0.3, 0.3), r = rnd(12, 17); k ? x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.9) : x.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.9); } x.fill(); } }
-    // pelo: trazos cortos de luz y sombra
-    for (let i = 0; i < 2200; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)'; x.fillRect(Math.random() * s, Math.random() * s, 1, 3 + Math.random() * 3); }
-    if (F.includes('shell')) { x.strokeStyle = 'rgba(40,30,10,0.55)'; x.lineWidth = 3; for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) { const cx = i * s / 4, cy = j * s / 3 + (i % 2) * s / 6; x.beginPath(); for (let k = 0; k <= 6; k++) { const a = k / 6 * Math.PI * 2; k ? x.lineTo(cx + Math.cos(a) * 26, cy + Math.sin(a) * 26) : x.moveTo(cx + 26, cy); } x.stroke(); } }
-  });
-  coatCache.set(sp, t); return t;
-}
-const coatMat = new Map();
-function cmat(sp, color = '#ffffff') { const k = sp + color; if (!coatMat.has(k)) coatMat.set(k, new THREE.MeshLambertMaterial({ map: coat(sp), color })); return coatMat.get(k); }
-const EYE_W = mat('#f4f0e8'), EYE_P = mat('#14100c'), EYE_H = mat('#ffffff', { emissive: '#ffffff' }), NOSE = mat('#2a2220'), HOOF = mat('#2e2620'), PINK = mat('#d89a9a');
-// Animales generados a partir de su descripción
+// Animales orgánicos (ver animals3d.js)
 const animalMeshes = new Map();
-function animalModel(sp) {
-  const S = SPECIES[sp]; const [L, H, W] = S.body; const [c1, c2, c3] = S.colors; const F = S.feat;
-  const g = new THREE.Group(); const body = new THREE.Group(); g.add(body);
-  const patterned = F.includes('stripes') || F.includes('spots') || F.includes('shell');
-  const m1 = patterned || !F.includes('penguin') ? cmat(sp) : mat(c1), m2 = mat(c2), m3 = mat(c3);
-  const plain1 = F.includes('stripes') ? mat(c1) : m1;
-  const legH = S.legs; const bodyY = S.biped ? legH + H * 0.5 : legH + H * 0.4;
-  const round = F.includes('panda') || F.includes('ears_round') || F.includes('mane') || F.includes('face');
-  let torso;
-  if (F.includes('penguin')) { torso = new THREE.Mesh(new THREE.CapsuleGeometry(W * 0.55, H * 0.6, 6, 14), mat(c1)); torso.position.y = H * 0.55 + legH; const belly = new THREE.Mesh(new THREE.SphereGeometry(W * 0.48, 14, 10), m2); belly.scale.set(1, 1.5, 0.62); belly.position.set(0, H * 0.5 + legH, W * 0.24); body.add(belly); }
-  else {
-    const geo = new THREE.CapsuleGeometry(Math.min(W, H) * 0.5, L * 0.7, 6, 14);
-    // pecho más profundo delante y lomo que baja hacia atrás
-    const p = geo.attributes.position, uv = geo.attributes.uv, half = L * 0.35 + Math.min(W, H) * 0.5; for (let i = 0; i < p.count; i++) { uv.setY(i, (p.getY(i) + half) / (2 * half)); const along = p.getY(i) / (L * 0.7); const k = 1 + along * 0.14; p.setX(i, p.getX(i) * k); p.setZ(i, p.getZ(i) * k + (p.getZ(i) < 0 ? along * 0.02 : 0)); } geo.computeVertexNormals();
-    torso = new THREE.Mesh(geo, F.includes('panda') ? mat(c1) : m1); torso.rotation.x = Math.PI / 2; torso.position.y = bodyY; torso.scale.set(W / Math.min(W, H), 1, H / Math.min(W, H));
-  }
-  body.add(torso);
-  if (F.includes('panda')) { const band = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(W, H) * 0.53, Math.max(W, H) * 0.55, L * 0.3, 16, 1, true), m2); band.rotation.x = Math.PI / 2; band.scale.set(W / Math.max(W, H), 1, H / Math.max(W, H)); band.position.set(0, bodyY, L * 0.2); body.add(band); }
-  if (F.includes('shell')) { const sh = new THREE.Mesh(new THREE.SphereGeometry(L * 0.55, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), m1); sh.scale.set(W / L * 1.1, 0.8, 1); sh.position.y = bodyY - 0.02; body.add(sh); const rimS = new THREE.Mesh(new THREE.TorusGeometry(L * 0.55, 0.025, 6, 24), mat('#5a5030')); rimS.rotation.x = Math.PI / 2; rimS.scale.set(W / L * 1.1, 1, 1); rimS.position.y = bodyY - 0.02; body.add(rimS); }
-  if (F.includes('fluffy')) for (let i = 0; i < 5; i++) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(H * 0.42, 1), m1); f.position.set(rnd(-0.05, 0.05), bodyY + H * 0.12, -L * 0.3 + i * L * 0.15); body.add(f); }
-  // patas con rodilla, y pezuña o zarpa
-  const legs = [];
-  const legPos = S.biped ? [[-W * 0.25, 0], [W * 0.25, 0]] : [[-W * 0.3, L * 0.33], [W * 0.3, L * 0.33], [-W * 0.3, -L * 0.33], [W * 0.3, -L * 0.33]];
-  const paw = round || F.includes('tail_long') && !F.includes('stripes');
-  const legMat = F.includes('panda') ? m2 : S.biped && !F.includes('penguin') ? m3 : F.includes('penguin') ? mat(c3) : m1;
-  for (const [lx, lz] of legPos) {
-    const pv = new THREE.Group(); pv.position.set(lx, legH, lz); body.add(pv);
-    const thick = S.biped ? 0.022 : Math.max(0.035, W * 0.17);
-    const up = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick * 0.72, legH * 0.55, 8), legMat); up.position.y = -legH * 0.275; pv.add(up);
-    const knee = new THREE.Group(); knee.position.y = -legH * 0.55; pv.add(knee);
-    const lo = new THREE.Mesh(new THREE.CylinderGeometry(thick * 0.68, thick * 0.55, legH * 0.45, 8), legMat); lo.position.y = -legH * 0.225; knee.add(lo);
-    if (!S.biped) {
-      if (paw) { const pw = new THREE.Mesh(new THREE.SphereGeometry(thick * 0.9, 8, 6), legMat); pw.scale.set(1, 0.6, 1.3); pw.position.set(0, -legH * 0.43, thick * 0.3); knee.add(pw); }
-      else if (!F.includes('shell')) { const hf = new THREE.Mesh(new THREE.CylinderGeometry(thick * 0.58, thick * 0.66, Math.min(0.06, legH * 0.12), 8), HOOF); hf.position.y = -legH * 0.43; knee.add(hf); }
-    } else { const ft = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.015, 0.09), F.includes('penguin') ? mat(c3) : m3); ft.position.set(0, -legH * 0.45, 0.03); knee.add(ft); }
-    pv.userData.knee = knee; pv.userData.back = lz < 0; legs.push(pv);
-  }
-  // cuello y cabeza
-  const neck = new THREE.Group(); neck.position.set(0, S.biped ? bodyY + H * 0.3 : bodyY + H * 0.2, S.biped ? W * 0.1 : L * 0.42); body.add(neck);
-  if (S.neck > 0.05) { const nk = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.03, S.head * 0.42), Math.max(0.045, Math.min(W, H) * 0.32), S.neck, 10), m1); nk.position.set(0, S.neck / 2, S.neck * 0.15); nk.rotation.x = 0.25; neck.add(nk); }
-  const head = new THREE.Group(); head.position.set(0, S.neck, S.neck * 0.3 + S.head * 0.3); neck.add(head);
-  const hd = new THREE.Mesh(new THREE.SphereGeometry(S.head, 16, 12), F.includes('panda') ? mat(c1) : m1); hd.scale.set(1, 0.95, round ? 1.05 : 1.15); head.add(hd);
-  const long = !round && !F.includes('beak') && !F.includes('penguin') && !F.includes('trunk') && !F.includes('shell');
-  if (long) { // hocico alargado (cebra, jirafa, cabra, alpaca, canguro)
-    const sn = new THREE.Mesh(new THREE.CylinderGeometry(S.head * 0.42, S.head * 0.62, S.head * 1.3, 10), F.includes('stripes') ? mat('#2a2a2a') : m1); sn.rotation.x = Math.PI / 2 + 0.35; sn.position.set(0, -S.head * 0.35, S.head * 0.95); head.add(sn);
-    const ns = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.42, 10, 8), F.includes('stripes') ? mat('#1a1a1a') : mat(c3)); ns.scale.set(1, 0.75, 0.6); ns.position.set(0, -S.head * 0.6, S.head * 1.55); head.add(ns);
-  } else if (!F.includes('beak') && !F.includes('penguin') && !F.includes('trunk')) {
-    const sn = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.5, 12, 10), F.includes('face') || F.includes('panda') ? mat(F.includes('panda') ? c1 : c2) : m1); sn.position.set(0, -S.head * 0.28, S.head * 0.82); sn.scale.set(1, 0.72, 0.9); head.add(sn);
-    const ns = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.17, 8, 6), NOSE); ns.scale.set(1.3, 0.8, 0.8); ns.position.set(0, -S.head * 0.12, S.head * 1.25); head.add(ns);
-  }
-  if (F.includes('beak')) { const bk = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.35, S.head * 1.3, 8), m3); bk.rotation.x = Math.PI / 2 + (F.includes('penguin') ? 0 : 0.5); bk.position.set(0, -S.head * 0.2, S.head * 1.1); head.add(bk); }
-  for (const sd of [-1, 1]) {
-    const er = Math.max(0.012, S.head * 0.13), ex = sd * S.head * (long ? 0.62 : 0.5), ey = S.head * (long ? 0.25 : 0.2), ez = S.head * (long ? 0.62 : 0.78);
-    if (F.includes('panda')) { const p = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.27, 10, 8), m2); p.scale.set(1, 1.3, 0.4); p.position.set(sd * S.head * 0.45, S.head * 0.12, S.head * 0.84); p.rotation.z = sd * 0.5; head.add(p); }
-    const ew = new THREE.Mesh(new THREE.SphereGeometry(er, 10, 8), EYE_W); ew.position.set(ex, ey, ez); head.add(ew);
-    const pu = new THREE.Mesh(new THREE.SphereGeometry(er * 0.72, 10, 8), EYE_P); pu.position.set(ex + sd * er * 0.18, ey, ez + er * 0.42); head.add(pu);
-    const hl = new THREE.Mesh(new THREE.SphereGeometry(er * 0.22, 6, 4), EYE_H); hl.position.set(ex + sd * er * 0.12, ey + er * 0.35, ez + er * 0.95); head.add(hl);
-    if (F.includes('ears_up')) { const e = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.24, S.head * 0.95, 8), plain1); e.scale.z = 0.5; e.position.set(sd * S.head * 0.45, S.head * 1.0, -S.head * 0.1); e.rotation.z = -sd * 0.25; head.add(e); const ei = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.14, S.head * 0.65, 6), PINK); ei.scale.z = 0.3; ei.position.set(sd * S.head * 0.45, S.head * 0.95, -S.head * 0.03); ei.rotation.z = -sd * 0.25; head.add(ei); }
-    if (F.includes('stripes') || (long && !F.includes('ears_up') && !F.includes('horns'))) { const e = new THREE.Mesh(new THREE.ConeGeometry(S.head * 0.2, S.head * 0.7, 8), plain1); e.scale.z = 0.5; e.position.set(sd * S.head * 0.55, S.head * 0.85, -S.head * 0.15); e.rotation.z = -sd * 0.6; head.add(e); }
-    if (F.includes('ears_round') || F.includes('panda')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.3, 10, 8), F.includes('panda') ? m2 : m1); e.scale.z = 0.55; e.position.set(sd * S.head * 0.68, S.head * 0.75, -S.head * 0.1); head.add(e); }
-    if (F.includes('ears_big')) { const e = new THREE.Mesh(new THREE.SphereGeometry(S.head * 0.85, 14, 10), m3); e.scale.set(0.12, 1, 0.85); e.position.set(sd * S.head * 1.0, 0.02, -S.head * 0.25); e.rotation.y = sd * 0.35; head.add(e); }
-    if (F.includes('horns')) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.16, 6), m3); h.position.set(sd * 0.05, S.head * 1.0, -0.03); h.rotation.x = -0.6; head.add(h); }
-    if (F.includes('ossicones')) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.13, 6), m3); h.position.set(sd * 0.05, S.head * 1.15, -0.02); head.add(h); const tip = new THREE.Mesh(new THREE.SphereGeometry(0.024, 6, 5), m3); tip.position.set(sd * 0.05, S.head * 1.15 + 0.07, -0.02); head.add(tip); }
-    if (F.includes('tusks')) { const tk = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.32, 8), mat('#f4f0e0')); tk.rotation.x = Math.PI / 2 + 0.5; tk.position.set(sd * 0.14, -S.head * 0.45, S.head * 0.9); head.add(tk); }
-  }
-  if (F.includes('trunk')) { let parent = head, y = -S.head * 0.35, z = S.head * 0.95; for (let i = 0; i < 4; i++) { const seg = new THREE.Group(); seg.position.set(0, y, z); seg.rotation.x = i ? 0.28 : 0.2; parent.add(seg); const r0 = 0.1 - i * 0.017; const c = new THREE.Mesh(new THREE.CylinderGeometry(r0 - 0.017, r0, 0.18, 10), m1); c.position.y = -0.09; seg.add(c); parent = seg; y = -0.17; z = 0; } }
-  if (F.includes('mane')) { for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; const m = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 0.55, 1), m3); m.position.set(Math.cos(a) * S.head * 0.85, Math.sin(a) * S.head * 0.85, -S.head * 0.35); head.add(m); } const back = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 1.05, 1), m3); back.position.z = -S.head * 0.55; head.add(back); }
-  if (F.includes('mane_short')) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.09, S.neck * 1.15), mat('#1a1a1a')); m.position.set(0, S.neck * 0.55, 0); m.rotation.x = -1.2; neck.add(m); }
-  if (F.includes('fluffy')) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(S.head * 0.6, 1), m2); f.position.set(0, S.head * 0.8, 0); head.add(f); }
-  if (F.includes('beard')) { const b = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 6), m2); b.rotation.x = Math.PI; b.position.set(0, -S.head * 0.75, S.head * 0.9); head.add(b); }
-  // cola, con borla en las especies que la tienen
-  const tail = new THREE.Group(); tail.position.set(0, bodyY + H * 0.1, -L * 0.48); body.add(tail);
-  const tl = F.includes('tail_long') ? 0.45 : F.includes('stripes') || F.includes('spots') || F.includes('trunk') ? 0.32 : 0.15;
-  const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.014, F.includes('tail_long') && S.hop ? 0.08 : 0.026, tl, 6), plain1); tm.position.y = -tl / 2; tail.add(tm); tail.rotation.x = S.hop ? -2.3 : 0.5;
-  if (F.includes('stripes') || F.includes('spots') || F.includes('mane') || F.includes('trunk')) { const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 6), mat(F.includes('mane') ? c3 : '#1a1a1a')); tuft.rotation.x = Math.PI; tuft.position.y = -tl - 0.03; tail.add(tuft); }
-  g.add(blob(Math.max(W, 0.3) * 1.8, Math.max(L, 0.3) * 1.5, 0.35));
-  return { g, body, legs, head, tail, neck, torso, neckRx: neck.rotation.x };
-}
+function animalModel(sp) { const m = organicModel(sp); const [L, , W] = SPECIES[sp].body; m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m; }
 function syncAnimals(t) {
   const seen = new Set();
   for (const a of st.animals) {
@@ -499,7 +411,7 @@ function syncExtras() {
 const waterT = Look.waterTex();
 function rebuildTufts() {
   const g = groups.tufts; g.clear(); const P = pathSet(), pts = [];
-  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < 2 + (k % 3); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); }
+  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < (eng.hq ? 2 + (k % 3) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); }
   g.add(Look.grassTufts(pts));
 }
 function sync(t) {
@@ -583,10 +495,12 @@ function beginMove(target, sx, sy) {
   mv = { ...target, gx: t.x - Math.floor(r.x), gz: t.z - Math.floor(r.z), x: r.x, z: r.z, ok: true };
   if (target.kind === 'animal') { mv.dest = st.enclosures.find((q) => q.id === r.enc); mv.px = r.x; mv.pz = r.z; }
   $('#toolinfo').hidden = false; $('#toolinfo').innerHTML = `${icon('move')} Moviendo ${LABEL[target.kind](r)} · suelta para colocar`;
+  trash.show(target.kind === 'animal' ? 'Suelta aquí para venderlo' : target.kind === 'enc' ? 'Suelta aquí para derribarlo' : 'Suelta aquí para quitarlo');
   moveDrag(sx, sy); return true;
 }
 function moveDrag(sx, sy) {
-  const r = mv.ref; let ghost = null;
+  const r = mv.ref; let ghost = null; mv.sx = sx; mv.sy = sy;
+  if (trash.over(sx, sy)) { mv.trash = true; showGhost(null); return; } mv.trash = false;
   if (mv.kind === 'animal') {
     const p = eng.ground(sx, sy); if (!p) return; mv.px = p.x; mv.pz = p.z;
     mv.dest = encAt(Math.floor(p.x), Math.floor(p.z)); mv.ok = moveValid();
@@ -603,7 +517,8 @@ function moveDrag(sx, sy) {
   showGhost(ghost);
 }
 function endMove(cancel) {
-  const r = mv.ref, m = mv; mv = null; showGhost(null);
+  const r = mv.ref, m = mv; mv = null; showGhost(null); trash.hide();
+  if (!cancel && m.trash) { sig.enc = sig.bld = null; if (view.tool === 'move') setTool(null); else renderToolInfo(); return removeThing(m); }
   if (!cancel && m.ok) {
     if (m.kind === 'enc') {
       const dx = m.x - r.x, dz = m.z - r.z; r.x = m.x; r.z = m.z;
@@ -619,6 +534,15 @@ function endMove(cancel) {
     navigator.vibrate?.(10);
   } else if (!cancel) toast(m.kind === 'animal' ? 'Suéltalo dentro de un recinto' : m.kind === 'bld' && BUILDINGS[r.type].cat === 'Tiendas' ? 'Ahí no cabe: las tiendas van junto a un camino' : 'Ahí no cabe', 'warn');
   sig.enc = sig.bld = null; if (view.tool === 'move') setTool(null); else renderToolInfo(); hud(); save();
+}
+// Quitar algo (desde la papelera o su ficha)
+function removeThing(m) {
+  const r = m.ref;
+  if (m.kind === 'bld') { st.buildings = st.buildings.filter((q) => q !== r); st.money += Math.round(BUILDINGS[r.type].price / 2); toast(`${BUILDINGS[r.type].label} quitado · recuperas ${eur(BUILDINGS[r.type].price / 2)}`, 'info', 'trash'); }
+  else if (m.kind === 'item') { m.enc.items = m.enc.items.filter((q) => q !== r); st.money += Math.round(ENRICH[r.type].price / 2); toast(`${ENRICH[r.type].label} quitado`, 'info', 'trash'); }
+  else if (m.kind === 'animal') { const p = Math.round(SPECIES[r.sp].price * (r.baby ? 0.4 : 0.6)); return confirm(`¿Vender a ${r.name} por ${eur(p)}?`, () => { st.money += p; st.animals = st.animals.filter((q) => q !== r); hud(); save(); }); }
+  else if (m.kind === 'enc') { const as = animalsIn(r); return confirm(as.length ? `Se venderán los ${as.length} animales. ¿Derribar el recinto?` : '¿Derribar el recinto?', () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === r.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== r.id); st.enclosures = st.enclosures.filter((q) => q !== r); hud(); save(); }); }
+  hud(); save();
 }
 // Desde una ficha: el siguiente arrastre mueve ese objeto
 function armMove(target) { closeModal(); sheet.close(); setTool('move', target); }
@@ -661,6 +585,7 @@ eng.onTap = (sx, sy) => {
   const aId = eng.pick(sx, sy, groups.animals.children, 'animal');
   if (close) { const nest = eng.pick(sx, sy, groups.extra.children, 'nest'); if (nest) { nestCard = nest; followId = null; eng.cam.follow = null; return animalCardTick(true); } if (aId) return followAnimal(aId); const it = eng.pick(sx, sy, groups.enc.children, 'item'); if (it) return itemCard(it); return; }
   if (aId) return animalCard(aId);
+  const itK = eng.pick(sx, sy, groups.enc.children, 'item'); if (itK) return itemCard(itK);
   const e = t && encAt(t.x, t.z); if (e) return encCard(e);
   const b = t && buildingAt(t.x, t.z); if (b) return bldCard(b);
 };
@@ -754,7 +679,8 @@ function renderPanel() {
     b.querySelectorAll('[data-e]').forEach((x) => (x.onclick = () => { sheet.close(); setTool('enrich', x.dataset.e); }));
   }
   if (name === 'animal') {
-    b.innerHTML = `<p class="hint">Más fama desbloquea especies. Las felices tienen crías si hay macho y hembra y espacio.</p><div class="grid">${Object.entries(SPECIES).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}><span class="tilebox" style="background:${BIOMES[v.biome].color}">${icon('paw')}</span>${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(v.price)}</span>`}</button>`; }).join('')}</div>`;
+    b.innerHTML = `<p class="hint">Más fama desbloquea especies. Las felices tienen crías si hay macho y hembra y espacio.</p><div class="grid">${Object.entries(SPECIES).filter(([, v]) => !v.hybrid).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}><span class="tilebox" style="background:${BIOMES[v.biome].color}">${icon('paw')}</span>${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(v.price)}</span>`}</button>`; }).join('')}</div>`;
+    b.insertAdjacentHTML('beforeend', `<div class="sec">${icon('sparkle')} Cruces · ${(st.hybrids || []).length}/${Object.keys(HYBRIDS).length} descubiertos</div><p class="hint">No se compran: nacen al cruzar especies emparentadas en un mismo recinto (toca el recinto → Cruces). Son muy raros y atraen muchos visitantes.</p><div class="grid">${CROSSES.map((c) => { const H = HYBRIDS[c.child], got = (st.hybrids || []).includes(c.child); return `<div class="item ${got ? '' : 'locked'}" style="cursor:default"><span class="tilebox" style="background:${got ? BIOMES[H.biome].color : '#e8e4f0'}">${icon(got ? 'paw' : 'sparkle')}</span>${got ? H.label : '¿?'}<span class="d">${SPECIES[c.a || c.m].label}${c.m ? ' ♂' : ''} × ${SPECIES[c.b || c.f].label}${c.f ? ' ♀' : ''}</span>${got ? `<span class="d">${H.desc}</span>` : ''}</div>`; }).join('')}</div>`);
     b.querySelectorAll('[data-a]').forEach((x) => (x.onclick = () => { sheet.close(); setTool('animal', x.dataset.a); }));
   }
   if (name === 'build') {
@@ -791,8 +717,10 @@ function encCard(e) {
   const box2 = modal(`<h2>Recinto de ${BIOMES[e.biome].label.toLowerCase()}</h2><p class="hint">${e.n}×${e.n} · ${e.items.length} objetos · ánimo medio ${happy}%</p>
     <div class="list">${as.map((a) => `<div class="li"><span class="tilebox">${icon('paw')}</span><div style="flex:1"><b>${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}</b> <span class="hint">${a.sex === 'm' ? '♂' : '♀'}</span>
       <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div></div><button class="btn sm alt" data-mva="${a.id}" aria-label="Mover">${icon('move')}</button><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
+    ${crossSection(e)}
     <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button>${e.items.length ? `<div class="chips" style="justify-content:center">${e.items.map((it, i) => `<button class="chip" data-mvi="${i}">${icon('move')} ${ENRICH[it.type].label}</button>`).join('')}</div>` : ''}<button class="btn alt" id="mvenc">${icon('move')} Mover recinto</button><p class="hint" style="text-align:center;margin:0">También puedes mantener pulsado cualquier recinto, objeto, tienda o animal y arrastrarlo.</p><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
   box2.querySelector('#close').onclick = closeModal;
+  box2.querySelectorAll('[data-cross]').forEach((x) => (x.onclick = () => { const [mid, fid] = x.dataset.cross.split('|'); doCross(st.animals.find((q) => q.id === mid), st.animals.find((q) => q.id === fid), e); }));
   box2.querySelector('#seeclose').onclick = () => enterClose(e);
   box2.querySelector('#mvenc').onclick = () => armMove({ kind: 'enc', ref: e });
   box2.querySelectorAll('[data-mvi]').forEach((x) => (x.onclick = () => armMove({ kind: 'item', ref: e.items[+x.dataset.mvi], enc: e })));
@@ -800,6 +728,26 @@ function encCard(e) {
   box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); st.money -= as.length * 5; putFood(e); closeModal(); toast('Has dejado comida en el recinto', 'good', 'food'); hud(); };
   box2.querySelector('#demo').onclick = () => { closeModal(); confirm(`Se venderán los ${as.length} animales. ¿Derribar?`, () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === e.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== e.id); st.enclosures = st.enclosures.filter((q) => q !== e); hud(); save(); }); };
   box2.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.sell); st.money += Math.round(SPECIES[a.sp].price * (a.baby ? 0.4 : 0.6)); st.animals = st.animals.filter((q) => q !== a); closeModal(); encCard(e); hud(); save(); }));
+}
+// ---------- cruces ----------
+function crossPairs(e) {
+  const as = animalsIn(e).filter((a) => !a.baby); const out = [];
+  for (const m of as.filter((a) => a.sex === 'm')) for (const f of as.filter((a) => a.sex === 'f' && !a.preg)) { const child = crossChild(m.sp, f.sp); if (child && !SPECIES[f.sp].eggs) out.push({ m, f, child }); }
+  return out;
+}
+function crossSection(e) {
+  const pairs = crossPairs(e);
+  const sps = new Set(animalsIn(e).map((a) => a.sp));
+  const hints = CROSSES.filter((c) => sps.has(c.a || c.m) || sps.has(c.b || c.f)).map((c) => `${SPECIES[c.a || c.m].label}${c.m ? ' ♂' : ''} × ${SPECIES[c.b || c.f].label}${c.f ? ' ♀' : ''} → ${(st.hybrids || []).includes(c.child) ? SPECIES[c.child].label : '¿?'}`);
+  return `<div class="sec">${icon('heart')} Cruces</div>${pairs.length ? `<div class="list">${pairs.slice(0, 6).map(({ m, f, child }) => `<div class="li"><div style="flex:1;min-width:0"><b>${esc(m.name)} ♂ × ${esc(f.name)} ♀</b><div class="hint">${SPECIES[m.sp].label} × ${SPECIES[f.sp].label} → ${child === f.sp ? 'cría de ' + SPECIES[child].label.toLowerCase() : (st.hybrids || []).includes(child) ? SPECIES[child].label : 'algo nuevo…'}</div></div><button class="btn sm coral" data-cross="${m.id}|${f.id}">Cruzar</button></div>`).join('')}</div>` : `<p class="hint">Junta en este recinto un macho y una hembra adultos de la misma especie o de especies emparentadas para cruzarlos.</p>`}${hints.length ? `<p class="hint" style="margin-top:6px">Cruces posibles con estas especies: ${hints.join(' · ')}</p>` : ''}`;
+}
+function doCross(m, f, e) {
+  if (!m || !f) return;
+  if (f.happy < 50 || m.happy < 50) return toast('Tienen que estar contentos para criar: comida, espacio y su hábitat', 'warn');
+  if (f.preg) return toast(`${f.name} ya espera una cría`, 'warn');
+  const child = crossChild(m.sp, f.sp); if (!child) return toast('Estas especies no pueden cruzarse', 'warn');
+  f.preg = { until: st.time + 1440, child, father: m.id }; closeModal();
+  toast(child === f.sp ? `${f.name} espera una cría` : `${f.name} espera una cría de ${SPECIES[m.sp].label.toLowerCase()} y ${SPECIES[f.sp].label.toLowerCase()}`, 'good', 'heart'); save();
 }
 function bldCard(b) {
   const B = BUILDINGS[b.type];
@@ -811,7 +759,7 @@ function bldCard(b) {
 }
 function itemCard(key) {
   const [eid, i] = key.split(':'); const e = st.enclosures.find((q) => q.id === eid); const it = e && e.items[+i]; if (!it) return;
-  const bx = modal(`<h2>${ENRICH[it.type].label}</h2><p class="hint">Los animales lo usan para entretenerse.</p>
+  const bx = modal(`<h2>${ENRICH[it.type].label}</h2><p class="hint">Los animales lo usan para entretenerse. También puedes mantenerlo pulsado y arrastrarlo, o soltarlo en la papelera.</p>
     <div class="actions" style="flex-direction:column"><button class="btn" id="imv">${icon('move')} Mover</button><button class="btn alt" id="idel">${icon('trash')} Quitar</button><button class="btn alt" id="ix">Cerrar</button></div>`);
   bx.querySelector('#ix').onclick = closeModal;
   bx.querySelector('#imv').onclick = () => armMove({ kind: 'item', ref: it, enc: e });
@@ -831,6 +779,7 @@ sheet.onClose = () => hud();
 // ---------- bucle ----------
 let uiT = 0, saveT = 0;
 eng.onFrame = (dt) => {
+  if (mv && mv.sx != null) { const { dx, dy } = edgePan(mv.sx, mv.sy); if (dx || dy) { eng.pan(dx, dy); eng.lastInput = performance.now(); moveDrag(mv.sx, mv.sy); } }
   const paused = modalOpen() || st.speed === 0;
   if (!paused) { let g = dt * SPEEDS[st.speed]; while (g > 0) { const s = Math.min(g, 2); tick(s); g -= s; } }
   eng.activity = close ? 'close' : paused ? 'idle' : visitors.length && eng.cam.dist < 22 ? 'busy' : 'calm';
@@ -843,7 +792,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) { sav
 window.addEventListener('pagehide', save);
 if (store.load(KEY)) offline(); else info('Te damos la bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
 hud();
-window.zoo = { eng, THREE, enterClose, rebuildEnclosures, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, enterClose, rebuildEnclosures, organicModel, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {

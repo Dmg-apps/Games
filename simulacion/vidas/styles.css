@@ -330,3 +330,5 @@ textarea:focus { border-color: var(--ink); background: #fff; }
 #title .backhub .ic { transform: scaleX(-1); }
 /* oscurecido suave en los bordes de la escena 3D */
 .vignette { position: fixed; inset: 0; pointer-events: none; z-index: 0; background: radial-gradient(ellipse 120% 95% at 50% 45%, rgba(0,0,0,0) 58%, rgba(18,24,48,0.22) 100%); }
+
+#game { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

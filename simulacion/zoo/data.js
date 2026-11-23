@@ -8,6 +8,7 @@ export const BIOMES = {
   selva: { label: 'Selva', color: '#4f9a4a', ic: 'tree' },
   artico: { label: 'Ártico', color: '#e9f1f6', ic: 'sparkle' },
   humedal: { label: 'Humedal', color: '#8cc0b0', ic: 'drop' },
+  bosque: { label: 'Bosque', color: '#6e9a56', ic: 'tree' },
 };
 export const SIZES = { S: { label: 'Pequeño', n: 4, price: 400 }, M: { label: 'Mediano', n: 6, price: 800 }, L: { label: 'Grande', n: 8, price: 1400 } };
 
@@ -25,6 +26,11 @@ export const SPECIES = {
   leon: { label: 'León', biome: 'sabana', price: 2200, appeal: 6, fame: 3, space: 6, body: [0.95, 0.5, 0.4], legs: 0.5, neck: 0.15, head: 0.2, colors: ['#d8a050', '#e8c080', '#7a4a1a'], feat: ['mane', 'tail_long'] },
   osopolar: { label: 'Oso polar', biome: 'artico', price: 2500, appeal: 6, fame: 3, space: 7, body: [1.05, 0.6, 0.55], legs: 0.42, neck: 0.18, head: 0.22, colors: ['#f4f2ea', '#e8e4d8', '#222'], feat: ['ears_round'] },
   elefante: { label: 'Elefante', biome: 'sabana', price: 3500, appeal: 7, fame: 4, space: 9, social: true, body: [1.3, 0.95, 0.8], legs: 0.7, neck: 0.15, head: 0.42, colors: ['#9a9aa0', '#a8a8ae', '#6a6a70'], feat: ['trunk', 'ears_big', 'tusks'] },
+  caballo: { label: 'Caballo', biome: 'granja', price: 600, appeal: 2, fame: 0.5, space: 4, social: true, body: [0.92, 0.46, 0.34], legs: 0.64, neck: 0.42, head: 0.14, colors: ['#8a5634', '#9a6640', '#2a180c'], feat: ['mane_short', 'tail_long'] },
+  burro: { label: 'Burro', biome: 'granja', price: 350, appeal: 1, fame: 0, space: 3, social: true, body: [0.68, 0.38, 0.3], legs: 0.44, neck: 0.28, head: 0.13, colors: ['#8d8780', '#d8d2c8', '#2a2420'], feat: ['ears_up'] },
+  llama: { label: 'Llama', biome: 'granja', price: 500, appeal: 2, fame: 0.5, space: 3, social: true, body: [0.64, 0.4, 0.33], legs: 0.5, neck: 0.55, head: 0.13, colors: ['#f2ece0', '#c8a880', '#3a2a20'], feat: ['fluffy', 'ears_up'] },
+  tigre: { label: 'Tigre', biome: 'selva', price: 2600, appeal: 7, fame: 3, space: 6, body: [1.0, 0.47, 0.37], legs: 0.46, neck: 0.15, head: 0.19, colors: ['#e8862a', '#f8f0e2', '#171210'], feat: ['tail_long'] },
+  osopardo: { label: 'Oso pardo', biome: 'bosque', price: 2300, appeal: 6, fame: 3, space: 7, body: [1.0, 0.6, 0.55], legs: 0.42, neck: 0.18, head: 0.22, colors: ['#6e4628', '#5e3c22', '#2a1a10'], feat: ['ears_round'] },
   panda: { label: 'Panda', biome: 'selva', price: 5000, appeal: 9, fame: 4.5, space: 6, body: [0.8, 0.55, 0.5], legs: 0.34, neck: 0.15, head: 0.26, colors: ['#f6f4ee', '#1c1c1c', '#1c1c1c'], feat: ['panda', 'ears_round'] },
 };
 
@@ -55,4 +61,33 @@ export const WAGES = { keeper: 120, cleaner: 90 };
 export const FOOD_COST = 15;
 
 export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara'];
-export const CARNIVORES = ['leon', 'osopolar'];
+export const CARNIVORES = ['leon', 'osopolar', 'tigre', 'osopardo', 'ligre', 'tigon', 'pizzly'];
+
+// Cruces posibles en la naturaleza (o en cautividad) entre especies emparentadas.
+// Los híbridos no se compran: solo se consiguen cruzando. Muchos son estériles, como en la realidad.
+export const HYBRIDS = {
+  cebrallo: { label: 'Cebrallo', biome: 'sabana', price: 2400, appeal: 6, space: 4, social: true, sterile: true, body: [0.9, 0.45, 0.33], legs: 0.62, neck: 0.4, head: 0.14, colors: ['#9a6a44', '#a87a52', '#1e1410'], feat: [], desc: 'Caballo × cebra: cuerpo de caballo con rayas en patas y grupa.' },
+  cebrasno: { label: 'Cebrasno', biome: 'sabana', price: 2000, appeal: 5, space: 4, social: true, sterile: true, body: [0.75, 0.4, 0.31], legs: 0.52, neck: 0.32, head: 0.13, colors: ['#a8a29a', '#e0dad0', '#1e1a18'], feat: [], desc: 'Burro × cebra: orejas largas y patas rayadas.' },
+  mula: { label: 'Mula', biome: 'granja', price: 900, appeal: 2, space: 4, social: true, sterile: true, body: [0.82, 0.42, 0.32], legs: 0.56, neck: 0.36, head: 0.14, colors: ['#6e4a30', '#a88a70', '#2a1a10'], feat: [], desc: 'Caballo × burro: fuerte y tranquila. Es estéril.' },
+  ligre: { label: 'Ligre', biome: 'sabana', price: 9000, appeal: 11, space: 8, sterile: true, body: [1.15, 0.55, 0.43], legs: 0.54, neck: 0.15, head: 0.22, colors: ['#d89a50', '#f0dcb4', '#8a5a30'], feat: [], desc: 'León (macho) × tigresa: el felino más grande del mundo.' },
+  tigon: { label: 'Tigón', biome: 'selva', price: 7000, appeal: 9, space: 6, sterile: true, body: [0.92, 0.46, 0.36], legs: 0.46, neck: 0.15, head: 0.19, colors: ['#d8964a', '#f2e2c4', '#3a2414'], feat: [], desc: 'Tigre (macho) × leona: rayas y una pequeña melena.' },
+  pizzly: { label: 'Oso pizzly', biome: 'artico', price: 6000, appeal: 8, space: 7, body: [1.02, 0.6, 0.55], legs: 0.42, neck: 0.2, head: 0.22, colors: ['#c8ac86', '#b89a74', '#3a2a1a'], feat: [], desc: 'Oso polar × oso pardo: ocurre de verdad en el Ártico. Puede tener crías.' },
+  huarizo: { label: 'Huarizo', biome: 'granja', price: 1200, appeal: 3, space: 3, social: true, body: [0.6, 0.4, 0.34], legs: 0.45, neck: 0.48, head: 0.13, colors: ['#ead8b8', '#f2e6d0', '#4a3a2a'], feat: [], desc: 'Llama × alpaca: lana suave. Puede tener crías.' },
+};
+// m/f: si importa quién es el padre y quién la madre
+export const CROSSES = [
+  { a: 'caballo', b: 'cebra', child: 'cebrallo' },
+  { a: 'burro', b: 'cebra', child: 'cebrasno' },
+  { a: 'caballo', b: 'burro', child: 'mula' },
+  { m: 'leon', f: 'tigre', child: 'ligre' },
+  { m: 'tigre', f: 'leon', child: 'tigon' },
+  { a: 'osopolar', b: 'osopardo', child: 'pizzly' },
+  { a: 'llama', b: 'alpaca', child: 'huarizo' },
+];
+export function crossChild(male, female) {
+  if (male === female) return HYBRIDS[male]?.sterile ? null : male;
+  const c = CROSSES.find((x) => (x.m ? x.m === male && x.f === female : (x.a === male && x.b === female) || (x.b === male && x.a === female)));
+  return c ? c.child : null;
+}
+// Los híbridos viven en el parque como cualquier especie (pero no se venden en la tienda)
+for (const [k, v] of Object.entries(HYBRIDS)) SPECIES[k] = { ...v, hybrid: true, fame: 0 };
