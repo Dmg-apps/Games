@@ -6,6 +6,8 @@ import { UI } from './ui.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
 import { Gestures } from '../../shared/gestures.js';
+import { Sound } from '../../shared/sound.js';
+Sound.init('vidas');
 
 const SPEEDS = [0, 1, 3, 10]; // minutos de juego por segundo real
 

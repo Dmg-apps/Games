@@ -1,11 +1,12 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
+import { buildingMesh as propMesh, People } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
-import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan } from '../shared/ui.js';
+import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
-import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild } from './data.js';
+import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -24,6 +25,8 @@ function newPark() {
 }
 const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newPark();
+for (const a of st.animals) a.trait ||= pick(Object.keys(TRAITS));
+const traitLabel = (a) => TRAITS[a.trait]?.[a.sex] || '';
 const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
 // Copia en la nube (cuenta común a toda la app)
 const cloud = autoSync('parque', () => st);
@@ -88,13 +91,29 @@ function visitorThink(v) {
   if (!cands.length) { const P = st.paths; const [x, z] = pick(P).split(',').map(Number); cands = [{ x, z }]; }
   const t = pick(cands); v.target = t; v.path = bfsPath(v, t) || [];
 }
+// Lo que dicen los visitantes (bocadillos sobre sus cabezas)
+function logEvent(kind, text, who) { (st.today.events ||= []).push({ kind, text, who }); }
+function speak(v, text) { if (visitors.filter((q) => q.say && q.say.until > st.time).length >= 4) return; v.say = { text, until: st.time + 9 }; }
+function comment(v, e, as) {
+  if (Math.random() > 0.35 || !as.length) return; const a = pick(as); const S = SPECIES[a.sp]; const name = a.name, sp = S.label.toLowerCase(); const un = S.fem ? 'una' : 'un', o = S.fem ? 'a' : 'o', ese = S.fem ? 'Esa' : 'Ese';
+  const opts = [];
+  if (S.hybrid) opts.push(`¿Eso es ${un} ${sp}?`, `¡Nunca había visto ${un} ${sp}!`, `¡Hay que hacerle una foto a ${name}!`);
+  if (a.baby) opts.push(`¡Una cría de ${sp}!`, `¡Qué cosa más pequeña!`, `¡Mira, mamá, un bebé!`);
+  if (a.trait === 'presumido') opts.push(`¡Cómo posa ${name}!`, `${name} sabe que la miramos…`);
+  if (a.trait === 'curioso' && a.state === 'watch') opts.push(`¡${name} nos está mirando!`, `¡Hola, ${name}!`);
+  if (a.state === 'sleep') opts.push(`Shhh, ${name} duerme`, `Qué siesta lleva…`);
+  if (a.state === 'play') opts.push(`¡Mira cómo juega!`, `¡Qué divertido!`);
+  if (encHappy(e) < 35) opts.push(`${ese} ${sp} parece triste…`, `Necesitan más espacio`);
+  if (!opts.length) opts.push(`¡Qué ${sp} tan bonit${o}!`, `¡Mira, ${un} ${sp}!`, `Me encanta este parque`, `¿Cómo se llama ese? ¡${name}!`);
+  speak(v, pick(opts));
+}
 function visitorArrive(v) {
   const t = v.target; v.target = null; if (!t) return;
   if (t.enc && !v.seen.has(t.enc)) {
     const e = st.enclosures.find((q) => q.id === t.enc); if (e) {
-      v.seen.add(t.enc); const as = animalsIn(e);
+      v.seen.add(t.enc); const as = animalsIn(e); comment(v, e, as);
       const appeal = as.reduce((s, a) => s + SPECIES[a.sp].appeal * (a.baby ? 1.5 : 1), 0);
-      v.happy = clamp(v.happy + Math.min(30, appeal * 1.6) * (encHappy(e) / 100) + (encHappy(e) < 35 ? -6 : 0));
+      v.happy = clamp(v.happy + Math.min(30, appeal * 1.6) * (encHappy(e) / 100) + (encHappy(e) < 35 ? -6 : 0) + as.filter((a) => a.trait === 'presumido' || a.trait === 'curioso').length * 3);
     }
   }
   if (t.b) {
@@ -107,6 +126,7 @@ function visitorArrive(v) {
   }
 }
 function visitorsTick(dt) {
+  if (Math.random() < 0.02 * dt && visitors.length) { const v = pick(visitors); if (v.hambre > 75) speak(v, pick(['¡Qué hambre tengo!', '¿Dónde se come aquí?'])); else if (v.sed > 75) speak(v, pick(['Necesito beber algo…', '¡Qué sed!'])); else if (st.litter.length > 12) speak(v, pick(['Qué sucio está esto…', 'Faltan papeleras'])); else if (v.happy > 85) speak(v, pick(['¡Volveré seguro!', '¡Qué día tan bonito!'])); }
   const h = hourOf(st.time);
   if (h >= 9 && h < 19 && visitors.length < 30 && st.enclosures.some((e) => animalsIn(e).length)) {
     const rate = 0.08 * (0.4 + st.fame / 2.5) * Math.max(0.25, Math.min(1.3, 1.45 - st.ticket / 40)) * Math.min(3, 0.5 + st.enclosures.length * 0.4);
@@ -129,17 +149,19 @@ function visitorsTick(dt) {
 
 // ---------- animales ----------
 function addAnimal(sp, e, baby = false) {
-  const a = { id: id(), sp, enc: e.id, x: e.x + rnd(0.5, e.n - 0.5), z: e.z + rnd(0.5, e.n - 0.5), tx: null, tz: null, hunger: 80, happy: 70, sex: Math.random() < 0.5 ? 'm' : 'f', baby, born: st.time, name: pick(ANIMAL_NAMES), state: 'wander' };
+  const used = new Set(st.animals.map((q) => q.name)); const free = ANIMAL_NAMES.filter((n) => !used.has(n));
+  const a = { id: id(), sp, enc: e.id, x: e.x + rnd(0.5, e.n - 0.5), z: e.z + rnd(0.5, e.n - 0.5), tx: null, tz: null, hunger: 80, happy: 70, sex: Math.random() < 0.5 ? 'm' : 'f', baby, born: st.time, name: free.length ? pick(free) : pick(ANIMAL_NAMES) + ' ' + (used.size + 1), state: 'wander', trait: pick(Object.keys(TRAITS)) };
   st.animals.push(a); return a;
 }
 function animalsTick(dt) {
   for (const a of st.animals) {
-    a.hunger = clamp(a.hunger - 0.07 * dt);
+    a.hunger = clamp(a.hunger - 0.07 * dt * (a.trait === 'gloton' ? 1.5 : 1));
     a.happy += (animalHappy(a) - a.happy) * Math.min(1, 0.02 * dt);
     if (a.baby && st.time - a.born > 4 * 1440) { a.baby = false; toast(`La cría de ${SPECIES[a.sp].label.toLowerCase()} ya es adulta`, 'good', 'paw'); }
     const e = st.enclosures.find((q) => q.id === a.enc); if (!e) continue;
     if (a.preg && st.time >= a.preg.until) {
       const child = a.preg.child || a.sp; a.preg = null; const b = addAnimal(child, e, true); b.mother = a.id; b.x = a.x + 0.2; b.z = a.z + 0.2;
+      logEvent(child !== a.sp ? 'hybrid' : 'birth', SPECIES[child].label, a.name);
       if (child !== a.sp) { const first = !(st.hybrids ||= []).includes(child); if (first) st.hybrids.push(child); st.fame = clamp(st.fame + (first ? 0.4 : 0.1), 0, 5); toast(`¡Nueva cría híbrida: ${SPECIES[child].label}!${first ? ' Nueva en tu colección de cruces' : ''}`, 'good', 'sparkle'); }
       else toast(`¡${a.name} (${SPECIES[a.sp].label.toLowerCase()}) ha tenido una cría!`, 'good', 'heart');
     }
@@ -163,13 +185,20 @@ function decide(a, e) {
   if (mom && Math.random() < 0.75) return go(mom.x + rnd(-0.5, 0.5), mom.z + rnd(-0.5, 0.5), 'follow', rnd(2, 6));
   const pond = e.items.find((i) => i.type === 'charca'), toy = e.items.find((i) => i.type === 'juguete');
   const r = Math.random();
+  // carácter
+  if (a.trait === 'dormilon' && r < 0.3) return go(a.x, a.z, 'sleep', rnd(20, 50));
+  if (a.trait === 'jugueton' && r < 0.35) return toy ? go(toy.x + 0.5, toy.z + 0.5, 'play', 12) : go(a.x + rnd(-1.5, 1.5), a.z + rnd(-1.5, 1.5), 'play', 4);
+  if (a.trait === 'curioso' && r < 0.4) { const P = pathSet(); let best = null; for (let i = 0; i < e.n; i++) for (const [x, z, ox, oz] of [[e.x + i, e.z - 1, 0.5, 0.6], [e.x + i, e.z + e.n, 0.5, -0.6], [e.x - 1, e.z + i, 0.6, 0.5], [e.x + e.n, e.z + i, -0.6, 0.5]]) if (P.has(pk(x, z))) best = [x + ox, z + oz]; if (best) return go(best[0], best[1], 'watch', rnd(10, 25)); }
+  if (a.trait === 'timido' && r < 0.45) { const hide = e.items.find((i) => i.type === 'arbol' || i.type === 'roca' || i.type === 'bambu'); if (hide) return go(hide.x + 0.5 + rnd(-0.5, 0.5), hide.z + 0.5 + rnd(-0.5, 0.5), 'hide', rnd(15, 35)); }
+  if (a.trait === 'presumido' && r < 0.3) return go(a.x, a.z, 'pose', rnd(6, 14));
+  if (a.trait === 'grunon' && r < 0.4) { const near = animalsIn(e).find((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 1.2); if (near) return go(a.x + (a.x - near.x) * 2, a.z + (a.z - near.z) * 2, 'wander', 0); }
   if (pond && r < 0.12) return go(pond.x + 0.5 + rnd(-0.6, 0.6), pond.z + 0.5 + rnd(-0.6, 0.6), 'drink', 12);
   if (toy && r < 0.2) return go(toy.x + 0.5, toy.z + 0.5, 'play', 10);
   if (!CARNIVORES.includes(a.sp) && r < 0.45) return go(a.x + rnd(-0.5, 0.5), a.z + rnd(-0.5, 0.5), 'graze', rnd(8, 20));
   if (r < 0.65) return go(a.x, a.z, 'rest', rnd(6, 20));
   go(e.x + rnd(0.6, e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'wander', 0);
 }
-const STATE_TXT = { wander: 'paseando', rest: 'descansando', graze: 'pastando', eat: 'comiendo', drink: 'bebiendo', sleep: 'durmiendo', play: 'jugando', follow: 'siguiendo a su madre' };
+const STATE_TXT = { watch: 'mirando a los visitantes', hide: 'escondido', pose: 'posando para las fotos', wander: 'paseando', rest: 'descansando', graze: 'pastando', eat: 'comiendo', drink: 'bebiendo', sleep: 'durmiendo', play: 'jugando', follow: 'siguiendo a su madre' };
 // Pone un montón de comida en el recinto (los animales van a comer)
 function putFood(e) { e.food = { x: e.x + e.n / 2 + rnd(-0.8, 0.8), z: e.z + e.n / 2 + rnd(-0.8, 0.8), until: st.time + 150 }; for (const a of animalsIn(e)) if (a.state !== 'sleep') a.restUntil = 0; }
 function feedTimes() {
@@ -201,6 +230,7 @@ function breeding() {
 function hatchNests() {
   for (const e of st.enclosures) {
     for (const n of (e.nests || []).filter((q) => st.time >= q.until)) {
+      logEvent('hatch', SPECIES[n.sp].label, n.n);
       for (let i = 0; i < n.n; i++) { const b = addAnimal(n.sp, e, true); b.mother = n.mother; b.x = n.x + rnd(-0.2, 0.2); b.z = n.z + rnd(-0.2, 0.2); }
       toast(`¡Han salido ${n.n > 1 ? `${n.n} crías` : 'una cría'} del nido de ${SPECIES[n.sp].label.toLowerCase()}!`, 'good', 'egg');
     }
@@ -214,17 +244,28 @@ function hourly(h) {
   for (let i = 0; i < st.staff.cleaner * 2 && st.litter.length; i++) st.litter.shift();
   if (h === 21) endOfDay();
 }
+// Al final del día: "La Gaceta Salvaje", el periódico del parque, con los titulares de la jornada
 function endOfDay() {
   const wages = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner, food = st.animals.length * FOOD_COST;
   st.money -= wages + food; st.today.spent += wages + food;
   const d = { day: dayOf(st.time) + 1, ...st.today, profit: st.today.income - st.today.spent, stars: stars() };
-  st.history.unshift(d); st.history.length = Math.min(st.history.length, 14);
-  info(`Fin del día ${d.day}`, `<div class="card"><div class="stat"><span class="tile" style="background:#25c48f">${icon('users')}</span><span>Visitantes</span><b>${d.visitors}</b></div>
-    <div class="stat"><span class="tile" style="background:#2fa8e0">${icon('coin')}</span><span>Ingresos</span><b>${eur(d.income)}</b></div>
-    <div class="stat"><span class="tile" style="background:#e5484d">${icon('briefcase')}</span><span>Gastos</span><b>${eur(d.spent)}</b></div>
-    <div class="stat"><span class="tile" style="background:#f5a524">${icon('star')}</span><span>Fama</span><b>${'★'.repeat(Math.floor(d.stars))}${d.stars % 1 ? '½' : ''}</b></div></div>
-    <p class="hint">${d.profit >= 0 ? `¡Beneficio de ${eur(d.profit)}!` : `Pérdidas de ${eur(-d.profit)}. Atrae más visitantes con animales felices, tiendas y decoración.`}</p>`, 'Siguiente día');
-  st.today = { visitors: 0, income: 0, spent: 0 };
+  const prevBest = Math.max(0, ...st.history.map((h) => h.visitors));
+  st.history.unshift({ ...d, events: undefined }); st.history.length = Math.min(st.history.length, 14);
+  const ev = st.today.events || []; const find = (k) => ev.filter((e) => e.kind === k);
+  let head, body;
+  if (find('hybrid').length) { const e = find('hybrid')[0]; head = `¡Nace ${Object.values(SPECIES).find((q) => q.label === e.text)?.fem ? 'una' : 'un'} ${e.text.toLowerCase()} en el parque!`; body = `La pequeña criatura, hija de ${e.who}, ya es la estrella del parque. Se esperan colas para verla.`; }
+  else if (find('birth').length || find('hatch').length) { const e = find('birth')[0] || find('hatch')[0]; head = e.kind === 'hatch' ? `Eclosionan huevos de ${e.text.toLowerCase()}` : `${e.who} ya es madre`; body = e.kind === 'hatch' ? 'Los cuidadores no se separan del nido. Las crías ya pían.' : `La cría de ${e.text.toLowerCase()} da sus primeros pasos ante la mirada de los visitantes.`; }
+  else if (find('newsp').length) { const e = find('newsp')[0]; head = `Llega la primera especie de ${e.text.toLowerCase()}`; body = `${e.who} ha llegado hoy y ya curiosea su nuevo hogar.`; }
+  else if (d.visitors > prevBest && d.visitors > 5) { head = `Récord: ${d.visitors} visitantes en un solo día`; body = 'Las taquillas no daban abasto. ¿Hará falta otra tienda de helados?'; }
+  else if (d.profit < 0) { head = 'Un día flojo en taquilla'; body = 'Los expertos recomiendan animales más felices, más tiendas y algo de decoración.'; }
+  else if (!st.animals.length) { head = 'Se busca: animales'; body = 'Los visitantes preguntan dónde están los animales. Toca Animales y elige un recinto.'; }
+  else { const a = pick(st.animals); head = `${a.name}, ${(traitLabel(a) || 'tranquilo').toLowerCase()} como siempre`; body = `Los visitantes no se pierden a ${a.name}: ${TRAITS[a.trait]?.desc.toLowerCase() || 'una estrella del parque.'}`; }
+  const quote = d.profit >= 0 ? pickOne(['Así da gusto. Mañana, más y mejor.', 'Buen día. Los animales están contentos, y yo también.', 'Si seguimos así, habrá que ampliar el parque.']) : pickOne(['Mañana será otro día. Revisa que los animales coman bien.', 'Unas flores y un banco nunca sobran, hazme caso.', 'Los visitantes vuelven si salen contentos. Cuidemos los detalles.']);
+  Sound.play('page');
+  say('rufina', null, `«${quote}»`, 'Siguiente día', null, `<div class="gazette"><div class="mast">La Gaceta Salvaje</div><div class="date">Día ${d.day} · ${'★'.repeat(Math.floor(d.stars))}${d.stars % 1 ? '½' : ''}</div>
+    <h3>${esc(head)}</h3><p>${esc(body)}</p>
+    <div class="cols"><div>${icon('users')} <b>${d.visitors}</b> visitantes</div><div>${icon('coin')} <b>${eur(d.income)}</b> ingresos</div><div>${icon('briefcase')} <b>${eur(d.spent)}</b> gastos</div><div>${icon('chart')} <b style="color:${d.profit >= 0 ? '#127a52' : '#c2343a'}">${d.profit >= 0 ? '+' : ''}${eur(d.profit)}</b></div></div></div>`);
+  st.today = { visitors: 0, income: 0, spent: 0, events: [] };
   save();
 }
 function tick(dt) {
@@ -240,7 +281,7 @@ function offline() {
   const last = st.history[0]; const est = last ? Math.max(0, last.profit) * (mins / 1440) * 0.5 : 0;
   st.time += mins; st.lastHour = Math.floor(st.time / 60); st.money += Math.round(est);
   for (const a of st.animals) a.hunger = st.staff.keeper * 8 >= st.animals.length ? 90 : Math.max(20, a.hunger - mins * 0.05);
-  info('Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en el parque.</p>${est ? `<p>Los visitantes han dejado unos <b>${eur(est)}</b>.</p>` : ''}${st.staff.keeper * 8 < st.animals.length ? '<p class="hint">Faltan cuidadores: algunos animales tienen hambre.</p>' : '<p class="hint">Tus cuidadores han atendido a los animales.</p>'}`);
+  say('rufina', 'Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en el parque.</p>${est ? `<p>Los visitantes han dejado unos <b>${eur(est)}</b>.</p>` : ''}${st.staff.keeper * 8 < st.animals.length ? '<p class="hint">Faltan cuidadores: algunos animales tienen hambre.</p>' : '<p class="hint">Tus cuidadores han atendido a los animales.</p>'}`);
 }
 
 // ---------- dibujo 3D ----------
@@ -328,23 +369,9 @@ function rebuildEnclosures() {
     e.items.forEach((it, i) => { const m = enrichMesh(it.type, e.biome, it.x * 7 + it.z); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); m.userData.item = e.id + ':' + i; eg.add(m); });
   }
 }
-function buildingMesh(b) {
-  const B = BUILDINGS[b.type]; const g = new THREE.Group();
-  if (B.cat === 'Tiendas') {
-    const base = box(0.85, 0.75, 0.85, b.type === 'banos' ? '#dfe6ee' : '#fff4e4', 0.04); base.position.y = 0.4; g.add(base);
-    const roof = box(1.0, 0.12, 1.0, B.color, 0.04); roof.position.y = 0.86; g.add(roof);
-    for (let i = 0; i < 4; i++) { const s = box(0.24, 0.1, 0.06, i % 2 ? '#fff' : B.color); s.position.set(-0.36 + i * 0.24, 0.7, 0.45); g.add(s); }
-    const sign = box(0.5, 0.18, 0.05, B.color, 0.03); sign.position.set(0, 1.05, 0.2); g.add(sign);
-  } else if (b.type === 'banco') { const s = box(0.7, 0.06, 0.25, '#a8784a'); s.position.y = 0.25; g.add(s); const r = box(0.7, 0.25, 0.05, '#a8784a'); r.position.set(0, 0.4, -0.11); g.add(r); }
-  else if (b.type === 'papelera') { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.35, 10), mat('#4a7a5a')); c.position.y = 0.18; g.add(c); }
-  else if (b.type === 'farola') { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), mat('#3a3a44')); p.position.y = 0.7; g.add(p); const l = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat('#fff0b0', { emissive: '#7a6a30' })); l.position.y = 1.45; g.add(l); }
-  else if (b.type === 'flores') for (let i = 0; i < 7; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), mat(pick(['#ff8fb1', '#ffd45c', '#fff', '#b99cff']))); f.position.set(rnd(-0.35, 0.35), 0.08, rnd(-0.35, 0.35)); g.add(f); }
-  else if (b.type === 'arbolp') g.add(tree(1.1, (b.x + b.z) % 3 ? 'roble' : 'abedul', b.x * 3 + b.z));
-  else if (b.type === 'fuente') { const bs = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.25, 16), mat('#d8d0c4')); bs.position.y = 0.13; g.add(bs); const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16), mat('#6ab4e8')); w.position.y = 0.26; g.add(w); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.6, 8), mat('#d8d0c4')); c.position.y = 0.5; g.add(c); }
-  if (B.cat === 'Tiendas') g.add(blob(1.2, 1.2));
-  Look.shadows(g, true, false); return g;
-}
-function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = buildingMesh(b); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.userData.bld = b.id; g.add(m); } }
+function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = propMesh(b, BUILDINGS); Look.shadows(m, true, false); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.rotation.y = faceToPath(b); m.userData.bld = b.id; g.add(m); } }
+// las tiendas miran hacia el camino más cercano
+function faceToPath(b) { const P = pathSet(); for (const [dx, dz, r] of [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]]) if (P.has(pk(b.x + dx, b.z + dz))) return r; return 0; }
 
 // Animales orgánicos (ver animals3d.js)
 const animalMeshes = new Map();
@@ -373,20 +400,8 @@ function syncAnimals(t) {
   for (const [k, m] of animalMeshes) if (!seen.has(k)) { groups.animals.remove(m.g); animalMeshes.delete(k); }
 }
 const peopleMeshes = new Map();
-function syncPeople(t) {
-  const seen = new Set();
-  for (const v of visitors) {
-    seen.add(v.id); let m = peopleMeshes.get(v.id);
-    if (!m) {
-      const g = new THREE.Group(); const s = v.kid ? 0.7 : 1;
-      const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.12 * s, 0.35 * s, 3, 6), mat(v.color)); b.position.y = 0.4 * s; g.add(b);
-      const hd = new THREE.Mesh(new THREE.SphereGeometry(0.1 * s, 8, 6), mat(v.skin)); hd.position.y = 0.78 * s; g.add(hd);
-      g.add(blob(0.35, 0.35, 0.3)); m = { g }; peopleMeshes.set(v.id, m); groups.people.add(g);
-    }
-    m.g.position.set(v.x + 0.5, 0.05 + (v.path.length ? Math.abs(Math.sin(t * 9 + v.id * 10)) * 0.04 : 0), v.z + 0.5); if (v.dir != null) m.g.rotation.y = v.dir;
-  }
-  for (const [k, m] of peopleMeshes) if (!seen.has(k)) { groups.people.remove(m.g); peopleMeshes.delete(k); }
-}
+let people = null;
+function syncPeople(t) { (people ||= new People(groups.people, 90)).sync(visitors, t); }
 function rebuildLitter() { const g = groups.litter; g.clear(); for (const l of st.litter) { const b = box(0.12, 0.04, 0.08, l.c); b.position.set(l.x + 0.3 + Math.random() * 0.4, 0.08, l.z + 0.3 + Math.random() * 0.4); b.rotation.y = Math.random() * 3; g.add(b); } }
 
 groups.extra = new THREE.Group(); S3.add(groups.extra);
@@ -418,7 +433,7 @@ function sync(t) {
   syncExtras();
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
   const s2 = JSON.stringify(st.enclosures); if (s2 !== sig.enc) { sig.enc = s2; rebuildEnclosures(); }
-  const s3 = JSON.stringify(st.buildings); if (s3 !== sig.bld) { sig.bld = s3; rebuildBuildings(); }
+  const s3 = JSON.stringify(st.buildings) + st.paths.length; if (s3 !== sig.bld) { sig.bld = s3; rebuildBuildings(); }
   const s4 = st.litter.length; if (s4 !== sig.litter) { sig.litter = s4; rebuildLitter(); }
   const s5 = s1 + s2.length + s3; if (s5 !== sig.tufts) { sig.tufts = s5; rebuildTufts(); }
   waterT.offset.set(t * 0.02, Math.sin(t * 0.3) * 0.04);
@@ -428,12 +443,26 @@ function sync(t) {
   eng.sun.intensity = 1.6 * (1 - night * 0.8); eng.hemi.intensity = 1.1 - night * 0.6;
   document.body.style.background = night > 0.5 ? 'linear-gradient(#1a2148,#3b3f72)' : 'linear-gradient(#8fcdf0,#d8eef8)';
   if (S3.fog) S3.fog.color.set(night > 0.5 ? '#3b3f72' : '#d4eaf4');
+  if (night !== sig.night) { sig.night = night; groups.bld.traverse((o) => { if (o.userData.lamp) o.userData.lamp.material.emissiveIntensity = 0.4 + night * 1.6; }); }
 }
 // capa 2D: avisos sobre los recintos
 function overlay() {
   const dpr = Math.min(devicePixelRatio || 1, 1.5);
   if (ov.width !== Math.round(eng.w * dpr)) { ov.width = eng.w * dpr; ov.height = eng.h * dpr; }
   octx.setTransform(dpr, 0, 0, dpr, 0, 0); octx.clearRect(0, 0, eng.w, eng.h);
+  if (eng.cam.dist < 32) for (const v of visitors) {
+    if (!v.say || v.say.until < st.time) continue; const q = eng.project(new THREE.Vector3(v.x + 0.5, v.kid ? 0.85 : 1.05, v.z + 0.5)); if (q.z > 1 || q.x < 0 || q.x > eng.w || q.y < 60) continue;
+    octx.font = '700 12px Nunito, sans-serif'; const w = Math.min(190, octx.measureText(v.say.text).width + 18); const x = Math.max(4, Math.min(eng.w - w - 4, q.x - w / 2)), y = q.y - 30;
+    octx.fillStyle = 'rgba(255,255,255,0.95)'; octx.beginPath(); octx.roundRect(x, y, w, 24, 12); octx.fill(); octx.beginPath(); octx.moveTo(q.x - 5, y + 23); octx.lineTo(q.x, y + 31); octx.lineTo(q.x + 5, y + 23); octx.fill();
+    octx.fillStyle = '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(v.say.text, x + w / 2, y + 12.5, w - 12);
+  }
+  if (close) for (const a of st.animals.filter((q) => q.enc === close)) {
+    const m = animalMeshes.get(a.id); if (!m) continue; const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + SPECIES[a.sp].neck * 0.8 + 0.25) * (a.baby ? 0.55 : 1);
+    const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1 || q.x < 0 || q.x > eng.w) continue;
+    octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(a.name).width + 14; const sel = a.id === followId;
+    octx.fillStyle = sel ? 'rgba(31,37,64,0.92)' : 'rgba(255,255,255,0.88)'; octx.beginPath(); octx.roundRect(q.x - w / 2, q.y - 11, w, 20, 10); octx.fill();
+    octx.fillStyle = sel ? '#fff' : '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(a.name, q.x, q.y);
+  }
   for (const e of st.enclosures) {
     const as = animalsIn(e); if (!as.length) continue;
     const hungry = as.some((a) => a.hunger < 35), sad = encHappy(e) < 40;
@@ -495,6 +524,7 @@ function beginMove(target, sx, sy) {
   mv = { ...target, gx: t.x - Math.floor(r.x), gz: t.z - Math.floor(r.z), x: r.x, z: r.z, ok: true };
   if (target.kind === 'animal') { mv.dest = st.enclosures.find((q) => q.id === r.enc); mv.px = r.x; mv.pz = r.z; }
   $('#toolinfo').hidden = false; $('#toolinfo').innerHTML = `${icon('move')} Moviendo ${LABEL[target.kind](r)} · suelta para colocar`;
+  Sound.play('lift');
   trash.show(target.kind === 'animal' ? 'Suelta aquí para venderlo' : target.kind === 'enc' ? 'Suelta aquí para derribarlo' : 'Suelta aquí para quitarlo');
   moveDrag(sx, sy); return true;
 }
@@ -531,7 +561,7 @@ function endMove(cancel) {
       const e = m.dest; r.enc = e.id; r.x = Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, m.px)); r.z = Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, m.pz)); r.tx = null; r.restUntil = 0; r.state = 'wander';
       if (e.biome !== SPECIES[r.sp].biome) toast(`${r.name} prefiere el hábitat de ${BIOMES[SPECIES[r.sp].biome].label.toLowerCase()}`, 'warn', 'paw');
     } else { r.x = m.x; r.z = m.z; }
-    navigator.vibrate?.(10);
+    navigator.vibrate?.(10); Sound.play('place');
   } else if (!cancel) toast(m.kind === 'animal' ? 'Suéltalo dentro de un recinto' : m.kind === 'bld' && BUILDINGS[r.type].cat === 'Tiendas' ? 'Ahí no cabe: las tiendas van junto a un camino' : 'Ahí no cabe', 'warn');
   sig.enc = sig.bld = null; if (view.tool === 'move') setTool(null); else renderToolInfo(); hud(); save();
 }
@@ -565,8 +595,8 @@ eng.onTap = (sx, sy) => {
   if (view.tool === 'animal') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
     const S = SPECIES[view.opt]; if (st.money < S.price) return toast('No hay dinero suficiente', 'warn');
-    st.money -= S.price; const a = addAnimal(view.opt, e);
-    toast(e.biome !== S.biome ? `${S.label} añadido, pero prefiere hábitat de ${BIOMES[S.biome].label.toLowerCase()}` : `${S.label} (${a.sex === 'm' ? 'macho' : 'hembra'}) llega al parque`, e.biome !== S.biome ? 'warn' : 'good', 'paw');
+    st.money -= S.price; const a = addAnimal(view.opt, e); logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
+    toast(e.biome !== S.biome ? `${a.name} (${S.label.toLowerCase()}) ha llegado, pero prefiere el hábitat de ${BIOMES[S.biome].label.toLowerCase()}` : `${a.name} (${S.label.toLowerCase()}, ${a.sex === 'm' ? 'macho' : 'hembra'}) llega al parque. Puedes cambiarle el nombre en su ficha`, e.biome !== S.biome ? 'warn' : 'good', 'paw');
     hud(); save(); return;
   }
   if (view.tool === 'enrich') {
@@ -623,7 +653,7 @@ function animalCardTick(force = false) {
   }
   const a = followId && st.animals.find((q) => q.id === followId); if (!a) { el.hidden = true; return; }
   const S = SPECIES[a.sp]; const kids = st.animals.filter((k) => k.mother === a.id && k.baby).length; const mom = a.mother && st.animals.find((m) => m.id === a.mother);
-  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${BIOMES[S.biome].color}">${icon('paw')}</span><div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'}${a.baby ? ' · cría' : ''}</span>
+  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${BIOMES[S.biome].color}">${icon('paw')}</span><div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'}${a.baby ? ' · cría' : ''}</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
     <div class="hint">Está ${STATE_TXT[a.state] || 'tranquilo'}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
     <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
@@ -664,6 +694,8 @@ function openPanel(name) {
   const titles = { enc: 'Recintos', animal: 'Animales', build: 'Tiendas y decoración', staff: 'Personal', info: 'Parque' };
   sheet.open(name, titles[name]); renderPanel(); hud();
 }
+const soundRow = () => { const p = Sound.prefs(); return `<div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn sm ${p.music ? '' : 'alt'}" id="snd_m" style="flex:1">${icon('music')} Música ${p.music ? 'sí' : 'no'}</button><button class="btn sm ${p.sfx ? '' : 'alt'}" id="snd_s" style="flex:1">${icon('bell')} Efectos ${p.sfx ? 'sí' : 'no'}</button></div>`; };
+function bindSound(b) { b.querySelector('#snd_m').onclick = () => { Sound.set('music', !Sound.prefs().music); renderPanel(); }; b.querySelector('#snd_s').onclick = () => { Sound.set('sfx', !Sound.prefs().sfx); renderPanel(); }; }
 function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'enc') {
@@ -704,7 +736,9 @@ function renderPanel() {
       <p class="hint">Más caro da más por visitante pero vienen menos.</p>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
+      ${soundRow()}
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
+    bindSound(b);
     b.querySelector('#tm').onclick = () => { st.ticket = Math.max(0, st.ticket - 5); renderPanel(); };
     b.querySelector('#tp').onclick = () => { st.ticket = Math.min(60, st.ticket + 5); renderPanel(); };
     renderCloud(b.querySelector('#cloudbox'), { slot: 'parque', sync: cloud, onLogin: afterCloudLogin, refresh: renderPanel });
@@ -715,11 +749,12 @@ function renderPanel() {
 function encCard(e) {
   const as = animalsIn(e); const happy = Math.round(encHappy(e));
   const box2 = modal(`<h2>Recinto de ${BIOMES[e.biome].label.toLowerCase()}</h2><p class="hint">${e.n}×${e.n} · ${e.items.length} objetos · ánimo medio ${happy}%</p>
-    <div class="list">${as.map((a) => `<div class="li"><span class="tilebox">${icon('paw')}</span><div style="flex:1"><b>${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}</b> <span class="hint">${a.sex === 'm' ? '♂' : '♀'}</span>
+    <div class="list">${as.map((a) => `<div class="li"><span class="tilebox">${icon('paw')}</span><div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''} · ${a.sex === 'm' ? '♂' : '♀'}</span> <span class="trait">${traitLabel(a)}</span>
       <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div></div><button class="btn sm alt" data-mva="${a.id}" aria-label="Mover">${icon('move')}</button><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
     ${crossSection(e)}
     <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button>${e.items.length ? `<div class="chips" style="justify-content:center">${e.items.map((it, i) => `<button class="chip" data-mvi="${i}">${icon('move')} ${ENRICH[it.type].label}</button>`).join('')}</div>` : ''}<button class="btn alt" id="mvenc">${icon('move')} Mover recinto</button><p class="hint" style="text-align:center;margin:0">También puedes mantener pulsado cualquier recinto, objeto, tienda o animal y arrastrarlo.</p><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);
   box2.querySelector('#close').onclick = closeModal;
+  box2.querySelectorAll('[data-ren]').forEach((x) => (x.onclick = () => renameAnimal(st.animals.find((q) => q.id === x.dataset.ren), () => encCard(e))));
   box2.querySelectorAll('[data-cross]').forEach((x) => (x.onclick = () => { const [mid, fid] = x.dataset.cross.split('|'); doCross(st.animals.find((q) => q.id === mid), st.animals.find((q) => q.id === fid), e); }));
   box2.querySelector('#seeclose').onclick = () => enterClose(e);
   box2.querySelector('#mvenc').onclick = () => armMove({ kind: 'enc', ref: e });
@@ -748,6 +783,16 @@ function doCross(m, f, e) {
   const child = crossChild(m.sp, f.sp); if (!child) return toast('Estas especies no pueden cruzarse', 'warn');
   f.preg = { until: st.time + 1440, child, father: m.id }; closeModal();
   toast(child === f.sp ? `${f.name} espera una cría` : `${f.name} espera una cría de ${SPECIES[m.sp].label.toLowerCase()} y ${SPECIES[f.sp].label.toLowerCase()}`, 'good', 'heart'); save();
+}
+// Poner nombre a un animal
+function renameAnimal(a, back) {
+  if (!a) return;
+  const bx = modal(`<h2>¿Cómo se llama?</h2><p class="hint">${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''} · ${a.sex === 'm' ? 'macho' : 'hembra'}</p><div class="field"><input type="text" id="rn" maxlength="16" value="${esc(a.name)}" autocomplete="off"></div>
+    <div class="actions"><button class="btn alt" id="rnx">Cancelar</button><button class="btn coral" id="rnok">Guardar</button></div>`);
+  const inp = bx.querySelector('#rn'); setTimeout(() => { inp.focus(); inp.select(); }, 50);
+  const ok = () => { const v = inp.value.trim().slice(0, 16); if (!v) return toast('Escribe un nombre', 'warn'); a.name = v; closeModal(); save(); animalCardTick(true); if (back) back(); };
+  bx.querySelector('#rnok').onclick = ok; inp.onkeydown = (ev) => { if (ev.key === 'Enter') ok(); };
+  bx.querySelector('#rnx').onclick = () => { closeModal(); if (back) back(); };
 }
 function bldCard(b) {
   const B = BUILDINGS[b.type];
@@ -790,8 +835,10 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else info('Te damos la bienvenida a Parque Salvaje', `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`, '¡A construir!');
+if (store.load(KEY)) offline(); else say('rufina', 'Te damos la bienvenida a Parque Salvaje', `¡Hola! Soy Rufina, llevo cuarenta años cuidando animales y ahora te ayudaré con este parque.`, '¡A construir!', null, `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`);
 hud();
+$('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); });
+Sound.init('zoo');
 window.zoo = { eng, THREE, enterClose, rebuildEnclosures, organicModel, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)

@@ -1,10 +1,10 @@
 // Arrecife: cría peces, cuida los acuarios y lleva tu tienda.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan } from '../shared/ui.js';
+import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound, avatar } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
-import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES } from './data.js';
+import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES, FISH_TRAITS, CUSTOMERS } from './data.js';
 
 const KEY = 'arrecife_save_v1';
 const SPEEDS = [0, 1, 3, 8];
@@ -24,19 +24,21 @@ function newShop() {
 }
 const commonGenes = () => ({ c: ri(4), p: ri(2), f: Math.random() < 0.8 ? 0 : 1, s: rnd(0.85, 1.1), glow: false });
 function addFish(st, tank, g, sex, adult = false) {
-  const f = { id: 'f' + st.nextId++, tank, g, sex: sex || (Math.random() < 0.5 ? 'm' : 'f'), born: st.time - (adult ? 2000 : 0), adult, health: 100, name: pick(FISH_NAMES) };
+  const f = { id: 'f' + st.nextId++, tank, g, sex: sex || (Math.random() < 0.5 ? 'm' : 'f'), born: st.time - (adult ? 2000 : 0), adult, health: 100, name: pick(FISH_NAMES), trait: pick(Object.keys(FISH_TRAITS)) };
   st.fish.push(f); discover(st, g); return f;
 }
 const keyOf = (g) => `${g.c}-${g.p}-${g.f}`;
 function discover(st, g) {
   const k = keyOf(g); if (st.discovered.includes(k)) return false;
   st.discovered.push(k);
-  if (st.discovered.length > 4) { toast(`¡Nueva variedad descubierta: ${speciesName(g)}!`, 'good', 'sparkle'); }
+  if (st.discovered.length > 4) { (st.day ||= []).push({ kind: 'disc', text: speciesName(g) }); toast(`¡Nueva variedad descubierta: ${speciesName(g)}!`, 'good', 'sparkle'); }
   if (st.discovered.length % 10 === 0) { st.money += 150; st.rep += 2; toast(`Álbum: ${st.discovered.length} variedades. Premio de 150 €`, 'good', 'star'); }
   return true;
 }
 const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newShop();
+for (const f of st.fish) f.trait ||= pick(Object.keys(FISH_TRAITS));
+const fishTrait = (f) => FISH_TRAITS[f.trait]?.[f.sex] || '';
 const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
 // Copia en la nube (cuenta común a toda la app)
 const cloud = autoSync('arrecife', () => st);
@@ -99,7 +101,7 @@ function newRequest() {
   for (const k of keys) want[k] = ri(k === 'c' ? COLORS.length : k === 'p' ? PATTERNS.length : FINS.length);
   if (st.rep > 15 && Math.random() < 0.15) want.glow = true;
   const r = (want.c != null ? COLORS[want.c].r : 1.3) * (want.p != null ? PATTERNS[want.p].r : 1.2) * (want.f != null ? FINS[want.f].r : 1.2) * (want.glow ? 4 : 1);
-  st.requests.push({ id: 'r' + st.nextId++, want, price: Math.round(18 * r * (1.6 + st.rep / 40)), until: st.time + 1440, who: pick(['Lucía', 'Marcos', 'Elena', 'Javier', 'Noa', 'Pablo', 'Irene', 'Hugo', 'Sara', 'Leo']) });
+  st.requests.push({ id: 'r' + st.nextId++, want, price: Math.round(18 * r * (1.6 + st.rep / 40)), until: st.time + 1440, cust: Math.floor(Math.random() * CUSTOMERS.length), who: '' }); const r0 = st.requests.at(-1); r0.who = CUSTOMERS[r0.cust].name;
 }
 const matches = (f, w) => f.adult && (w.c == null || f.g.c === w.c) && (w.p == null || f.g.p === w.p) && (w.f == null || f.g.f === w.f) && (!w.glow || f.g.glow);
 function wantText(w) {
@@ -113,16 +115,31 @@ function hatch(t) {
   if (n <= 0) return toast('No había sitio en el acuario para las crías', 'warn', 'egg');
   const names = [];
   for (let i = 0; i < n; i++) { const g = inherit(a.g, b.g); const f = addFish(st, t.id, g); names.push(speciesName(g)); }
+  logDay('birth', n);
   toast(`¡Han nacido ${n} alevines! ${names.slice(0, 2).join(', ')}${n > 2 ? '…' : ''}`, 'good', 'egg');
 }
-function endOfDay() { st.rep = Math.max(0, st.rep - 0.2); save(); }
+function logDay(kind, text) { (st.day ||= []).push({ kind, text }); }
+// Al cierre: el boletín "Burbujas al día" con lo que ha pasado
+function endOfDay() {
+  st.rep = Math.max(0, st.rep - 0.2); const ev = st.day || []; st.day = [];
+  const births = ev.filter((e) => e.kind === 'birth'), disc = ev.filter((e) => e.kind === 'disc'), sales = ev.filter((e) => e.kind === 'sale');
+  let head, body;
+  if (disc.length) { head = `Nueva variedad: ${disc[0].text}`; body = `Nunca se había visto en Arrecife. ${disc.length > 1 ? `Y no es la única: ${disc.length} variedades nuevas hoy.` : 'El álbum crece.'}`; }
+  else if (births.length) { head = `${births.reduce((t, e) => t + e.text, 0)} alevines nuevos`; body = 'Diminutos y transparentes, ya nadan en grupo cerca del fondo.'; }
+  else if (sales.length) { head = `${sales.length} ${sales.length > 1 ? 'clientes salen felices' : 'cliente sale feliz'}`; body = `${sales[0].text} ya presume de pez nuevo.`; }
+  else { const f = st.fish.length && pick(st.fish); head = f ? `${f.name}, ${fishTrait(f).toLowerCase()} como siempre` : 'Un día tranquilo'; body = f ? FISH_TRAITS[f.trait].desc : 'El agua está en calma.'; }
+  Sound.play('page');
+  say('marina', null, `«${pickOne(['El mar enseña paciencia. Mañana, más.', 'Agua limpia, peces tranquilos. Así se hace.', 'Fíjate en cómo nadan: te dicen cómo están.', 'Cada pez tiene su carácter, como las personas.'])}»`, 'Seguir', null,
+    `<div class="gazette"><div class="mast">Burbujas al día</div><div class="date">Día ${Math.floor(st.time / 1440) + 1} · ${st.fish.length} peces · ${st.discovered.length}/${TOTAL_COMBOS} variedades</div><h3>${esc(head)}</h3><p>${esc(body)}</p></div>`);
+  save();
+}
 function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
 function offline() {
   const mins = Math.min((Date.now() - st.lastSaved) / 1000 * 0.25, 1440); if (mins < 15) return;
   // pasa el tiempo con cuidado: sin muertes mientras no estás
   let left = mins; const deaths = st.fish.length;
   while (left > 0) { const d = Math.min(5, left); left -= d; tick(d); for (const f of st.fish) f.health = Math.max(25, f.health); for (const t of st.tanks) { t.food = Math.max(10, t.food); t.clean = Math.max(15, t.clean); } }
-  info('Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en Arrecife.</p>${st.tanks.some((t) => t.food < 30 || t.clean < 40) ? '<p>Algunos acuarios necesitan comida o limpieza.</p>' : '<p>Los peces están bien.</p>'}${st.requests.length ? `<p>Tienes <b>${st.requests.length}</b> clientes esperando.</p>` : ''}`);
+  say('marina', 'Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en Arrecife.</p>${st.tanks.some((t) => t.food < 30 || t.clean < 40) ? '<p>Algunos acuarios necesitan comida o limpieza.</p>' : '<p>Los peces están bien.</p>'}${st.requests.length ? `<p>Tienes <b>${st.requests.length}</b> clientes esperando.</p>` : ''}`);
 }
 
 // ---------- dibujo 3D ----------
@@ -336,6 +353,15 @@ function syncTanks(t0) {
   for (const [k, rec] of tankGroups) if (!seen.has(k)) { S3.remove(rec.g); tankGroups.delete(k); }
 }
 let lastSwim = 0;
+// Al dar de comer: bolitas que caen y los peces suben a por ellas (los glotones, los primeros)
+function feedFx(tid) {
+  const rec = tankGroups.get(tid); if (!rec) return; rec.feedT = performance.now() / 1000; Sound.play('pop');
+  for (const [, m] of rec.fish) m.tx = m.x + 0.001; // fuerza elegir destino nuevo
+  const g = new THREE.Group(); for (let i = 0; i < 14; i++) { const p = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 4), mat('#c87a3a')); p.position.set(rnd(-0.5, 0.5), TH - 0.12, rnd(-0.25, 0.25)); p.userData.v = rnd(0.05, 0.12); g.add(p); }
+  rec.inner.add(g); const t0 = performance.now();
+  const fall = () => { const k = (performance.now() - t0) / 1000; g.children.forEach((p) => { p.position.y = Math.max(0.14, TH - 0.12 - k * p.userData.v * 3); p.position.x += Math.sin(k * 3 + p.userData.v * 50) * 0.001; }); eng.dirty = true; if (k < 5) requestAnimationFrame(fall); else rec.inner.remove(g); };
+  requestAnimationFrame(fall);
+}
 function swim(t) {
   const dt = Math.min(0.2, t - (lastSwim || t)); lastSwim = t;
   for (const [tid, rec] of tankGroups) {
@@ -346,10 +372,15 @@ function swim(t) {
         const parent = tank?.breeding && (tank.breeding.a === fid || tank.breeding.b === fid) && rec.eggs;
         if (parent) { const e = rec.eggs.position; m.tx = e.x + rnd(-0.25, 0.25); m.ty = e.y + rnd(0, 0.2); m.tz = e.z + rnd(0.05, 0.3); }
         else if (f && !f.adult) { const lead = [...rec.fish.values()].find((q) => q !== m && q.sp < 0.31); m.tx = (lead ? lead.x : 0) + rnd(-0.3, 0.3); m.ty = rnd(0.2, 0.55); m.tz = (lead ? lead.z : 0) + rnd(-0.2, 0.2); m.tx = Math.max(-(TW / 2 - 0.3), Math.min(TW / 2 - 0.3, m.tx)); m.tz = Math.max(-(TD / 2 - 0.25), Math.min(TD / 2 - 0.25, m.tz)); }
+        else if (rec.feedT && t - rec.feedT < 4) { m.tx = rnd(-0.5, 0.5); m.ty = TH - 0.3; m.tz = rnd(-0.2, 0.2); }
+        else if (f?.trait === 'timido' && rec.deco.children.length && Math.random() < 0.7) { const d = pick(rec.deco.children.filter((c) => c.userData.deco)); if (d) { m.tx = d.position.x + rnd(-0.15, 0.15); m.ty = rnd(0.2, 0.5); m.tz = d.position.z + rnd(-0.1, 0.15); } }
+        else if (f?.trait === 'curioso' && close === tid && Math.random() < 0.7) { m.tx = rnd(-0.8, 0.8); m.ty = rnd(0.5, 1.0); m.tz = TD / 2 - 0.2; }
+        else if (f?.trait === 'sociable' && rec.fish.size > 1) { const o = pick([...rec.fish.values()].filter((q) => q !== m)); m.tx = o.x + rnd(-0.2, 0.2); m.ty = o.y + rnd(-0.1, 0.1); m.tz = o.z + rnd(-0.15, 0.15); }
         else { m.tx = rnd(-(TW / 2 - 0.35), TW / 2 - 0.35); m.ty = rnd(0.3, TH - 0.35); m.tz = rnd(-(TD / 2 - 0.3), TD / 2 - 0.3); }
+        m.tx = Math.max(-(TW / 2 - 0.25), Math.min(TW / 2 - 0.25, m.tx)); m.ty = Math.max(0.2, Math.min(TH - 0.25, m.ty)); m.tz = Math.max(-(TD / 2 - 0.2), Math.min(TD / 2 - 0.2, m.tz));
       }
       const dx = m.tx - m.x, dy = m.ty - m.y, dz = m.tz - m.z, d = Math.hypot(dx, dy, dz) || 1;
-      const sp = m.sp * lively * (sick ? 0.4 : 1) * dt;
+      const feeding = rec.feedT && t - rec.feedT < 4; const sp = m.sp * lively * (sick ? 0.4 : 1) * (f?.trait === 'veloz' ? 1.6 : 1) * (feeding ? (f?.trait === 'gloton' ? 2.4 : 1.6) : 1) * dt;
       m.x += dx / d * sp; m.y += dy / d * sp * 0.6; m.z += dz / d * sp;
       m.g.position.set(m.x, m.y + Math.sin(t * 2 + m.sp * 10) * 0.02, m.z);
       const yaw = Math.atan2(dx, dz); let a = yaw - m.g.rotation.y; a = Math.atan2(Math.sin(a), Math.cos(a)); m.g.rotation.y += a * Math.min(1, dt * 4);
@@ -403,7 +434,7 @@ function closeCard(force = false) {
   if (el.dataset.eggs) { const t = tankOf(el.dataset.eggs); if (!t || !t.breeding) { delete el.dataset.eggs; el.hidden = true; return; } el.innerHTML = `<b>${icon('egg')} Huevos</b><div class="hint">Eclosionarán en unos ${Math.max(1, Math.round(t.breeding.until - st.time))} min de juego. Los padres los vigilan.</div>`; el.hidden = false; return; }
   const f = followId && st.fish.find((q) => q.id === followId); if (!f) { el.hidden = true; return; }
   const age = Math.round((st.time - f.born) / 60);
-  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${COLORS[f.g.c].hex};color:#fff">${icon('fish')}</span><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span><div class="hint">${esc(speciesName(f.g))}</div></div><b>${eur(price(f))}</b></div>
+  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${COLORS[f.g.c].hex};color:#fff">${icon('fish')}</span><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span> <span class="trait">${fishTrait(f)}</span><div class="hint">${esc(speciesName(f.g))} · ${esc(FISH_TRAITS[f.trait]?.desc || '')}</div></div><b>${eur(price(f))}</b></div>
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Salud</span><div class="bar"><i style="transform:scaleX(${f.health / 100});background:${f.health < 40 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
   el.hidden = false;
 }
@@ -443,7 +474,7 @@ function renderPanel() {
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
       <div class="sec">${icon('fish')} Peces (${fs.length}/${TANK_CAP})</div>
       <p class="hint">Marca un macho y una hembra adultos para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
-      <div class="list">${fs.map((f) => `<div class="li"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'} style="width:20px;height:20px"><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'alevín'}${f.health < 40 ? ' · enfermo' : ''}</span><div class="chips" style="margin-top:4px">${geneChips(f.g)}</div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra peces en Comprar.</p>'}</div>
+      <div class="list">${fs.map((f) => `<div class="li"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'} style="width:20px;height:20px"><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'alevín'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g)}</div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra peces en Comprar.</p>'}</div>
       <button class="btn" id="breed" style="width:100%;margin-top:6px" ${selected.size === 2 && !t.breeding ? '' : 'disabled'}>${icon('egg')} Criar con los dos marcados</button>
       <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}">${icon('move')} ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
       <div class="grid" style="margin-top:8px">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox">${icon(d.ic)}</span>${d.label}<span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
@@ -452,7 +483,7 @@ function renderPanel() {
     b.querySelector('#tdel').onclick = () => removeTank(t);
     b.querySelector('#trot').onclick = () => { const p = tankPos(t), np = { ...p, r: (p.r + 1) % 4 }; if (!tankFits(t, np)) return toast('No cabe girado ahí: muévelo antes', 'warn'); t.pos = np; openTank(t.id); save(); };
     b.querySelectorAll('[data-dk]').forEach((x) => (x.onclick = () => decoCard(t, +x.dataset.dk)));
-    b.querySelector('#feed').onclick = () => { if (st.money < 2) return; st.money -= 2; t.food = clamp(t.food + 45); renderPanel(); hud(); };
+    b.querySelector('#feed').onclick = () => { if (st.money < 2) return; st.money -= 2; t.food = clamp(t.food + 45); feedFx(t.id); renderPanel(); hud(); };
     b.querySelector('#clean').onclick = () => { if (st.money < 20) return toast('No hay dinero suficiente', 'warn'); st.money -= 20; t.clean = 100; renderPanel(); hud(); };
     const td = b.querySelector('#tdown'), tu = b.querySelector('#tup'); if (td) td.onclick = () => { t.temp -= 1; renderPanel(); }; if (tu) tu.onclick = () => { t.temp += 1; renderPanel(); };
     b.querySelectorAll('[data-sel]').forEach((c) => (c.onchange = () => { c.checked ? selected.add(c.dataset.sel) : selected.delete(c.dataset.sel); if (selected.size > 2) selected.delete([...selected][0]); renderPanel(); }));
@@ -479,12 +510,12 @@ function renderPanel() {
     b.querySelector('#bt').onclick = () => { if (n >= MAX_TANKS) return; const p = TANK_PRICE(n); if (st.money < p) return toast('No hay dinero suficiente', 'warn'); st.money -= p; placeNewTank(); toast('Nuevo acuario instalado', 'good', 'box'); renderPanel(); hud(); save(); };
   }
   if (name === 'clients') {
-    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="tilebox">${icon('user')}</span><div style="flex:1"><b>${esc(r.who)}</b><div class="hint">${esc(wantText(r.want))}</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div></div><div style="text-align:right"><b>${eur(r.price)}</b><br><button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
+    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="hostface" style="width:46px;height:46px">${avatar(CUSTOMERS[r.cust ?? 0].look)}</span><div style="flex:1;min-width:0"><b>${esc(r.who)}</b><div class="hint" style="font-style:italic">«${esc(CUSTOMERS[r.cust ?? 0].ask.replace('{pez}', wantText(r.want).toLowerCase()))}»</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div></div><div style="text-align:right"><b>${eur(r.price)}</b><br><button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
     b.querySelectorAll('[data-r]').forEach((x) => (x.onclick = () => {
       const r = st.requests.find((q) => q.id === x.dataset.r); const cands = st.fish.filter((f) => matches(f, r.want)).sort((a, c) => price(a) - price(c));
       const box2 = modal(`<h2>¿Qué pez entregas?</h2><p class="hint">${esc(r.who)} pide: ${esc(wantText(r.want))}. Paga ${eur(r.price)}.</p><div class="list">${cands.map((f) => `<button class="li" data-f="${f.id}"><span class="tilebox" style="background:${COLORS[f.g.c].hex}">${icon('fish')}</span><div style="flex:1"><b>${esc(f.name)}</b><div class="chips">${geneChips(f.g)}</div></div></button>`).join('')}</div><div class="actions"><button class="btn alt" id="cx">Cancelar</button></div>`);
       box2.querySelector('#cx').onclick = closeModal;
-      box2.querySelectorAll('[data-f]').forEach((y) => (y.onclick = () => { st.fish = st.fish.filter((f) => f.id !== y.dataset.f); st.money += r.price; st.rep += 1; st.sold++; st.requests = st.requests.filter((q) => q !== r); closeModal(); toast(`${r.who} se va encantado/a: +${eur(r.price)}`, 'good', 'coin'); renderPanel(); hud(); save(); }));
+      box2.querySelectorAll('[data-f]').forEach((y) => (y.onclick = () => { st.fish = st.fish.filter((f) => f.id !== y.dataset.f); st.money += r.price; st.rep += 1; st.sold++; st.requests = st.requests.filter((q) => q !== r); closeModal(); toast(`${r.who}: «${CUSTOMERS[r.cust ?? 0].bye}» +${eur(r.price)}`, 'good', 'coin'); logDay('sale', r.who); renderPanel(); hud(); save(); }));
     }));
   }
   if (name === 'album') {
@@ -505,8 +536,10 @@ function renderPanel() {
       <p class="hint">Cuida comida, agua y temperatura de cada acuario. Si te olvidas, enferman; con la app cerrada siguen vivos pero lo pasan peor.</p>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
+      <div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn sm ${Sound.prefs().music ? '' : 'alt'}" id="snd_m" style="flex:1">${icon('music')} Música ${Sound.prefs().music ? 'sí' : 'no'}</button><button class="btn sm ${Sound.prefs().sfx ? '' : 'alt'}" id="snd_s" style="flex:1">${icon('bell')} Efectos ${Sound.prefs().sfx ? 'sí' : 'no'}</button></div>
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
     renderCloud(b.querySelector('#cloudbox'), { slot: 'arrecife', sync: cloud, onLogin: afterCloudLogin, refresh: renderPanel });
+    b.querySelector('#snd_m').onclick = () => { Sound.set('music', !Sound.prefs().music); renderPanel(); }; b.querySelector('#snd_s').onclick = () => { Sound.set('sfx', !Sound.prefs().sfx); renderPanel(); };
     const q = localStorage.getItem('sim_quality') || (eng.hq ? 'alta' : 'eco'); b.querySelectorAll('#q button').forEach((x) => { x.classList.toggle('on', x.dataset.v === q); x.onclick = () => { localStorage.setItem('sim_quality', x.dataset.v); save(); location.reload(); }; });
     b.querySelector('#reset').onclick = () => confirm('Se borrará tu tienda. ¿Empezar de cero?', () => { localStorage.removeItem(KEY); st = newShop(); tankGroups.forEach((r) => S3.remove(r.g)); tankGroups.clear(); sheet.close(); hud(); save(); });
   }
@@ -529,7 +562,7 @@ function removeTank(t) {
 }
 function beginTankMove(t, sx, sy) {
   const p = eng.ground(sx, sy); if (!p) return false; const tp = tankPos(t);
-  tmv = { kind: 'tank', t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; sheet.close(); trash.show(fishIn(t).length ? 'Vacíalo antes de quitarlo' : 'Suelta aquí para quitarlo'); return true;
+  tmv = { kind: 'tank', t, gx: p.x - tp.x, gz: p.z - tp.z, pos: { ...tp }, ok: true }; sheet.close(); Sound.play('lift'); trash.show(fishIn(t).length ? 'Vacíalo antes de quitarlo' : 'Suelta aquí para quitarlo'); return true;
 }
 function beginDecoMove(t, k) { const rec = tankGroups.get(t.id); const m = rec && rec.deco.children.find((c) => c.userData.deco === t.id + ':' + k); if (!m) return false; tmv = { kind: 'deco', t, k, m, rec }; trash.show('Suelta aquí para quitarla'); return true; }
 function tankMoveDrag(sx, sy) {
@@ -552,7 +585,7 @@ function endTankMove(cancel) {
   if (!cancel && m.trash) { if (m.kind === 'tank') { const rec = tankGroups.get(m.t.id); if (rec?.glass) { rec.glass.material.color.set(0xdff2fa); rec.glass.material.opacity = 0.12; } removeTank(m.t); } else { m.rec.sig = ''; removeDeco(m.t, m.k); } armed = null; $('#toolinfo').hidden = true; return; }
   if (m.kind === 'tank') {
     const rec = tankGroups.get(m.t.id); if (rec?.glass) { rec.glass.material.color.set(0xdff2fa); rec.glass.material.opacity = 0.12; }
-    if (!cancel && m.ok) { m.t.pos = m.pos; navigator.vibrate?.(10); } else if (!cancel) toast('Ahí no cabe', 'warn');
+    if (!cancel && m.ok) { m.t.pos = m.pos; navigator.vibrate?.(10); Sound.play('place'); } else if (!cancel) toast('Ahí no cabe', 'warn');
   } else if (!cancel && m.lx != null) {
     const t = m.t; t.dp = t.deco.map((d, k) => (t.dp && t.dp[k]) || [-1.1 + (k % 5) * 0.55, -0.35 + (k % 2) * 0.3]); t.dp[m.k] = [+m.lx.toFixed(2), +m.lz.toFixed(2)];
   } else m.rec.sig = '';
@@ -622,9 +655,10 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else { save(); info('Te damos la bienvenida a Arrecife', `<p>Tu tienda de peces acaba de abrir.</p><ul style="padding-left:18px;line-height:1.6"><li>Toca un <b>acuario</b> para ver sus peces, darles de comer, limpiar y decorar.</li><li><b>Cría</b> un macho y una hembra: las crías mezclan rasgos y a veces salen variedades nuevas.</li><li>Completa el <b>álbum</b> de ${TOTAL_COMBOS} variedades.</li><li>Atiende a los <b>clientes</b>: piden peces concretos y pagan bien.</li></ul>`, '¡A abrir la tienda!'); }
+if (store.load(KEY)) offline(); else { save(); say('marina', 'Te damos la bienvenida a Arrecife', 'Soy Marina. Pasé media vida bajo el mar y ahora me toca enseñarte a cuidarlo desde aquí. Sin prisa, que los peces lo notan.', '¡A abrir la tienda!', null, `<p>Tu tienda de peces acaba de abrir.</p><ul style="padding-left:18px;line-height:1.6"><li>Toca un <b>acuario</b> para ver sus peces, darles de comer, limpiar y decorar.</li><li><b>Cría</b> un macho y una hembra: las crías mezclan rasgos y a veces salen variedades nuevas.</li><li>Completa el <b>álbum</b> de ${TOTAL_COMBOS} variedades.</li><li>Atiende a los <b>clientes</b>: piden peces concretos y pagan bien.</li></ul>`); }
 if (!st.requests.length) newRequest();
 hud();
+Sound.init('acuario');
 window.reef = { eng, THREE, get st() { return st; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)

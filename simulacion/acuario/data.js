@@ -26,3 +26,22 @@ export const UPGRADES = {
 export const MAX_TANKS = 6, TANK_CAP = 8;
 export const TANK_PRICE = (n) => Math.round(220 * Math.pow(1.6, n - 1));
 export const FISH_NAMES = ['Burbuja', 'Nemo', 'Coral', 'Perla', 'Aleta', 'Chispa', 'Lucero', 'Sirena', 'Tiburón', 'Gota', 'Marea', 'Ola', 'Nácar', 'Brisa', 'Azul', 'Rubí', 'Jade', 'Kiwi', 'Mango', 'Pipo'];
+
+// Carácter de cada pez: cambia cómo nada
+export const FISH_TRAITS = {
+  timido: { m: 'Tímido', f: 'Tímida', desc: 'Se esconde entre las plantas y la decoración.' },
+  sociable: { m: 'Sociable', f: 'Sociable', desc: 'Siempre nada en compañía.' },
+  curioso: { m: 'Curioso', f: 'Curiosa', desc: 'Se acerca al cristal cuando lo miras de cerca.' },
+  gloton: { m: 'Glotón', f: 'Glotona', desc: 'El primero en llegar a la comida.' },
+  veloz: { m: 'Veloz', f: 'Veloz', desc: 'Nada a toda velocidad de un lado a otro.' },
+};
+// Clientes habituales, cada uno con su manera de pedir y de despedirse
+export const CUSTOMERS = [
+  { name: 'Doña Remedios', look: { skin: '#f0c8a8', hair: '#d8d8d8', bun: true, glasses: true, shirt: '#8a4a7a', bg: '#f6e6f2' }, ask: 'Busco {pez}. Que combine con mis cortinas, ¿eh?', bye: '¡Qué preciosidad! Se lo voy a enseñar a todo el edificio.' },
+  { name: 'Dani', look: { skin: '#c98e66', hair: '#2a1a10', shirt: '#e5484d', bg: '#fde8e8' }, ask: '¡Quiero {pez}! He ahorrado toda la semana.', bye: '¡Le voy a llamar Capitán! ¡Gracias!' },
+  { name: 'Sr. Ortega', look: { skin: '#e8b894', hair: '#3a3a3a', beard: true, shirt: '#f4f4f0', bg: '#e6f2f6' }, ask: 'Para la sala de espera de mi consulta: {pez}. Que relaje.', bye: 'Perfecto. Mis pacientes estarán más tranquilos.' },
+  { name: 'Valeria', look: { skin: '#a8704a', hair: '#1a1010', curls: true, hat: 'band', hatC: '#25c48f', shirt: '#f5a524', bg: '#fff3dc' }, ask: 'Necesito {pez} para un vídeo. ¡Que quede bonito en cámara!', bye: '¡Va a ser viral! Te nombraré en el vídeo.' },
+  { name: 'Profesora Inés', look: { skin: '#f6d7c3', hair: '#8a5a30', glasses: true, shirt: '#2f6f8f', bg: '#e2eefa' }, ask: 'Estudio cómo se heredan los colores: me interesa {pez}.', bye: 'Un ejemplar magnífico. Lo mencionaré en mi artículo.' },
+  { name: 'Tomás', look: { skin: '#b07a50', hair: '#e8e8e8', beard: true, hat: 'beanie', hatC: '#2f4a6a', shirt: '#4a6a8a', bg: '#e4ecf4' }, ask: 'Toda la vida pescando y ahora quiero uno para mirarlo: {pez}.', bye: 'Este no se pesca. Este se cuida. Gracias.' },
+  { name: 'Lu', look: { skin: '#e8b894', hair: '#5a2a8a', shirt: '#25c48f', bg: '#e2f7ee' }, ask: 'Para mi piso compartido: {pez}, que no dé guerra.', bye: '¡Mis compis van a flipar!' },
+];

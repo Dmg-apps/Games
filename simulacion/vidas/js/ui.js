@@ -9,6 +9,30 @@ import { catalogThumbs, webglAvailable } from './render3d.js';
 import { icon } from './icons.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
+import { Sound } from '../../shared/sound.js';
+import { hostFace } from '../../shared/ui.js';
+
+// Voz interior: lo que piensa cada persona según lo que más necesita y su carácter (cambia cada día)
+const VOICE = {
+  hambre: ['Mi estómago está dando un concierto.', 'Me comería la nevera entera.', 'Ahora mismo, un bocadillo sería el amor de mi vida.'],
+  energia: ['Podría dormirme de pie. De hecho, casi lo hago.', 'Necesito una siesta urgente.', 'Mis ojos se cierran solos…'],
+  higiene: ['Creo que hasta las moscas me evitan.', 'Una ducha, por favor, una ducha.', 'Huelo a aventura. Demasiada aventura.'],
+  diversion: ['Qué aburrimiento, por favor.', 'Necesito hacer algo divertido ya.', 'Si no me río hoy, exploto.'],
+  social: ['¿Alguien quiere hablar conmigo?', 'Echo de menos a la gente.', 'Me vendría bien un abrazo.'],
+  vejiga: ['¡El baño, el baño, el baño!', 'No es momento para bromas: necesito el baño.', 'Cruzo las piernas y rezo.'],
+};
+const VOICE_OK = {
+  gloton: 'Estoy pensando en qué cenaré. Y apenas son las once.', perezoso: 'Hoy es un gran día para no hacer nada.', pulcro: 'Todo limpio y en su sitio. Así me gusta.', sociable: '¿A quién llamo hoy? A todo el mundo.',
+  solitario: 'Silencio y tranquilidad. Perfecto.', jugueton: 'Tengo una broma preparada y nadie lo sospecha.', romantico: 'El amor está en el aire. O eso creo.', ambicioso: 'Hoy toca ascender. Lo presiento.', alegre: '¡Qué día tan bonito!', grunon: 'Todo me molesta. Pero un poco menos que ayer.',
+};
+function innerVoice(st, s) {
+  const list = (s.age === 'bebe' ? ['hambre', 'energia', 'higiene', 'social'] : ['hambre', 'energia', 'higiene', 'diversion', 'social', 'vejiga']);
+  const low = list.reduce((a, n) => (s.needs[n] < s.needs[a] ? n : a), list[0]); const day = Math.floor(st.time / 1440);
+  if (s.age === 'bebe') return s.needs[low] < 40 ? '¡Buaaa!' : 'Gu-gu, ta-ta.';
+  if (s.needs[low] < 35) return VOICE[low][(day + s.name.length) % 3];
+  const gen = ['Hoy tengo un buen presentimiento.', '¿Qué hago ahora? Tengo tantos planes…', 'La vida es bonita cuando todo está en orden.', 'Me apetece algo nuevo. ¿Aprender a cocinar, quizá?', 'Un día tranquilo. De los buenos.'];
+  return (s.traits.length && VOICE_OK[s.traits[day % s.traits.length]]) || gen[(day + s.name.length) % gen.length];
+}
 
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -131,6 +155,7 @@ export class UI {
     el.innerHTML = `<span class="tile">${sim ? '<canvas></canvas>' : icon(KIND_IC[kind] || 'bell')}</span><span>${esc(text)}</span>`;
     if (sim) drawPortrait(el.querySelector('canvas'), sim, 34);
     if (sim) el.onclick = () => { if (sim.home) this.g.selectSim(simId, true); else this.g.centerOnSim(simId); };
+    Sound.play({ good: 'good', warn: 'warn', bad: 'warn', worry: 'warn' }[kind] || 'tap');
     $('#toasts').prepend(el); this.toastEls.unshift(el);
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
     while (this.toastEls.length > 3) this.toastEls.pop().remove();
@@ -207,7 +232,7 @@ export class UI {
   renderNeeds() {
     const s = this.active; const body = $('#sheet .sheet-body'); const st = this.state; if (!s) return;
     const der = Sim.derivedMoodlets(st, s);
-    const sig = [s.id, s.age, s.name, s.diary?.length, s.diary?.[0]?.day, s.aspDone, s.points, (s.rewards || []).join(), Object.values(s.skills || {}).map(Math.floor).join(), s.paintings, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
+    const sig = [innerVoice(st, s), s.id, s.age, s.name, s.diary?.length, s.diary?.[0]?.day, s.aspDone, s.points, (s.rewards || []).join(), Object.values(s.skills || {}).map(Math.floor).join(), s.paintings, s.worries.join(), s.moodlets.map((m) => m.id).join(), der.map((d) => d.label).join(), s.job?.id, s.job?.level, s.pregnant ? 1 : 0, s.location, s.partner, s.skipDay === Sim.dayOf(st.time)].join('|');
     if (sig !== this.sig) {
       this.sig = sig;
       const list = s.age === 'bebe' ? BABY_NEEDS : NEEDS;
@@ -215,6 +240,7 @@ export class UI {
       let h = `<div class="who"><canvas id="np"></canvas><div><div class="n">${esc(s.name)} ${esc(s.surname || '')}</div>
         <div class="s">${inflect(AGES[s.age].label, s)} · ${GENDERS[s.gender].label}${partner ? ` · ${s.married ? inflect('Casado/a', s) + ' con' : 'Pareja de'} ${esc(partner.name)}` : ''}</div>
         <div class="chips" style="margin-top:6px">${s.traits.map((t) => `<span class="chip">${inflect(TRAITS[t].label, s)}</span>`).join('')}</div></div></div>`;
+      h += `<div class="voice">«${esc(inflect(innerVoice(st, s), s))}»</div>`;
       h += `<div class="mood"><span class="face" id="nface"></span><div style="flex:1"><div class="lbl">Ánimo</div><div class="val" id="nmoodw"></div></div><div class="bar" style="flex:1.4"><i id="nmoodbar"></i></div></div>`;
       h += `<div class="sec">Necesidades</div>` + list.map((n) => `<div class="need"><span class="tile" style="background:${NEED_COLOR[n]}">${icon(NEED_IC[n])}</span><span>${NEED_INFO[n].label}</span><div class="bar"><i data-n="${n}"></i></div></div>`).join('');
       if (s.pregnant) h += `<div class="card"><div class="h"><span class="tilebox" style="background:#ffe6ee;color:#e0336f">${icon('baby')}</span><div><b>Bebé en camino</b><div class="hint">Nacerá en <span id="npreg"></span></div></div></div></div>`;
@@ -309,7 +335,7 @@ export class UI {
     ns.forEach((n, i) => { const [x, y] = NPOS[i % NPOS.length]; pins += pin('n:' + n.id, x, y, 'home', n.name, 'nb', HOUSE_COLORS[i % 5]); });
     let h = `<div class="map">${pins}</div><p class="hint">Toca un sitio para ir, o la casa de un vecino para invitarle o hacerle una visita.</p>`;
     h += `<div class="sec">${icon('users')} Vecinos</div>` + ns.map((n) => `<button class="relrow nbrow" data-n="${n.id}"><canvas data-face="${n.id}" class="big"></canvas><div style="text-align:left"><div class="top"><b>${esc(n.name)}</b><span class="chip">${Sim.relLabel(st, this.active, n)}</span></div><div class="hint">${esc(Sim.whereIs(st, n))}${n.partner && st.sims[n.partner] ? ` · ${n.married ? 'casado/a con' : 'sale con'} ${esc(st.sims[n.partner].name)}` : ''}</div></div></button>`).join('');
-    h += `<div class="sec">${icon('news')} Periódico del barrio</div>` + ((st.news || []).length ? st.news.slice(0, 8).map((x) => `<div class="memo"><span class="tilebox">${icon('news')}</span><div><b>${esc(x.text.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim())}</b><div class="hint">Día ${Sim.dayOf(x.t) + 1}</div></div></div>`).join('') : '<p class="hint">Aún no hay noticias. Los vecinos tienen su propia vida: se enamoran, ascienden, cambian de trabajo… y aquí te enterarás.</p>');
+    h += `<div class="sec">${icon('news')} El Eco del Barrio</div><div class="pili"><span class="pface">${hostFace('pili')}</span><div class="hint"><b>Pili</b>, la vecina que todo lo sabe: «¿A que no sabes lo que ha pasado?»</div></div>` + ((st.news || []).length ? st.news.slice(0, 8).map((x) => `<div class="memo"><span class="tilebox">${icon('news')}</span><div><b>${esc(x.text.replace(/[\p{Extended_Pictographic}]\uFE0F?/gu, '').trim())}</b><div class="hint">Día ${Sim.dayOf(x.t) + 1}</div></div></div>`).join('') : '<p class="hint">Aún no hay noticias. Los vecinos tienen su propia vida: se enamoran, ascienden, cambian de trabajo… y aquí te enterarás.</p>');
     body.innerHTML = h;
     body.querySelectorAll('canvas[data-face]').forEach((c) => drawPortrait(c, st.sims[c.dataset.face], c.classList.contains('big') ? 48 : 22));
     body.querySelectorAll('.pin').forEach((b) => (b.onclick = () => this.barrioTap(b.dataset.k)));
@@ -450,6 +476,7 @@ export class UI {
       <p class="hint">Con la app cerrada el tiempo pasa más despacio (1 hora real son unas 6 horas de juego, como mucho 2 días) y tu familia sigue con su vida: al volver te contamos qué han hecho.</p>
       <div class="field"><label>Calidad gráfica</label><div class="seg" id="qual"><button data-v="ligera">Ligera (2D)</button><button data-v="equilibrada">Equilibrada</button><button data-v="alta">Alta</button></div>
         <p class="hint">Si el móvil se calienta o va lento, usa Ligera o Equilibrada. Cambiarla recarga el juego (la partida se guarda).</p></div>
+      <div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn alt" id="snd_m">${icon('music')} Música: ${Sound.prefs().music ? 'sí' : 'no'}</button><button class="btn alt" id="snd_s">${icon('bell')} Efectos: ${Sound.prefs().sfx ? 'sí' : 'no'}</button></div>
       <div class="sec">${icon('bell')} Notificaciones</div><div id="notif"></div>
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloud"></div>
       <div class="sec">Simulación</div>
@@ -465,6 +492,7 @@ export class UI {
     const q = body.querySelector('#qual'); q.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === this.g.quality));
     q.onclick = (e) => { const b = e.target.closest('button'); if (b && b.dataset.v !== this.g.quality) this.g.setQuality(b.dataset.v); };
     this.renderCloud(body.querySelector('#cloud'));
+    body.querySelector('#snd_m').onclick = () => { Sound.set('music', !Sound.prefs().music); this.renderMenu(); }; body.querySelector('#snd_s').onclick = () => { Sound.set('sfx', !Sound.prefs().sfx); this.renderMenu(); };
     const nf = body.querySelector('#notif');
     if (!Notify.supported()) nf.innerHTML = `<p class="hint">Este navegador no admite notificaciones.</p>`;
     else if (Notify.enabled()) {

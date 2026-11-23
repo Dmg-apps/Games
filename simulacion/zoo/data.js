@@ -60,7 +60,7 @@ export const PATH_PRICE = 10;
 export const WAGES = { keeper: 120, cleaner: 90 };
 export const FOOD_COST = 15;
 
-export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara'];
+export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara', 'Bimba', 'Canela', 'Trufa', 'Pelusa', 'Golfo', 'Jazmín', 'Lirio', 'Menta', 'Ocre', 'Pimienta', 'Ramón', 'Sombra', 'Tango', 'Uva', 'Vainilla', 'Yuca', 'Zafiro', 'Arena', 'Bombón', 'Cacao', 'Dátil', 'Eco', 'Fresa', 'Gofio', 'Higo', 'Indi', 'Jara', 'Kala', 'Lima', 'Mango', 'Nuez', 'Olivo', 'Pan', 'Queso', 'Roble', 'Salvia', 'Tomillo', 'Ulises', 'Vega', 'Wanda', 'Xoco', 'Yago', 'Zarza', 'Ámbar', 'Brisa', 'Cometa', 'Dino', 'Estrella', 'Faro', 'Gema', 'Hada', 'Iris', 'Jade', 'Kumo', 'Loto', 'Merlín', 'Niebla', 'Ópalo', 'Pompón', 'Quimera', 'Rizos', 'Saltarín', 'Trueno', 'Umbra', 'Volcán'];
 export const CARNIVORES = ['leon', 'osopolar', 'tigre', 'osopardo', 'ligre', 'tigon', 'pizzly'];
 
 // Cruces posibles en la naturaleza (o en cautividad) entre especies emparentadas.
@@ -91,3 +91,16 @@ export function crossChild(male, female) {
 }
 // Los híbridos viven en el parque como cualquier especie (pero no se venden en la tienda)
 for (const [k, v] of Object.entries(HYBRIDS)) SPECIES[k] = { ...v, hybrid: true, fame: 0 };
+
+// Carácter de cada animal: cambia lo que hace y lo que comentan los visitantes
+export const TRAITS = {
+  jugueton: { m: 'Juguetón', f: 'Juguetona', desc: 'Siempre buscando algo con lo que jugar.' },
+  dormilon: { m: 'Dormilón', f: 'Dormilona', desc: 'Echa siestas a todas horas.' },
+  gloton: { m: 'Glotón', f: 'Glotona', desc: 'Tiene hambre antes que nadie.' },
+  curioso: { m: 'Curioso', f: 'Curiosa', desc: 'Se acerca a la valla a mirar a los visitantes. Les encanta.' },
+  timido: { m: 'Tímido', f: 'Tímida', desc: 'Prefiere esconderse junto a árboles y rocas.' },
+  presumido: { m: 'Presumido', f: 'Presumida', desc: 'Posa para las fotos. Los visitantes salen más contentos.' },
+  grunon: { m: 'Gruñón', f: 'Gruñona', desc: 'Necesita su espacio: se aparta de los demás.' },
+};
+// Género gramatical de cada especie (para que los textos concuerden: "una cebra", "un león")
+for (const k of ['cabra', 'alpaca', 'llama', 'cebra', 'jirafa', 'tortuga', 'mula']) SPECIES[k].fem = true;
