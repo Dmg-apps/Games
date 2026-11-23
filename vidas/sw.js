@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que funcione sin conexión.
-const CACHE = 'vidas-v8';
+const CACHE = 'vidas-v9';
 const FILES = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'js/main.js', 'js/sim.js', 'js/render.js', 'js/ui.js', 'js/data.js', 'js/icons.js', 'js/cloud.js', 'js/cloud-config.js', 'js/notify.js', 'js/render3d.js', 'vendor/three.module.min.js', 'vendor/RoundedBoxGeometry.js', 'fonts/nunito.woff2', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
@@ -11,14 +11,11 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  e.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const cached = await cache.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request).then((r) => { if (r.ok) cache.put(e.request, r.clone()); return r; });
-    if (!cached) return net;
-    const timeout = new Promise((res) => setTimeout(() => res(cached), 3000));
-    return Promise.race([net.catch(() => cached), timeout]);
-  })());
+  // Con conexión, siempre la versión de la red (y se guarda); sin conexión, la copia guardada.
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then((r) => {
+    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
+    return r;
+  }).catch(() => caches.match(e.request, { ignoreSearch: true })));
 });
 
 // Notificaciones push (enviadas por notifier/send.mjs)
