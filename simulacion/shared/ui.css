@@ -48,7 +48,7 @@ canvas.stage { position: fixed; inset: 0; width: 100%; height: 100%; touch-actio
 .sheet.closed { transform: translateY(calc(100% + 140px)); opacity: 0; pointer-events: none; transition: transform 240ms var(--ease-out), opacity 200ms ease; }
 .sheet-head { display: flex; align-items: center; padding: 16px 16px 8px 20px; }
 .sheet-head h2 { margin: 0; font-size: 20px; font-weight: 900; flex: 1; }
-.sheet-head .close { width: 34px; height: 34px; border-radius: 12px; background: var(--fill); display: grid; place-items: center; font-size: 16px; color: var(--ink-2); }
+.sheet-head .close { width: 44px; height: 44px; border-radius: 12px; background: var(--fill); display: grid; place-items: center; font-size: 16px; color: var(--ink-2); }
 .sheet-body { overflow-y: auto; padding: 4px 20px 20px; overscroll-behavior: contain; }
 @media (min-width: 720px) { .sheet { left: auto; right: 16px; width: 420px; max-height: 74dvh; } }
 @media (orientation: landscape) and (max-height: 560px) { .sheet { left: auto; width: min(420px, 55vw); top: calc(var(--safe-t) + 8px); bottom: calc(var(--safe-b) + 84px); max-height: none; } }
@@ -136,7 +136,29 @@ canvas.stage, #game { -webkit-touch-callout: none; -webkit-user-select: none; us
 .sickrow { display: flex; align-items: center; gap: 8px; background: #fde8e8; color: #9a2a2e; border-radius: 12px; padding: 8px 10px; margin: 6px 0 2px; font-size: 13px; }
 .sickrow .hint { color: #8a4a4a; }
 /* Colores para elegir */
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); vertical-align: middle; }
+.cdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); vertical-align: middle; }
 .swatches { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 4px; }
 .swatches .sw { width: 38px; height: 38px; border-radius: 50%; border: 0; box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); cursor: pointer; transition: transform .15s; }
 .swatches .sw.on { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); transform: scale(1.06); }
+/* Fotos de animales */
+.fphoto { border-radius: 14px; background: radial-gradient(circle at 50% 40%, #8fd0f0, #2f7aa6); object-fit: cover; flex: none; display: block; }
+.fishrow { align-items: center; }
+.fishrow .pick { position: relative; cursor: pointer; flex: none; }
+.fishrow .pick input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.fishrow .pick input:checked + img { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--mint, #25c48f); }
+
+.fishrow .pick input:disabled + img { filter: saturate(.8); }
+.fishrow .pick:has(input:checked)::after { content: '✓'; position: absolute; right: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--mint, #25c48f); color: #fff; font: 900 13px/22px system-ui; text-align: center; }
+.photobig { display: grid; place-items: center; margin: 4px 0; }
+.photobig .fphoto { border-radius: 24px; }
+.wantpic { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.album .cell img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+
+/* Asa de los paneles: arrastra abajo para cerrar, arriba para agrandar */
+.grabber { height: 18px; display: grid; place-items: center; cursor: grab; touch-action: none; flex: none; margin-bottom: -10px; }
+.grabber i { width: 44px; height: 5px; border-radius: 3px; background: rgba(30, 34, 60, 0.18); }
+.sheet-head { touch-action: none; }
+.sheet.tall, #sheet.tall { max-height: 86dvh; }
+@media (orientation: landscape) and (max-height: 560px) { .grabber { display: none; } }
+.sheet-body .btn.sm, .modal-box .btn.sm { min-height: 40px; }
+.sheet-body .chip { min-height: 30px; }

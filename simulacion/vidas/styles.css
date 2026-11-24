@@ -89,7 +89,7 @@ body.sheet-open #family { opacity: 0; transform: translateY(8px); pointer-events
 #sheet.closed { transform: translateY(calc(100% + 120px)); opacity: 0; pointer-events: none; transition: transform 240ms var(--ease-out), opacity 200ms ease; }
 .sheet-head { display: flex; align-items: center; padding: 16px 16px 8px 20px; }
 .sheet-head h2 { margin: 0; font-size: 20px; font-weight: 900; flex: 1; letter-spacing: -0.01em; }
-.sheet-head .close { width: 34px; height: 34px; border-radius: 12px; background: var(--fill); display: grid; place-items: center; font-size: 16px; color: var(--ink-2); }
+.sheet-head .close { width: 44px; height: 44px; border-radius: 12px; background: var(--fill); display: grid; place-items: center; font-size: 16px; color: var(--ink-2); }
 .sheet-body { overflow-y: auto; padding: 4px 20px 20px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 
 .who { display: flex; gap: 12px; align-items: center; }
@@ -336,3 +336,10 @@ textarea:focus { border-color: var(--ink); background: #fff; }
 .pili { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
 .pface { width: 46px; height: 46px; border-radius: 50%; overflow: hidden; flex: none; box-shadow: 0 3px 10px rgba(0,0,0,0.15); }
 .pface .avatar { width: 100%; height: 100%; display: block; }
+
+/* Asa del panel: arrastra abajo para cerrar, arriba para agrandar */
+.grabber { height: 18px; display: grid; place-items: center; cursor: grab; touch-action: none; flex: none; margin-bottom: -10px; }
+.grabber i { width: 44px; height: 5px; border-radius: 3px; background: rgba(30, 34, 60, 0.18); }
+#sheet .sheet-head { touch-action: none; }
+#sheet.tall { max-height: 86dvh; }
+@media (orientation: landscape) and (max-height: 560px) { .grabber { display: none; } }

@@ -20,15 +20,15 @@ function renderer(cv) {
 
 // Dibuja varias miniaturas de una vez. build(key) devuelve un objeto 3D. Guarda el resultado en cache.
 const cache = new Map();
-export function thumbs(ns, keys, build, { size = 128, bg = null } = {}) {
+export function thumbs(ns, keys, build, { size = 128, bg = null, dir = [0.6, 0.5, 0.62], fit = 0.95 } = {}) {
   const out = {}; const todo = keys.filter((k) => { const c = cache.get(ns + ':' + k); if (c) out[k] = c; return !c; });
   if (!todo.length) return out;
   try {
     const cv = document.createElement('canvas'); cv.width = cv.height = size; const r = renderer(cv);
     const sc = stage(bg); const cam = new THREE.PerspectiveCamera(30, 1, 0.02, 60);
     for (const k of todo) {
-      const g = build(k); sc.add(g); const { c, dist } = frame(cam, g);
-      cam.position.set(c.x + dist * 0.6, c.y + dist * 0.5, c.z + dist * 0.62); cam.lookAt(c); r.render(sc, cam);
+      const g = build(k); sc.add(g); const { c, dist } = frame(cam, g, fit); const L = Math.hypot(...dir);
+      cam.position.set(c.x + dist * dir[0] / L, c.y + dist * dir[1] / L, c.z + dist * dir[2] / L); cam.lookAt(c); r.render(sc, cam);
       out[k] = cv.toDataURL('image/png'); cache.set(ns + ':' + k, out[k]); sc.remove(g);
     }
     r.dispose(); r.forceContextLoss();

@@ -5,7 +5,7 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES, FISH_TRAITS, CUSTOMERS } from './data.js';
+import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, SPECIES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES, FISH_TRAITS, CUSTOMERS } from './data.js';
 
 const KEY = 'arrecife_save_v1';
 const SPEEDS = [0, 1, 3, 8];
@@ -24,15 +24,22 @@ function newShop() {
   return st;
 }
 const commonGenes = () => ({ c: ri(4), p: ri(2), f: Math.random() < 0.8 ? 0 : 1, s: rnd(0.85, 1.1), glow: false });
-function addFish(st, tank, g, sex, adult = false) {
-  const f = { id: 'f' + st.nextId++, tank, g, sex: sex || (Math.random() < 0.5 ? 'm' : 'f'), born: st.time - (adult ? 2000 : 0), adult, health: 100, name: pick(FISH_NAMES), trait: pick(Object.keys(FISH_TRAITS)) };
-  st.fish.push(f); discover(st, g); return f;
+// Genes de un animal nuevo del proveedor (rare: huevo sorpresa)
+function genesFor(sp, rare = false) {
+  if (sp === 'pez') return rare ? { c: ri(COLORS.length), p: ri(PATTERNS.length), f: ri(FINS.length), s: rnd(0.9, 1.2), glow: Math.random() < 0.04 } : commonGenes();
+  const S = SPECIES[sp]; return { c: rare ? pick(S.colors) : pick(S.colors.slice(0, 3)), p: rare ? pick(S.pats) : S.pats[0], f: 0, s: rnd(0.85, 1.15), glow: sp === 'medusa' || (rare && Math.random() < 0.04) };
 }
-const keyOf = (g) => `${g.c}-${g.p}-${g.f}`;
-function discover(st, g) {
-  const k = keyOf(g); if (st.discovered.includes(k)) return false;
+const spOf = (f) => f.sp || 'pez';
+function addFish(st, tank, g, sex, adult = false, sp = 'pez') {
+  const f = { id: 'f' + st.nextId++, tank, g, sex: sex || (Math.random() < 0.5 ? 'm' : 'f'), born: st.time - (adult ? 2000 : 0), adult, health: 100, name: pick(FISH_NAMES), trait: pick(Object.keys(FISH_TRAITS)) };
+  if (sp !== 'pez') f.sp = sp;
+  st.fish.push(f); discover(st, g, sp); return f;
+}
+const keyOf = (g, sp = 'pez') => sp === 'pez' ? `${g.c}-${g.p}-${g.f}` : `${sp}:${g.c}-${g.p}`;
+function discover(st, g, sp = 'pez') {
+  const k = keyOf(g, sp); if (st.discovered.includes(k)) return false;
   st.discovered.push(k);
-  if (st.discovered.length > 4) { (st.day ||= []).push({ kind: 'disc', text: speciesName(g) }); toast(`¡Nueva variedad descubierta: ${speciesName(g)}!`, 'good', 'sparkle'); }
+  if (st.discovered.length > 4) { (st.day ||= []).push({ kind: 'disc', text: speciesName(g, sp) }); toast(`¡Nueva variedad descubierta: ${speciesName(g, sp)}!`, 'good', 'sparkle'); }
   if (st.discovered.length % 10 === 0) { st.money += 150; st.rep += 2; toast(`Álbum: ${st.discovered.length} variedades. Premio de 150 €`, 'good', 'star'); }
   return true;
 }
@@ -50,31 +57,33 @@ const tankOf = (id) => st.tanks.find((t) => t.id === id);
 const fishIn = (t) => st.fish.filter((f) => f.tank === t.id);
 const has = (u) => st.upgrades.includes(u);
 
-export function speciesName(g) { return `${FINS[g.f].short} ${PATTERNS[g.p].label} ${COLORS[g.c].label}${g.glow ? ' luminoso' : ''}`; }
-function rarity(g) { return COLORS[g.c].r * PATTERNS[g.p].r * FINS[g.f].r * (g.glow ? 4 : 1); }
+export function speciesName(g, sp = 'pez') { return sp === 'pez' ? `${FINS[g.f].short} ${PATTERNS[g.p].label} ${COLORS[g.c].label}${g.glow ? ' luminoso' : ''}` : `${SPECIES[sp].label} (${COLORS[g.c].label}${g.p ? ', ' + PATTERNS[g.p].label : ''}${g.glow && sp !== 'medusa' ? ', luminoso' : ''})`; }
+function rarity(g, sp = 'pez') { return COLORS[g.c].r * PATTERNS[g.p].r * (sp === 'pez' ? FINS[g.f].r : SPECIES[sp].val) * (g.glow && sp !== 'medusa' ? 4 : 1); }
 function tankHappy(t) {
   const n = fishIn(t).length; const deco = t.deco.reduce((s, d) => s + DECOS[d].happy, 0);
-  return clamp(30 + Math.min(40, deco) + (has('luces') ? 10 : 0) + (t.clean - 50) * 0.3 - Math.max(0, n - 6) * 6);
+  return clamp(30 + Math.min(40, deco) + (has('luces') ? 10 : 0) + (has('luces2') ? 10 : 0) + (t.clean - 50) * 0.3 - Math.max(0, n - 6) * 6);
 }
-function price(f) { const t = tankOf(f.tank); return Math.round(12 * rarity(f.g) * f.g.s * (f.adult ? 1 : 0.5) * (0.5 + f.health / 200) * (0.8 + (t ? tankHappy(t) : 50) / 250)); }
+function price(f) { const t = tankOf(f.tank); return Math.round(12 * rarity(f.g, spOf(f)) * f.g.s * (f.adult ? 1 : 0.5) * (0.5 + f.health / 200) * (0.8 + (t ? tankHappy(t) : 50) / 250)); }
 const idealTemp = (t) => t.temp >= 23.5 && t.temp <= 27.5;
 // Por qué enferman los peces de un acuario (y qué hacer)
 function sickWhy(t) { const w = []; if (t.food < 15) w.push('pasan hambre: dales comida'); if (t.clean < 30) w.push('el agua está sucia: límpiala'); if (!idealTemp(t)) w.push(`la temperatura (${t.temp.toFixed(1)} °C) no es buena: ponla entre 24 y 27 °C`); return w; }
-const MED_PRICE = 15;
+const medPrice = () => (has('botiquin') ? 8 : 15);
 function medicine(t) {
-  if (st.money < MED_PRICE) return toast('No hay dinero suficiente', 'warn');
-  st.money -= MED_PRICE; t.medUntil = st.time + 360; for (const f of fishIn(t)) f.health = clamp(f.health + 30);
+  if (st.money < medPrice()) return toast('No hay dinero suficiente', 'warn');
+  st.money -= medPrice(); t.medUntil = st.time + 360; for (const f of fishIn(t)) f.health = clamp(f.health + 30);
   const why = sickWhy(t); toast(why.length ? `Medicina echada. Ojo: ${why[0]}, o volverán a enfermar` : 'Medicina echada: se recuperarán en unas horas', why.length ? 'warn' : 'good', 'heart'); hud(); save();
 }
 
 // ---------- genética ----------
-function inherit(a, b) {
+function inherit(a, b, sp = 'pez') {
   const g = { c: pick([a.c, b.c]), p: pick([a.p, b.p]), f: pick([a.f, b.f]), s: clamp((a.s + b.s) / 2 + rnd(-0.08, 0.1), 0.75, 1.4), glow: false };
-  const mut = has('luces') ? 0.14 : 0.1;
-  if (Math.random() < mut) g.c = ri(COLORS.length);
-  if (Math.random() < mut) g.p = ri(PATTERNS.length);
-  if (Math.random() < mut * 0.8) g.f = ri(FINS.length);
-  g.glow = (a.glow || b.glow) ? Math.random() < 0.4 : Math.random() < 0.02;
+  const mut = has('luces2') ? 0.2 : has('luces') ? 0.14 : 0.1;
+  const S = SPECIES[sp];
+  if (Math.random() < mut) g.c = sp === 'pez' ? ri(COLORS.length) : pick(S.colors);
+  if (Math.random() < mut) g.p = sp === 'pez' ? ri(PATTERNS.length) : pick(S.pats);
+  if (sp === 'pez' && Math.random() < mut * 0.8) g.f = ri(FINS.length);
+  if (sp !== 'pez') g.f = 0;
+  g.glow = sp === 'medusa' || ((a.glow || b.glow) ? Math.random() < 0.4 : Math.random() < 0.02);
   return g;
 }
 
@@ -84,16 +93,23 @@ function tick(dt) {
   const hr = Math.floor(st.time / 60);
   while (st.lastHour < hr) { st.lastHour++; hourly(st.lastHour % 24); }
   for (const t of st.tanks) {
-    const n = fishIn(t).length;
-    t.clean = clamp(t.clean - 0.0045 * n * dt * (has('filtro') ? 0.5 : 1));
-    t.food = clamp(t.food - 0.012 * n * dt);
+    const fs = fishIn(t); const eat = fs.reduce((n, f) => n + SPECIES[spOf(f)].eat * (f.adult ? 1 : 0.5), 0);
+    // los que limpian (gambas, caracoles, cangrejos) hacen que el agua se ensucie menos
+    const cleaners = Math.min(0.6, fs.reduce((n, f) => n + (SPECIES[spOf(f)].clean || 0), 0));
+    t.clean = clamp(t.clean - 0.0035 * fs.length * dt * (has('filtro') ? 0.5 : 1) * (has('filtro2') ? 0.4 : 1) * (1 - cleaners) + (has('filtro2') ? 0.004 * dt : 0));
+    t.food = clamp(t.food - 0.005 * eat * dt * (has('vitaminas') ? 0.6 : 1) * (has('comedero2') ? 0.5 : 1));
+    // aparatos automáticos
+    if (has('comedero2') && t.food < 70) t.food = 100;
+    else if (has('comedero') && t.food < 50 && st.money >= 2) { st.money -= 2; t.food = 95; }
+    if (has('robot') && t.clean < 50 && st.money >= 5) { st.money -= 5; t.clean = 100; }
     t.temp += ((has('calefactor') ? 25.5 : 25 + Math.sin(st.time / 400) * 3.5) - t.temp) * 0.01 * dt;
     if (t.breeding && st.time >= t.breeding.until) hatch(t);
   }
   for (const f of st.fish) {
     const t = tankOf(f.tank); if (!t) continue;
     const bad = (t.food < 15 ? 1 : 0) + (t.clean < 30 ? 1 : 0) + (idealTemp(t) ? 0 : 1); const med = t.medUntil && st.time < t.medUntil;
-    f.health = clamp(f.health + (bad ? -0.03 * bad * (med ? 0.3 : 1) : 0.02) * dt + (med ? 0.06 * dt : 0));
+    const resist = (has('botiquin') ? 0.6 : 1) * (has('vitaminas') ? 0.75 : 1);
+    f.health = clamp(f.health + (bad ? -0.03 * bad * (med ? 0.3 : 1) * resist : 0.02 * (has('vitaminas') ? 1.6 : 1)) * dt + (med ? 0.06 * dt : 0));
     if (f.health < 40 && !f.warned) { f.warned = true; const why = sickWhy(t); toast(`${f.name} está enfermo/a${why.length ? ': ' + why[0] : ''}. Abre su acuario y dale medicina.`, 'warn', 'alert'); }
     if (f.health > 60) f.warned = false;
     if (!f.adult && st.time - f.born > 720) { f.adult = true; toast(`${f.name} ya es adulto/a`, 'good', 'fish'); }
@@ -101,31 +117,38 @@ function tick(dt) {
   }
 }
 function hourly(h) {
-  if (h % 3 === 0 && st.requests.length < 3) newRequest();
+  if (h % (has('escaparate') ? 2 : 3) === 0 && st.requests.length < (has('escaparate') ? 4 : 3)) newRequest();
   st.requests = st.requests.filter((r) => r.until > st.time);
-  if (has('comedero') && h === 10) st.tanks.forEach((t) => (t.food = Math.max(t.food, 80)));
   if (h === 21) endOfDay();
 }
 function newRequest() {
+  // a veces piden otra especie (de las que ya se pueden comprar)
+  const others = Object.keys(SPECIES).filter((k) => k !== 'pez' && st.rep >= SPECIES[k].rep);
+  if (others.length && Math.random() < 0.35) {
+    const sp = pick(others), S = SPECIES[sp]; const want = { sp, c: pick(S.colors) }; if (S.pats.length > 1 && Math.random() < 0.4) want.p = pick(S.pats);
+    const r = COLORS[want.c].r * (want.p != null ? PATTERNS[want.p].r : 1) * S.val;
+    st.requests.push({ id: 'r' + st.nextId++, want, price: Math.round(16 * r * (1.6 + st.rep / 40) * (has('escaparate') ? 1.2 : 1)), until: st.time + 1440, cust: Math.floor(Math.random() * CUSTOMERS.length), who: '' }); const r0 = st.requests.at(-1); r0.who = CUSTOMERS[r0.cust].name; return;
+  }
   const want = {}; const n = 1 + (Math.random() < 0.5 ? 1 : 0) + (st.rep > 8 && Math.random() < 0.4 ? 1 : 0);
   const keys = ['c', 'p', 'f'].sort(() => Math.random() - 0.5).slice(0, n);
   for (const k of keys) want[k] = ri(k === 'c' ? COLORS.length : k === 'p' ? PATTERNS.length : FINS.length);
   if (st.rep > 15 && Math.random() < 0.15) want.glow = true;
   const r = (want.c != null ? COLORS[want.c].r : 1.3) * (want.p != null ? PATTERNS[want.p].r : 1.2) * (want.f != null ? FINS[want.f].r : 1.2) * (want.glow ? 4 : 1);
-  st.requests.push({ id: 'r' + st.nextId++, want, price: Math.round(18 * r * (1.6 + st.rep / 40)), until: st.time + 1440, cust: Math.floor(Math.random() * CUSTOMERS.length), who: '' }); const r0 = st.requests.at(-1); r0.who = CUSTOMERS[r0.cust].name;
+  st.requests.push({ id: 'r' + st.nextId++, want, price: Math.round(18 * r * (1.6 + st.rep / 40) * (has('escaparate') ? 1.2 : 1)), until: st.time + 1440, cust: Math.floor(Math.random() * CUSTOMERS.length), who: '' }); const r0 = st.requests.at(-1); r0.who = CUSTOMERS[r0.cust].name;
 }
-const matches = (f, w) => f.adult && (w.c == null || f.g.c === w.c) && (w.p == null || f.g.p === w.p) && (w.f == null || f.g.f === w.f) && (!w.glow || f.g.glow);
+const matches = (f, w) => f.adult && (w.sp || 'pez') === spOf(f) && (w.c == null || f.g.c === w.c) && (w.p == null || f.g.p === w.p) && (w.f == null || f.g.f === w.f) && (!w.glow || f.g.glow);
 function wantText(w) {
+  if (w.sp) return `${['gamba', 'medusa'].includes(w.sp) ? 'Una' : 'Un'} ${SPECIES[w.sp].label.toLowerCase()} de color ${COLORS[w.c].label}${w.p != null ? `, ${PATTERNS[w.p].label}` : ''}`;
   const parts = []; if (w.f != null) parts.push(FINS[w.f].label.toLowerCase()); if (w.p != null) parts.push(PATTERNS[w.p].label); if (w.c != null) parts.push(COLORS[w.c].label); if (w.glow) parts.push('luminoso');
   return 'Un pez ' + parts.join(', ');
 }
 function hatch(t) {
   const a = st.fish.find((f) => f.id === t.breeding.a), b = st.fish.find((f) => f.id === t.breeding.b); t.breeding = null;
   if (!a || !b) return;
-  const room = TANK_CAP - fishIn(t).length; const n = Math.min(room, 2 + ri(has('luces') ? 3 : 2));
+  const sp = spOf(a); const room = TANK_CAP - fishIn(t).length; const n = Math.min(room, 2 + ri(has('luces') ? 3 : 2) + (has('incubadora') ? 1 : 0) + (has('luces2') ? 1 : 0));
   if (n <= 0) return toast('No había sitio en el acuario para las crías', 'warn', 'egg');
   const names = [];
-  for (let i = 0; i < n; i++) { const g = inherit(a.g, b.g); const f = addFish(st, t.id, g); names.push(speciesName(g)); }
+  for (let i = 0; i < n; i++) { const g = inherit(a.g, b.g, sp); addFish(st, t.id, g, null, false, sp); names.push(speciesName(g, sp)); }
   logDay('birth', n);
   toast(`¡Han nacido ${n} alevines! ${names.slice(0, 2).join(', ')}${n > 2 ? '…' : ''}`, 'good', 'egg');
 }
@@ -141,7 +164,7 @@ function endOfDay() {
   else { const f = st.fish.length && pick(st.fish); head = f ? `${f.name}, ${fishTrait(f).toLowerCase()} como siempre` : 'Un día tranquilo'; body = f ? FISH_TRAITS[f.trait].desc : 'El agua está en calma.'; }
   Sound.play('page');
   say('marina', null, `«${pickOne(['El mar enseña paciencia. Mañana, más.', 'Agua limpia, peces tranquilos. Así se hace.', 'Fíjate en cómo nadan: te dicen cómo están.', 'Cada pez tiene su carácter, como las personas.'])}»`, 'Seguir', null,
-    `<div class="gazette"><div class="mast">Burbujas al día</div><div class="date">Día ${Math.floor(st.time / 1440) + 1} · ${st.fish.length} peces · ${st.discovered.length}/${TOTAL_COMBOS} variedades</div><h3>${esc(head)}</h3><p>${esc(body)}</p></div>`);
+    `<div class="gazette"><div class="mast">Burbujas al día</div><div class="date">Día ${Math.floor(st.time / 1440) + 1} · ${st.fish.length} animales · ${st.discovered.length}/${TOTAL_COMBOS} variedades</div><h3>${esc(head)}</h3><p>${esc(body)}</p></div>`);
   save();
 }
 function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
@@ -275,7 +298,71 @@ function finGeo(type) { // 0 corta, 1 larga (horquilla), 2 velo
   else { sh.moveTo(0, 0); sh.bezierCurveTo(0.5, 0.6, 1.2, 1.0, 1.5, 0.6); sh.bezierCurveTo(1.3, 0.2, 1.5, -0.2, 1.4, -0.6); sh.bezierCurveTo(1.1, -1.0, 0.5, -0.6, 0, 0); }
   const geo = new THREE.ShapeGeometry(sh, 10); geo.rotateY(Math.PI / 2); finGeos[type] = geo; return geo;
 }
+// ---------- otras especies ----------
+function bodyMat(f, opts = {}) { return new THREE.MeshLambertMaterial({ map: fishTexture(f.g), transparent: !f.adult || !!opts.opacity, opacity: opts.opacity ?? (f.adult ? 1 : 0.82), side: opts.side ?? THREE.FrontSide, depthWrite: !opts.opacity, emissive: f.g.glow ? new THREE.Color(COLORS[f.g.c].hex).multiplyScalar(opts.glow ?? 0.55) : new THREE.Color(0) }); }
+const tint = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(k > 0 ? '#ffffff' : '#000000'), Math.abs(k));
+function eyesOn(g, s, pts) { for (const [x, y, z] of pts) { const e = new THREE.Mesh(new THREE.SphereGeometry(s * 0.09, 8, 6), mat('#111')); e.position.set(x, y, z); g.add(e); const hl = new THREE.Mesh(new THREE.SphereGeometry(s * 0.03, 5, 4), mat('#ffffff', { emissive: '#ffffff' })); hl.position.set(x + s * 0.02, y + s * 0.03, z + s * 0.06); g.add(hl); } }
+function critterMesh(f) {
+  const sp = spOf(f), g = new THREE.Group(); const s = 0.13 * f.g.s * (f.adult ? 1 : 0.6); const col = COLORS[f.g.c].hex;
+  const tail = new THREE.Group(); let anim = () => {}; let gy = 0.2;
+  const add = (o, x = 0, y = 0, z = 0, parent = g) => { o.position.set(x, y, z); parent.add(o); return o; };
+  if (sp === 'gamba') {
+    const m = bodyMat(f, { opacity: 0.88 }); const segs = [];
+    for (let i = 0; i < 6; i++) { const a = i / 5; const seg = add(new THREE.Mesh(new THREE.SphereGeometry(s * (0.32 - a * 0.14), 10, 8), m), 0, s * (0.15 - a * a * 0.5), s * (0.55 - a * 1.25)); seg.scale.set(0.85, 0.8, 1.15); segs.push(seg); }
+    const ros = add(new THREE.Mesh(new THREE.ConeGeometry(s * 0.06, s * 0.4, 5), m), 0, s * 0.2, s * 0.95); ros.rotation.x = Math.PI / 2;
+    const ant = mat(tint(col, -0.3).getStyle()); for (const sd of [-1, 1]) { const a = add(new THREE.Mesh(new THREE.CylinderGeometry(s * 0.008, s * 0.012, s * 2.2, 3), ant), sd * s * 0.08, s * 0.55, s * 1.6); a.rotation.set(1.1, 0, sd * 0.35); }
+    eyesOn(g, s, [[-s * 0.13, s * 0.3, s * 0.72], [s * 0.13, s * 0.3, s * 0.72]]);
+    const legs = []; for (let i = 0; i < 5; i++) for (const sd of [-1, 1]) { const l = add(new THREE.Mesh(new THREE.CylinderGeometry(s * 0.012, s * 0.012, s * 0.32, 3), ant), sd * s * 0.12, -s * 0.15, s * (0.5 - i * 0.18)); l.rotation.z = sd * 0.5; legs.push(l); }
+    tail.position.set(0, -s * 0.25, -s * 0.75); g.add(tail); const fan = new THREE.Mesh(finGeo(0), new THREE.MeshLambertMaterial({ color: tint(col, 0.2), side: THREE.DoubleSide, transparent: true, opacity: 0.85 })); fan.scale.setScalar(s * 0.5); fan.rotation.x = 0.5; tail.add(fan);
+    gy = 0.14 + s * 0.35; anim = (t, mv) => { legs.forEach((l, i) => (l.rotation.x = Math.sin(t * 14 + i) * (mv ? 0.5 : 0.1))); tail.rotation.x = Math.sin(t * 3) * 0.15; };
+  } else if (sp === 'caracol') {
+    const foot = add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.5, 12, 8), mat('#d9c7a6')), 0, s * 0.12, s * 0.1); foot.scale.set(0.55, 0.32, 1.5);
+    const shellM = bodyMat(f); const shell = new THREE.Group(); shell.position.set(0, s * 0.42, -s * 0.15); g.add(shell);
+    for (let i = 0; i < 16; i++) { const a = i * 0.62, r = s * 0.34 * Math.exp(-i * 0.1); const b = new THREE.Mesh(new THREE.SphereGeometry(r * 0.78, 10, 8), shellM); b.position.set(i * s * 0.008, Math.sin(a) * r * 0.75, Math.cos(a) * r * 0.75); shell.add(b); }
+    const stalks = []; for (const sd of [-1, 1]) { const st2 = new THREE.Group(); st2.position.set(sd * s * 0.1, s * 0.2, s * 0.75); g.add(st2); const c = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.025, s * 0.035, s * 0.4, 5), mat('#cbb894')); c.position.y = s * 0.2; st2.add(c); const e = new THREE.Mesh(new THREE.SphereGeometry(s * 0.05, 6, 5), mat('#222')); e.position.y = s * 0.42; st2.add(e); st2.rotation.x = 0.4; stalks.push(st2); }
+    gy = 0.13; anim = (t) => { stalks.forEach((q, i) => (q.rotation.z = Math.sin(t * 1.5 + i * 2) * 0.25)); foot.scale.z = 1.5 + Math.sin(t * 2) * 0.08; };
+  } else if (sp === 'cangrejo') {
+    const m = bodyMat(f); const body = add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.5, 14, 10), m), 0, s * 0.3, 0); body.scale.set(1.4, 0.55, 1);
+    const lm = mat(tint(col, -0.15).getStyle()); const legs = [];
+    for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) { const hip = new THREE.Group(); hip.position.set(sd * s * 0.55, s * 0.25, s * (0.25 - i * 0.18)); g.add(hip); const up = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.035, s * 0.03, s * 0.4, 4), lm); up.position.set(sd * s * 0.15, s * 0.08, 0); up.rotation.z = sd * -1.0; hip.add(up); const lo = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.03, s * 0.012, s * 0.4, 4), lm); lo.position.set(sd * s * 0.38, -s * 0.08, 0); lo.rotation.z = sd * 0.5; hip.add(lo); legs.push(hip); }
+    const claws = []; for (const sd of [-1, 1]) { const arm = new THREE.Group(); arm.position.set(sd * s * 0.4, s * 0.3, s * 0.4); g.add(arm); const a = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.05, s * 0.06, s * 0.35, 5), lm); a.rotation.set(Math.PI / 2 - 0.3, 0, sd * 0.5); a.position.set(sd * s * 0.06, 0, s * 0.12); arm.add(a); const cl = new THREE.Mesh(new THREE.SphereGeometry(s * 0.17, 10, 8), m); cl.scale.set(0.8, 0.6, 1.2); cl.position.set(sd * s * 0.14, s * 0.04, s * 0.38); arm.add(cl); const pin = new THREE.Mesh(new THREE.ConeGeometry(s * 0.05, s * 0.22, 4), lm); pin.rotation.x = Math.PI / 2; pin.position.set(sd * s * 0.14, s * 0.1, s * 0.56); arm.add(pin); claws.push(pin); }
+    for (const sd of [-1, 1]) { const st2 = add(new THREE.Mesh(new THREE.CylinderGeometry(s * 0.02, s * 0.02, s * 0.2, 4), lm), sd * s * 0.14, s * 0.5, s * 0.38); st2.rotation.x = 0.2; }
+    eyesOn(g, s, [[-s * 0.14, s * 0.62, s * 0.4], [s * 0.14, s * 0.62, s * 0.4]]);
+    gy = 0.13; anim = (t, mv) => { legs.forEach((l, i) => (l.rotation.x = Math.sin(t * 16 + i * 1.3) * (mv ? 0.45 : 0.05))); claws.forEach((c, i) => (c.rotation.z = Math.sin(t * 2 + i) * 0.3)); };
+  } else if (sp === 'globo') {
+    const m = bodyMat(f); const body = add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.55, 16, 12), m)); body.scale.set(0.9, 0.85, 1.05);
+    const spk = mat(tint(col, 0.35).getStyle()); const spikes = new THREE.Group(); body.add(spikes);
+    for (let i = 0; i < 34; i++) { const y = 1 - (i + 0.5) / 34 * 2, r = Math.sqrt(1 - y * y), a = i * 2.4; const n = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r); const c = new THREE.Mesh(new THREE.ConeGeometry(s * 0.035, s * 0.14, 4), spk); c.position.copy(n).multiplyScalar(s * 0.55); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n); spikes.add(c); }
+    tail.position.z = -s * 0.55; g.add(tail); const tf = new THREE.Mesh(finGeo(0), new THREE.MeshLambertMaterial({ color: tint(col, 0.15), transparent: true, opacity: 0.75, side: THREE.DoubleSide })); tf.scale.setScalar(s * 0.5); tail.add(tf);
+    eyesOn(g, s * 1.5, [[-s * 0.3, s * 0.18, s * 0.38], [s * 0.3, s * 0.18, s * 0.38]]);
+    const mouth = add(new THREE.Mesh(new THREE.TorusGeometry(s * 0.06, s * 0.025, 5, 10), mat(tint(col, -0.3).getStyle())), 0, -s * 0.05, s * 0.57);
+    let puff = 0, nextPuff = 4 + Math.random() * 10; gy = 0.5;
+    anim = (t) => { if (t > nextPuff) { puff = t; nextPuff = t + 10 + Math.random() * 20; } const k = puff && t - puff < 3 ? Math.sin(Math.min(1, (t - puff) / 3) * Math.PI) : 0; body.scale.set(0.9 + k * 0.5, 0.85 + k * 0.55, 1.05 + k * 0.35); spikes.scale.setScalar(1 + k * 0.4); };
+  } else if (sp === 'caballito') {
+    const m = bodyMat(f); const body = new THREE.Group(); g.add(body);
+    for (let i = 0; i < 9; i++) { const a = i / 8; const sph = new THREE.Mesh(new THREE.SphereGeometry(s * (0.3 - a * 0.17), 10, 8), m); sph.position.set(0, s * (0.4 - a * 1.8), s * (Math.sin(a * Math.PI) * 0.28 - 0.1)); sph.scale.set(0.8, 1.15, 1); body.add(sph); }
+    const curl = new THREE.Mesh(new THREE.TorusGeometry(s * 0.17, s * 0.055, 6, 14, Math.PI * 1.5), m); curl.rotation.y = Math.PI / 2; curl.position.set(0, -s * 1.52, s * 0.05); body.add(curl);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(s * 0.24, 12, 10), m); head.position.set(0, s * 0.72, s * 0.12); head.scale.set(0.8, 0.9, 1.1); body.add(head);
+    const snout = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.05, s * 0.07, s * 0.42, 6), m); snout.rotation.x = Math.PI / 2 + 0.35; snout.position.set(0, s * 0.64, s * 0.42); body.add(snout);
+    for (let i = 0; i < 3; i++) { const c = new THREE.Mesh(new THREE.ConeGeometry(s * 0.04, s * 0.14, 4), m); c.position.set(0, s * (0.95 - i * 0.04), s * (0.04 - i * 0.08)); body.add(c); }
+    eyesOn(body, s, [[-s * 0.16, s * 0.76, s * 0.2], [s * 0.16, s * 0.76, s * 0.2]]);
+    tail.position.set(0, -s * 0.1, -s * 0.3); body.add(tail); const fin = new THREE.Mesh(finGeo(0), new THREE.MeshLambertMaterial({ color: tint(col, 0.35), transparent: true, opacity: 0.7, side: THREE.DoubleSide })); fin.scale.setScalar(s * 0.45); fin.rotation.y = Math.PI; tail.add(fin);
+    g.scale.setScalar(0.85); gy = 0.6; anim = (t) => { tail.rotation.y = Math.sin(t * 18) * 0.5; body.rotation.x = Math.sin(t * 0.8) * 0.08; curl.rotation.z = Math.sin(t * 0.7) * 0.15; };
+  } else if (sp === 'medusa') {
+    const c = new THREE.Color(col); const bell = new THREE.Mesh(new THREE.SphereGeometry(s * 0.6, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: c, emissive: c.clone().multiplyScalar(0.45), transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    bell.scale.y = 0.8; g.add(bell);
+    const core = add(new THREE.Mesh(new THREE.SphereGeometry(s * 0.28, 10, 8), new THREE.MeshLambertMaterial({ color: tint(col, 0.5), emissive: c.clone().multiplyScalar(0.6) })), 0, s * 0.12, 0); core.scale.y = 0.6;
+    const tm = new THREE.MeshLambertMaterial({ color: tint(col, 0.3), emissive: c.clone().multiplyScalar(0.35), transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }); const tents = [];
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; const pv = new THREE.Group(); pv.position.set(Math.cos(a) * s * 0.5, 0, Math.sin(a) * s * 0.5); g.add(pv); const tn = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.012, s * 0.004, s * 1.8, 3), tm); tn.position.y = -s * 0.9; pv.add(tn); tents.push(pv); }
+    for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const pv = new THREE.Group(); pv.position.set(Math.cos(a) * s * 0.1, 0, Math.sin(a) * s * 0.1); g.add(pv); const arm = new THREE.Mesh(new THREE.PlaneGeometry(s * 0.12, s * 1.0, 1, 6), tm); const p2 = arm.geometry.attributes.position; for (let k = 0; k < p2.count; k++) p2.setX(k, p2.getX(k) + Math.sin(p2.getY(k) * 30) * s * 0.04); arm.position.y = -s * 0.5; arm.rotation.y = a; pv.add(arm); tents.push(pv); }
+    gy = 0.8; anim = (t) => { const k = Math.max(0, Math.sin(t * 2.2)); bell.scale.set(1 - k * 0.15, 0.8 + k * 0.15, 1 - k * 0.15); tents.forEach((q, i) => { q.rotation.x = Math.sin(t * 1.4 + i) * 0.18; q.rotation.z = Math.cos(t * 1.1 + i * 0.7) * 0.18; }); };
+  }
+  g.userData.fish = f.id; g.traverse((o) => { o.userData.fish = f.id; o.castShadow = false; });
+  const mode = SPECIES[sp].move; const low = mode === 'bottom' || mode === 'crawl';
+  return { g, tail, anim, kind: sp, mode, gy, x: rnd(-1, 1), y: low ? gy : rnd(0.4, 1.0), z: rnd(-0.4, 0.4), tx: 0, ty: low ? gy : 0.6, tz: 0, sp: { bottom: 0.18, crawl: 0.035, upright: 0.09, drift: 0.07, swim: 0.3 }[mode] * rnd(0.8, 1.2) };
+}
 function fishMesh(f) {
+  if (spOf(f) !== 'pez') return critterMesh(f);
   const g = new THREE.Group(); const s = 0.13 * f.g.s * (f.adult ? 1 : 0.55);
   const m = new THREE.MeshLambertMaterial({ map: fishTexture(f.g), transparent: !f.adult, opacity: f.adult ? 1 : 0.82, emissive: f.g.glow ? new THREE.Color(COLORS[f.g.c].hex).multiplyScalar(0.55) : new THREE.Color(0) });
   const body = new THREE.Mesh(fishBody(), m); body.scale.set(s * 0.5, s * 0.78, s * 1.4); g.add(body);
@@ -294,7 +381,7 @@ function fishMesh(f) {
   // aletas laterales que se mueven al nadar
   const pects = [-1, 1].map((sd) => { const pv = new THREE.Group(); pv.position.set(sd * s * 0.42, -s * 0.18, s * 0.35); const fin = new THREE.Mesh(finGeo(0), finM); fin.scale.setScalar(s * 0.45); fin.rotation.y = sd * 0.6; fin.rotation.z = sd * 0.4; pv.add(fin); g.add(pv); return pv; });
   g.userData.fish = f.id; g.traverse((o) => { o.userData.fish = f.id; o.castShadow = false; });
-  return { g, tail: tailPivot, pects, x: rnd(-1, 1), y: f.adult ? rnd(0.3, 1.1) : rnd(0.2, 0.5), z: rnd(-0.4, 0.4), tx: 0, ty: 0.6, tz: 0, sp: f.adult ? rnd(0.25, 0.5) : rnd(0.18, 0.3) };
+  return { g, tail: tailPivot, pects, kind: 'pez', mode: 'swim', x: rnd(-1, 1), y: f.adult ? rnd(0.3, 1.1) : rnd(0.2, 0.5), z: rnd(-0.4, 0.4), tx: 0, ty: 0.6, tz: 0, sp: f.adult ? rnd(0.25, 0.5) : rnd(0.18, 0.3) };
 }
 const tid = (t) => t.id;
 // hoja de planta acuática: cinta que se estrecha y se curva
@@ -391,21 +478,24 @@ function swim(t) {
       if (Math.hypot(m.tx - m.x, m.ty - m.y, m.tz - m.z) < 0.08 || Math.random() < 0.003) {
         const parent = tank?.breeding && (tank.breeding.a === fid || tank.breeding.b === fid) && rec.eggs;
         if (parent) { const e = rec.eggs.position; m.tx = e.x + rnd(-0.25, 0.25); m.ty = e.y + rnd(0, 0.2); m.tz = e.z + rnd(0.05, 0.3); }
-        else if (f && !f.adult) { const lead = [...rec.fish.values()].find((q) => q !== m && q.sp < 0.31); m.tx = (lead ? lead.x : 0) + rnd(-0.3, 0.3); m.ty = rnd(0.2, 0.55); m.tz = (lead ? lead.z : 0) + rnd(-0.2, 0.2); m.tx = Math.max(-(TW / 2 - 0.3), Math.min(TW / 2 - 0.3, m.tx)); m.tz = Math.max(-(TD / 2 - 0.25), Math.min(TD / 2 - 0.25, m.tz)); }
-        else if (rec.feedT && t - rec.feedT < 4) { m.tx = rnd(-0.5, 0.5); m.ty = TH - 0.3; m.tz = rnd(-0.2, 0.2); }
+        else if (f && !f.adult) { const lead = [...rec.fish.values()].find((q) => q !== m && q.kind === m.kind && q.adult); m.tx = (lead ? lead.x : 0) + rnd(-0.3, 0.3); m.ty = rnd(0.2, 0.55); m.tz = (lead ? lead.z : 0) + rnd(-0.2, 0.2); m.tx = Math.max(-(TW / 2 - 0.3), Math.min(TW / 2 - 0.3, m.tx)); m.tz = Math.max(-(TD / 2 - 0.25), Math.min(TD / 2 - 0.25, m.tz)); }
+        else if (rec.feedT && t - rec.feedT < 4 && m.mode === 'swim') { m.tx = rnd(-0.5, 0.5); m.ty = TH - 0.3; m.tz = rnd(-0.2, 0.2); }
         else if (f?.trait === 'timido' && rec.deco.children.length && Math.random() < 0.7) { const d = pick(rec.deco.children.filter((c) => c.userData.deco)); if (d) { m.tx = d.position.x + rnd(-0.15, 0.15); m.ty = rnd(0.2, 0.5); m.tz = d.position.z + rnd(-0.1, 0.15); } }
         else if (f?.trait === 'curioso' && close === tid && Math.random() < 0.7) { m.tx = rnd(-0.8, 0.8); m.ty = rnd(0.5, 1.0); m.tz = TD / 2 - 0.2; }
         else if (f?.trait === 'sociable' && rec.fish.size > 1) { const o = pick([...rec.fish.values()].filter((q) => q !== m)); m.tx = o.x + rnd(-0.2, 0.2); m.ty = o.y + rnd(-0.1, 0.1); m.tz = o.z + rnd(-0.15, 0.15); }
         else { m.tx = rnd(-(TW / 2 - 0.35), TW / 2 - 0.35); m.ty = rnd(0.3, TH - 0.35); m.tz = rnd(-(TD / 2 - 0.3), TD / 2 - 0.3); }
         m.tx = Math.max(-(TW / 2 - 0.25), Math.min(TW / 2 - 0.25, m.tx)); m.ty = Math.max(0.2, Math.min(TH - 0.25, m.ty)); m.tz = Math.max(-(TD / 2 - 0.2), Math.min(TD / 2 - 0.2, m.tz));
+        if (m.mode === 'bottom' || m.mode === 'crawl') m.ty = m.gy; // viven en el fondo
+        if (m.mode === 'upright' || m.mode === 'drift') m.ty = Math.max(0.55, m.ty);
       }
       const dx = m.tx - m.x, dy = m.ty - m.y, dz = m.tz - m.z, d = Math.hypot(dx, dy, dz) || 1;
       const feeding = rec.feedT && t - rec.feedT < 4; const sp = m.sp * lively * (sick ? 0.4 : 1) * (f?.trait === 'veloz' ? 1.6 : 1) * (feeding ? (f?.trait === 'gloton' ? 2.4 : 1.6) : 1) * dt;
       m.x += dx / d * sp; m.y += dy / d * sp * 0.6; m.z += dz / d * sp;
-      m.g.position.set(m.x, m.y + Math.sin(t * 2 + m.sp * 10) * 0.02, m.z);
-      const yaw = Math.atan2(dx, dz); let a = yaw - m.g.rotation.y; a = Math.atan2(Math.sin(a), Math.cos(a)); m.g.rotation.y += a * Math.min(1, dt * 4);
-      m.g.rotation.z = sick ? 0.9 : 0;
-      m.tail.rotation.y = Math.sin(t * (8 + m.sp * 6)) * 0.45;
+      const low = m.mode === 'bottom' || m.mode === 'crawl';
+      m.g.position.set(m.x, m.y + (low ? 0 : Math.sin(t * (m.mode === 'drift' ? 1.1 : 2) + m.sp * 10) * (m.mode === 'drift' ? 0.06 : 0.02)), m.z);
+      if (m.mode !== 'drift') { const yaw = Math.atan2(dx, dz) + (m.kind === 'cangrejo' ? Math.PI / 2 : 0); let a = yaw - m.g.rotation.y; a = Math.atan2(Math.sin(a), Math.cos(a)); m.g.rotation.y += a * Math.min(1, dt * (m.mode === 'swim' ? 4 : 2)); } else m.g.rotation.y += dt * 0.1;
+      m.g.rotation.z = sick ? (low ? 0.35 : 0.9) : 0;
+      if (m.anim) m.anim(t, d > 0.08); else m.tail.rotation.y = Math.sin(t * (8 + m.sp * 6)) * 0.45;
       if (m.pects) m.pects.forEach((pv, i) => (pv.rotation.y = Math.sin(t * 6 + i * 3) * 0.5));
     }
     for (const d of rec.deco.children) if (d.userData.sway) d.userData.sway.forEach((pv, i) => (pv.rotation.z = pv.userData.base + Math.sin(t * 1.3 + i) * 0.08));
@@ -442,8 +532,8 @@ function renderCloseBar() {
   const t = tankOf(close); if (!t) return exitClose();
   const i = st.tanks.indexOf(t); const n = fishIn(t).length;
   const key = t.id + n + !!t.breeding; if ($('#closebar').dataset.k === key) return; $('#closebar').dataset.k = key;
-  $('#closebar').innerHTML = `<span class="ttl">${icon('fish')} Acuario ${i + 1} · ${n} ${n === 1 ? 'pez' : 'peces'}${t.breeding ? ' · huevos' : ''}</span>
-    <button class="btn sm" id="cb_f">${icon('eye')} Seguir a un pez</button><button class="btn sm alt" id="cb_p">${icon('menu')} Panel</button><button class="btn sm alt" id="cb_x">${icon('x')}</button>`;
+  $('#closebar').innerHTML = `<span class="ttl">${icon('fish')} Acuario ${i + 1} · ${n} ${n === 1 ? 'animal' : 'animales'}${t.breeding ? ' · huevos' : ''}</span>
+    <button class="btn sm" id="cb_f">${icon('eye')} Seguir a uno</button><button class="btn sm alt" id="cb_p">${icon('menu')} Panel</button><button class="btn sm alt" id="cb_x">${icon('x')}</button>`;
   $('#cb_f').onclick = () => { const fs = fishIn(t); if (!fs.length) return; const cur = fs.findIndex((f) => f.id === followId); followFish(fs[(cur + 1) % fs.length].id); };
   $('#cb_p').onclick = () => { const id = close; exitClose(); openTank(id); };
   $('#cb_x').onclick = exitClose;
@@ -454,8 +544,9 @@ function closeCard(force = false) {
   if (el.dataset.eggs) { const t = tankOf(el.dataset.eggs); if (!t || !t.breeding) { delete el.dataset.eggs; el.hidden = true; return; } el.innerHTML = `<b>${icon('egg')} Huevos</b><div class="hint">Eclosionarán en unos ${Math.max(1, Math.round(t.breeding.until - st.time))} min de juego. Los padres los vigilan.</div>`; el.hidden = false; return; }
   const f = followId && st.fish.find((q) => q.id === followId); if (!f) { el.hidden = true; return; }
   const age = Math.round((st.time - f.born) / 60);
-  el.innerHTML = `<div class="row" style="align-items:center"><span class="tilebox" style="background:${COLORS[f.g.c].hex};color:#fff">${icon('fish')}</span><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span> <span class="trait">${fishTrait(f)}</span><div class="hint">${esc(speciesName(f.g))} · ${esc(FISH_TRAITS[f.trait]?.desc || '')}</div></div><b>${eur(price(f))}</b></div>
-    ${f.health < 40 ? `<div class="sickrow">${icon('alert')}<span style="flex:1">Enfermo/a${sickWhy(tankOf(f.tank)).length ? ': ' + sickWhy(tankOf(f.tank))[0] : ''}</span><button class="btn sm coral" data-med="${f.tank}">Medicina · ${eur(MED_PRICE)}</button></div>` : ''}
+  const ph = photos([photoOf(f)]);
+  el.innerHTML = `<div class="row" style="align-items:center">${imgTag(ph[photoOf(f)], 52)}<div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : `alevín (${age} h)`}</span> <span class="trait">${fishTrait(f)}</span><div class="hint">${esc(speciesName(f.g, spOf(f)))} · ${esc(FISH_TRAITS[f.trait]?.desc || '')}</div></div><b>${eur(price(f))}</b></div>
+    ${f.health < 40 ? `<div class="sickrow">${icon('alert')}<span style="flex:1">Enfermo/a${sickWhy(tankOf(f.tank)).length ? ': ' + sickWhy(tankOf(f.tank))[0] : ''}</span><button class="btn sm coral" data-med="${f.tank}">Medicina · ${eur(medPrice())}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Salud</span><div class="bar"><i style="transform:scaleX(${f.health / 100});background:${f.health < 40 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
   el.hidden = false;
 }
@@ -464,14 +555,21 @@ function hud() {
   $('#money b').textContent = eur(st.money);
   const h = hourOf(st.time);
   $('#clock .t b').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor(st.time % 60)).padStart(2, '0')}`;
-  $('#clock .t span').textContent = `Día ${dayOf(st.time) + 1} · ${st.fish.length} peces · ${st.discovered.length}/${TOTAL_COMBOS} variedades`;
+  $('#clock .t span').textContent = `Día ${dayOf(st.time) + 1} · ${st.fish.length} animales · ${st.discovered.length}/${TOTAL_COMBOS} variedades`;
   $('#rep b').textContent = `${Math.floor(st.rep)}`;
   document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));
   document.querySelectorAll('#tools button').forEach((b) => b.classList.toggle('on', b.dataset.t === sheet.name));
   const badge = $('#tools [data-t="clients"] .dot'); if (badge) badge.hidden = !st.requests.length;
   light();
 }
-function geneChips(g) { return `<span class="chip" style="background:${COLORS[g.c].hex};color:${g.c >= 7 || g.c === 2 ? '#333' : '#fff'}">${COLORS[g.c].label}</span><span class="chip">${PATTERNS[g.p].label}</span><span class="chip">${FINS[g.f].short}</span>${g.glow ? '<span class="chip gold">luminoso</span>' : ''}`; }
+function geneChips(g, sp = 'pez') { return `${sp !== 'pez' ? `<span class="chip">${SPECIES[sp].label}</span>` : ''}<span class="chip" style="background:${COLORS[g.c].hex};color:${g.c >= 7 || g.c === 2 ? '#333' : '#fff'}">${COLORS[g.c].label}</span>${sp === 'pez' || g.p ? `<span class="chip">${PATTERNS[g.p].label}</span>` : ''}${sp === 'pez' ? `<span class="chip">${FINS[g.f].short}</span>` : ''}${g.glow && sp !== 'medusa' ? '<span class="chip gold">luminoso</span>' : ''}`; }
+// ---------- fotos de los peces ----------
+const photoKey = (sp, g, adult = true) => `${sp}|${g.c}|${g.p}|${g.f || 0}|${g.glow ? 1 : 0}|${adult ? 1 : 0}`;
+function photoBuild(k) { const [sp, c, p, f, glow, ad] = k.split('|'); const fake = { id: 'foto', g: { c: +c, p: +p, f: +f, s: 1, glow: glow === '1' }, adult: ad === '1' }; if (sp !== 'pez') fake.sp = sp; const m = fishMesh(fake); m.g.rotation.y = sp === 'cangrejo' ? 0 : -0.25; if (m.anim) m.anim(1.3, false); return m.g; }
+// Devuelve las fotos (data URL) de una lista de claves; se dibujan una vez y se guardan
+function photos(keys) { return thumbs('reef-photo', [...new Set(keys)], photoBuild, { size: 120, dir: [1, 0.3, 0.45], fit: 0.8 }); }
+const photoOf = (f) => photoKey(spOf(f), f.g, f.adult);
+const imgTag = (src, size = 56, extra = '') => src ? `<img class="fphoto" src="${src}" alt="" style="width:${size}px;height:${size}px;${extra}">` : `<span class="tilebox">${icon('fish')}</span>`;
 function openTank(tid) {
   if (close) exitClose();
   focusTank = tid; selected.clear();
@@ -489,19 +587,20 @@ function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'tank') {
     const t = tankOf(focusTank); if (!t) return sheet.close(); const fs = fishIn(t);
+    const fph = photos(fs.map(photoOf));
     const dth = thumbs('reef-deco', Object.keys(DECOS), (k) => decoMesh(k, 0, [0, 0], 0), { size: 96 });
     b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:8px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button><div class="row" style="margin-bottom:10px"><button class="btn alt sm" style="flex:1" id="tmove">${icon('move')} Mover acuario</button><button class="btn alt sm" style="flex:1" id="trot">${icon('rotate')} Girar</button><button class="btn alt sm" id="tdel" aria-label="Quitar acuario">${icon('trash')}</button></div>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
       <div class="row" style="margin:8px 0"><button class="btn coral" id="feed">${icon('food')} Comida · 2 €</button><button class="btn alt" id="clean">${icon('drop')} Limpiar · 20 €</button></div>
       ${!has('calefactor') ? `<div class="row"><button class="btn alt sm" id="tdown">− Enfriar</button><span class="hint" style="flex:1;text-align:center;align-self:center">Ideal: 24–27 °C</span><button class="btn alt sm" id="tup">+ Calentar</button></div>` : '<p class="hint">El calefactor mantiene la temperatura perfecta.</p>'}
-      ${(() => { const sick = fs.filter((f) => f.health < 40); const why = sickWhy(t); return sick.length || why.length ? `<div class="sickrow">${icon('alert')}<div style="flex:1;min-width:0"><b>${sick.length ? `${sick.length} ${sick.length > 1 ? 'peces enfermos' : 'pez enfermo'}` : 'Cuidado'}</b><div class="hint">${why.length ? why.join(' · ') : 'Las causas ya están resueltas: la medicina acelera la recuperación.'}${t.medUntil && st.time < t.medUntil ? ' · Medicina activa' : ''}</div></div>${sick.length ? `<button class="btn sm coral" id="med">Medicina · ${eur(MED_PRICE)}</button>` : ''}</div>` : ''; })()}
+      ${(() => { const sick = fs.filter((f) => f.health < 40); const why = sickWhy(t); return sick.length || why.length ? `<div class="sickrow">${icon('alert')}<div style="flex:1;min-width:0"><b>${sick.length ? `${sick.length} ${sick.length > 1 ? 'peces enfermos' : 'pez enfermo'}` : 'Cuidado'}</b><div class="hint">${why.length ? why.join(' · ') : 'Las causas ya están resueltas: la medicina acelera la recuperación.'}${t.medUntil && st.time < t.medUntil ? ' · Medicina activa' : ''}</div></div>${sick.length ? `<button class="btn sm coral" id="med">Medicina · ${eur(medPrice())}</button>` : ''}</div>` : ''; })()}
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
-      <div class="sec">${icon('fish')} Peces (${fs.length}/${TANK_CAP})</div>
-      <p class="hint">Marca un macho y una hembra adultos para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
-      <div class="list">${fs.map((f) => `<div class="li"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'} style="width:20px;height:20px"><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'alevín'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g)}</div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra peces en Comprar.</p>'}</div>
+      <div class="sec">${icon('fish')} Animales (${fs.length}/${TANK_CAP})</div>
+      <p class="hint">Toca la foto de un macho y una hembra adultos de la misma especie para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
+      <div class="list">${fs.map((f) => `<div class="li fishrow"><label class="pick"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'}>${imgTag(fph[photoOf(f)], 60)}</label><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'cría'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g, spOf(f))}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra animales en Comprar.</p>'}</div>
       <button class="btn" id="breed" style="width:100%;margin-top:6px" ${selected.size === 2 && !t.breeding ? '' : 'disabled'}>${icon('egg')} Criar con los dos marcados</button>
-      <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}"><span class="dot" style="background:${decoColor(d, t.dc?.[k])}"></span> ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
+      <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}"><span class="cdot" style="background:${decoColor(d, t.dc?.[k])}"></span> ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
       <p class="hint" style="margin-top:8px">Toca una para verla de cerca y elegir el color antes de comprarla.${t.deco.length >= 8 ? ' <b>Este acuario ya tiene 8 decoraciones.</b>' : ''}</p>
-      <div class="grid">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox" style="background:#2a6a8e;overflow:hidden">${dth[k] ? `<img src="${dth[k]}" alt="" style="width:100%;height:100%;object-fit:cover">` : icon(d.ic)}</span>${d.label}<span class="d">${d.colors.map((c) => `<span class="dot" style="background:${c[1]}"></span>`).join('')}</span><span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
+      <div class="grid">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox" style="background:#2a6a8e;overflow:hidden">${dth[k] ? `<img src="${dth[k]}" alt="" style="width:100%;height:100%;object-fit:cover">` : icon(d.ic)}</span>${d.label}<span class="d">${d.colors.map((c) => `<span class="cdot" style="background:${c[1]}"></span>`).join('')}</span><span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
     b.querySelector('#seeclose').onclick = () => enterClose(t.id);
     const medB = b.querySelector('#med'); if (medB) medB.onclick = () => { medicine(t); renderPanel(); };
     b.querySelector('#tmove').onclick = () => armTank(t);
@@ -515,45 +614,48 @@ function renderPanel() {
     b.querySelector('#breed').onclick = () => {
       const [a, c] = [...selected].map((id) => st.fish.find((f) => f.id === id));
       if (!a || !c || a.sex === c.sex) return toast('Hace falta un macho y una hembra', 'warn');
+      if (spOf(a) !== spOf(c)) return toast('Solo pueden criar dos de la misma especie', 'warn');
       if (fishIn(t).length >= TANK_CAP) return toast('El acuario está lleno: vende o mueve algún pez', 'warn');
       if (tankHappy(t) < 35) return toast('Los peces no están a gusto: decora y limpia el agua', 'warn');
-      t.breeding = { a: a.id, b: c.id, until: st.time + 90 }; selected.clear(); toast(`${a.name} y ${c.name} han puesto huevos`, 'good', 'egg'); renderPanel(); save();
+      t.breeding = { a: a.id, b: c.id, until: st.time + (has('incubadora') ? 45 : 90) }; selected.clear(); toast(`${a.name} y ${c.name} han puesto huevos`, 'good', 'egg'); renderPanel(); save();
     };
-    b.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const f = st.fish.find((q) => q.id === x.dataset.sell); const p = price(f); confirm(`¿Vender a ${f.name} por ${eur(p)}?`, () => { st.money += p; st.fish = st.fish.filter((q) => q !== f); st.sold++; renderPanel(); hud(); save(); }); }));
+    b.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => sellFish(st.fish.find((q) => q.id === x.dataset.sell))));
     b.querySelectorAll('[data-move]').forEach((x) => (x.onclick = () => moveFish(x.dataset.move)));
     b.querySelectorAll('[data-deco]').forEach((x) => (x.onclick = () => decoShop(t, x.dataset.deco)));
   }
   if (name === 'buy') {
-    const n = st.tanks.length;
-    b.innerHTML = `<div class="sec">Peces del proveedor</div><div class="list">
-      <button class="li" id="b1"><span class="tilebox">${icon('fish')}</span><div style="flex:1"><b>Pez común</b><div class="hint">Colores y aletas sencillos</div></div><b>15 €</b></button>
-      <button class="li" id="b2"><span class="tilebox">${icon('egg')}</span><div style="flex:1"><b>Huevo sorpresa</b><div class="hint">Puede salir algo poco común</div></div><b>60 €</b></button></div>
+    const n = st.tanks.length; const sps = Object.entries(SPECIES);
+    const ph = photos(sps.map(([k, S]) => photoKey(k, k === 'pez' ? { c: 1, p: 1, f: 1 } : { c: S.colors[0], p: S.pats[S.pats.length > 1 ? 1 : 0], f: 0, glow: k === 'medusa' })));
+    b.innerHTML = `<div class="sec">Animales del proveedor</div><p class="hint">Llegan adultos al primer acuario con sitio. Con más reputación (★) desbloqueas especies nuevas.</p><div class="list">
+      ${sps.map(([k, S]) => { const lock = st.rep < S.rep; const pk = photoKey(k, k === 'pez' ? { c: 1, p: 1, f: 1 } : { c: S.colors[0], p: S.pats[S.pats.length > 1 ? 1 : 0], f: 0, glow: k === 'medusa' }); return `<div class="li" style="${lock ? 'opacity:.55' : ''}">${imgTag(ph[pk], 60)}<div style="flex:1;min-width:0"><b>${S.label}</b><div class="hint">${S.desc}${S.clean ? ' <b>Limpia.</b>' : ''}${lock ? ` <b>Necesita ${S.rep}★ de reputación.</b>` : ''}</div></div><button class="btn sm" data-sp="${k}" ${lock ? 'disabled' : ''}>${eur(S.price)}</button></div>`; }).join('')}
+      <div class="li"><span class="tilebox">${icon('egg')}</span><div style="flex:1"><b>Huevo sorpresa</b><div class="hint">Un pez que puede salir poco común</div></div><button class="btn sm" id="b2">60 €</button></div></div>
       <div class="sec">Acuarios</div><button class="li" id="bt" style="width:100%" ${n >= MAX_TANKS ? 'disabled' : ''}><span class="tilebox">${icon('box')}</span><div style="flex:1;text-align:left"><b>Nuevo acuario</b><div class="hint">${n}/${MAX_TANKS} acuarios</div></div><b>${n >= MAX_TANKS ? 'Completo' : eur(TANK_PRICE(n))}</b></button>`;
     const target = () => st.tanks.find((t) => fishIn(t).length < TANK_CAP);
-    b.querySelector('#b1').onclick = () => { const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < 15) return toast('No hay dinero suficiente', 'warn'); st.money -= 15; const f = addFish(st, t.id, commonGenes(), null, true); toast(`${f.name} (${speciesName(f.g)}) llega al acuario ${st.tanks.indexOf(t) + 1}`, 'good', 'fish'); hud(); save(); };
-    b.querySelector('#b2').onclick = () => { const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < 60) return toast('No hay dinero suficiente', 'warn'); st.money -= 60; const g = { c: ri(COLORS.length), p: ri(PATTERNS.length), f: ri(FINS.length), s: rnd(0.9, 1.2), glow: Math.random() < 0.04 }; const f = addFish(st, t.id, g); toast(`Del huevo ha salido: ${speciesName(g)}`, 'good', 'egg'); hud(); save(); };
+    b.querySelectorAll('[data-sp]').forEach((x) => (x.onclick = () => { const sp = x.dataset.sp, S = SPECIES[sp]; const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < S.price) return toast('No hay dinero suficiente', 'warn'); st.money -= S.price; const g = genesFor(sp); const f = addFish(st, t.id, g, null, true, sp); toast(`${f.name} (${speciesName(g, sp)}) llega al acuario ${st.tanks.indexOf(t) + 1}`, 'good', 'fish'); renderPanel(); hud(); save(); }));
+    b.querySelector('#b2').onclick = () => { const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < 60) return toast('No hay dinero suficiente', 'warn'); st.money -= 60; const g = genesFor('pez', true); addFish(st, t.id, g); toast(`Del huevo ha salido: ${speciesName(g)}`, 'good', 'egg'); hud(); save(); };
     b.querySelector('#bt').onclick = () => { if (n >= MAX_TANKS) return; const p = TANK_PRICE(n); if (st.money < p) return toast('No hay dinero suficiente', 'warn'); st.money -= p; placeNewTank(); toast('Nuevo acuario instalado', 'good', 'box'); renderPanel(); hud(); save(); };
   }
   if (name === 'clients') {
-    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="hostface" style="width:46px;height:46px">${avatar(CUSTOMERS[r.cust ?? 0].look)}</span><div style="flex:1;min-width:0"><b>${esc(r.who)}</b><div class="hint" style="font-style:italic">«${esc(CUSTOMERS[r.cust ?? 0].ask.replace('{pez}', wantText(r.want).toLowerCase()))}»</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div></div><div style="text-align:right"><b>${eur(r.price)}</b><br><button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
+    const wantKey = (w) => photoKey(w.sp || 'pez', { c: w.c ?? 0, p: w.p ?? 0, f: w.f ?? 0, glow: !!w.glow });
+    const wph = photos(st.requests.filter((r) => r.want.c != null).map((r) => wantKey(r.want)));
+    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="hostface" style="width:46px;height:46px">${avatar(CUSTOMERS[r.cust ?? 0].look)}</span><div style="flex:1;min-width:0"><b>${esc(r.who)}</b><div class="hint" style="font-style:italic">«${esc(CUSTOMERS[r.cust ?? 0].ask.replace('{pez}', wantText(r.want).toLowerCase()))}»</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div>${r.want.c != null ? `<div class="wantpic">${imgTag(wph[wantKey(r.want)], 44)}<span class="hint">Más o menos así${r.want.p == null || r.want.f == null && !r.want.sp ? ' (el resto da igual)' : ''}</span></div>` : ''}</div><div style="text-align:right"><b>${eur(r.price)}</b><br><button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
     b.querySelectorAll('[data-r]').forEach((x) => (x.onclick = () => {
-      const r = st.requests.find((q) => q.id === x.dataset.r); const cands = st.fish.filter((f) => matches(f, r.want)).sort((a, c) => price(a) - price(c));
-      const box2 = modal(`<h2>¿Qué pez entregas?</h2><p class="hint">${esc(r.who)} pide: ${esc(wantText(r.want))}. Paga ${eur(r.price)}.</p><div class="list">${cands.map((f) => `<button class="li" data-f="${f.id}"><span class="tilebox" style="background:${COLORS[f.g.c].hex}">${icon('fish')}</span><div style="flex:1"><b>${esc(f.name)}</b><div class="chips">${geneChips(f.g)}</div></div></button>`).join('')}</div><div class="actions"><button class="btn alt" id="cx">Cancelar</button></div>`);
+      const r = st.requests.find((q) => q.id === x.dataset.r); const cands = st.fish.filter((f) => matches(f, r.want)).sort((a, c) => price(a) - price(c)); const cph = photos(cands.map(photoOf));
+      const box2 = modal(`<h2>¿Cuál entregas?</h2><p class="hint">${esc(r.who)} pide: ${esc(wantText(r.want))}. Paga ${eur(r.price)}.</p><div class="list">${cands.map((f) => `<button class="li" data-f="${f.id}">${imgTag(cph[photoOf(f)], 60)}<div style="flex:1;text-align:left"><b>${esc(f.name)}</b><div class="chips">${geneChips(f.g, spOf(f))}</div></div><b>${eur(r.price)}</b></button>`).join('')}</div><div class="actions"><button class="btn alt" id="cx">Cancelar</button></div>`);
       box2.querySelector('#cx').onclick = closeModal;
       box2.querySelectorAll('[data-f]').forEach((y) => (y.onclick = () => { st.fish = st.fish.filter((f) => f.id !== y.dataset.f); st.money += r.price; st.rep += 1; st.sold++; st.requests = st.requests.filter((q) => q !== r); closeModal(); toast(`${r.who}: «${CUSTOMERS[r.cust ?? 0].bye}» +${eur(r.price)}`, 'good', 'coin'); logDay('sale', r.who); renderPanel(); hud(); save(); }));
     }));
   }
   if (name === 'album') {
-    let h = `<p class="hint"><b>${st.discovered.length} de ${TOTAL_COMBOS}</b> variedades descubiertas. Cría peces para completar el álbum: cada 10 hay premio.</p>`;
-    for (let f = 0; f < FINS.length; f++) {
-      h += `<div class="sec">${FINS[f].label}</div><div class="album">`;
-      for (let p = 0; p < PATTERNS.length; p++) for (let c = 0; c < COLORS.length; c++) { const k = `${c}-${p}-${f}`; const on = st.discovered.includes(k); h += `<span class="cell ${on ? 'on' : ''}" title="${on ? esc(speciesName({ c, p, f })) : '?'}" style="${on ? `background:${COLORS[c].hex}` : ''}">${on ? ['', '≡', '•', '◐'][p] : '?'}</span>`; }
-      h += '</div>';
-    }
+    const sec = (title, cells) => { const keys = cells.filter((c) => c.on).map((c) => c.pk); const ph = photos(keys); return `<div class="sec">${title}</div><div class="album">${cells.map((c) => `<span class="cell ${c.on ? 'on' : ''}" title="${c.on ? esc(c.name) : '?'}" ${c.on ? `data-name="${esc(c.name)}" data-pk="${c.pk}"` : ''} style="${c.on ? `background:radial-gradient(#7cc4ea,#2f7aa6)` : ''}">${c.on && ph[c.pk] ? `<img src="${ph[c.pk]}" alt="">` : '?'}</span>`).join('')}</div>`; };
+    let h = `<p class="hint"><b>${st.discovered.length} de ${TOTAL_COMBOS}</b> variedades descubiertas. Cría para completar el álbum: cada 10 hay premio. Toca una foto para verla en grande.</p>`;
+    for (let f = 0; f < FINS.length; f++) { const cells = []; for (let p = 0; p < PATTERNS.length; p++) for (let c = 0; c < COLORS.length; c++) { const g = { c, p, f }; cells.push({ on: st.discovered.includes(keyOf(g)), pk: photoKey('pez', g), name: speciesName(g) }); } h += sec(`Peces · ${FINS[f].label}`, cells); }
+    for (const [sp, S] of Object.entries(SPECIES)) { if (sp === 'pez') continue; const cells = []; for (const p of S.pats) for (const c of S.colors) { const g = { c, p, f: 0, glow: sp === 'medusa' }; cells.push({ on: st.discovered.includes(keyOf(g, sp)), pk: photoKey(sp, g), name: speciesName(g, sp) }); } h += sec(`${S.plural}${st.rep < S.rep ? ` <span class="hint">· se desbloquea con ${S.rep}★</span>` : ''}`, cells); }
     b.innerHTML = h;
+    b.querySelectorAll('.cell[data-pk]').forEach((x) => (x.onclick = () => { const ph = photos([x.dataset.pk]); info(esc(x.dataset.name), `<div class="photobig">${imgTag(ph[x.dataset.pk], 200)}</div>`, 'Cerrar'); }));
   }
   if (name === 'shop') {
-    b.innerHTML = `<div class="list">${Object.entries(UPGRADES).map(([k, u]) => `<div class="li"><span class="tilebox">${icon(u.ic)}</span><div style="flex:1"><b>${u.label}</b><div class="hint">${u.desc}</div></div>${has(k) ? '<span class="chip good">Instalado</span>' : `<button class="btn sm" data-u="${k}">${eur(u.price)}</button>`}</div>`).join('')}</div>`;
+    b.innerHTML = `<p class="hint">Las mejoras valen para todos los acuarios. Algunas tienen una versión mejor que se desbloquea al tener la primera.</p><div class="list">${Object.entries(UPGRADES).map(([k, u]) => { const lock = u.req && !has(u.req); return `<div class="li" style="${lock ? 'opacity:.55' : ''}"><span class="tilebox">${icon(u.ic)}</span><div style="flex:1"><b>${u.label}</b>${u.req ? ' <span class="chip">nivel 2</span>' : ''}<div class="hint">${u.desc}${lock ? ` <b>Necesita: ${UPGRADES[u.req].label}.</b>` : ''}</div></div>${has(k) ? '<span class="chip good">Instalado</span>' : `<button class="btn sm" data-u="${k}" ${lock ? 'disabled' : ''}>${eur(u.price)}</button>`}</div>`; }).join('')}</div>`;
     b.querySelectorAll('[data-u]').forEach((x) => (x.onclick = () => { const u = UPGRADES[x.dataset.u]; if (st.money < u.price) return toast('No hay dinero suficiente', 'warn'); st.money -= u.price; st.upgrades.push(x.dataset.u); tankGroups.forEach((r) => S3.remove(r.g)); tankGroups.clear(); toast(`${u.label} instalado`, 'good', u.ic); renderPanel(); hud(); save(); }));
   }
   if (name === 'info') {
@@ -568,6 +670,15 @@ function renderPanel() {
     const q = localStorage.getItem('sim_quality') || (eng.hq ? 'alta' : 'eco'); b.querySelectorAll('#q button').forEach((x) => { x.classList.toggle('on', x.dataset.v === q); x.onclick = () => { localStorage.setItem('sim_quality', x.dataset.v); save(); location.reload(); }; });
     b.querySelector('#reset').onclick = () => confirm('Se borrará tu tienda. ¿Empezar de cero?', () => { localStorage.removeItem(KEY); st = newShop(); tankGroups.forEach((r) => S3.remove(r.g)); tankGroups.clear(); sheet.close(); hud(); save(); });
   }
+}
+// Vender: con su foto grande, para ver bien qué se vende
+function sellFish(f) {
+  if (!f) return; const p = price(f); const ph = photos([photoOf(f)]);
+  const bx = modal(`<h2>¿Vender a ${esc(f.name)}?</h2><div class="photobig">${imgTag(ph[photoOf(f)], 180)}</div>
+    <p style="text-align:center;margin:6px 0"><b>${esc(speciesName(f.g, spOf(f)))}</b><br><span class="hint">${f.sex === 'm' ? '♂ macho' : '♀ hembra'} · ${f.adult ? 'adulto' : 'cría (vale la mitad)'} · ${fishTrait(f)}</span></p>
+    <div class="actions"><button class="btn alt" id="sx">Quedármelo</button><button class="btn mint" id="sok">${icon('coin')} Vender · ${eur(p)}</button></div>`);
+  bx.querySelector('#sx').onclick = closeModal;
+  bx.querySelector('#sok').onclick = () => { closeModal(); st.money += p; st.fish = st.fish.filter((q) => q !== f); selected.delete(f.id); st.sold++; toast(`${f.name} vendido/a · +${eur(p)}`, 'good', 'coin'); renderPanel(); hud(); save(); };
 }
 function moveFish(fid) {
   const f = st.fish.find((q) => q.id === fid);
@@ -707,7 +818,7 @@ if (!st.requests.length) newRequest();
 hud();
 Sound.init('acuario');
 $('#fishcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-med]'); if (b) { medicine(tankOf(b.dataset.med)); closeCard(true); } });
-window.reef = { eng, THREE, get st() { return st; } };
+window.reef = { eng, THREE, tick, get st() { return st; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {

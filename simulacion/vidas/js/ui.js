@@ -10,7 +10,7 @@ import { icon } from './icons.js';
 import * as Cloud from './cloud.js';
 import * as Notify from './notify.js';
 import { Sound } from '../../shared/sound.js';
-import { hostFace } from '../../shared/ui.js';
+import { hostFace, sheetComfort } from '../../shared/ui.js';
 
 // Voz interior: lo que piensa cada persona según lo que más necesita y su carácter (cambia cada día)
 const VOICE = {
@@ -55,6 +55,11 @@ export class UI {
     $('#tabbar').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) this.togglePanel(b.dataset.panel); });
     $('#sheet .close').innerHTML = icon('x');
     $('#sheet .close').addEventListener('click', () => this.closePanel());
+    this.comfort = sheetComfort($('#sheet'), $('#sheet .sheet-body'), () => this.closePanel());
+    // tocar fuera de una ventana la cierra con su botón de cerrar/cancelar (si lo tiene)
+    const soft = () => { const m = $('#modal'); if (m.hidden) return; const b = [...m.querySelectorAll('.modal-box button')].find((x) => /^(Cerrar|Cancelar|Vale|Ahora no)$/.test(x.textContent.trim())); if (b) b.click(); };
+    $('#modal').addEventListener('click', (e) => { if (e.target === $('#modal')) soft(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') soft(); });
     $('#fade').innerHTML = icon('hearts');
     document.addEventListener('pointerdown', (e) => { if (!$('#pie').hidden && !e.target.closest('#pie')) this.hidePie(); }, true);
     window.addEventListener('resize', () => this.movePill());
@@ -203,7 +208,7 @@ export class UI {
     const sh = $('#sheet'); sh.classList.remove('closed'); sh.setAttribute('aria-hidden', 'false');
     document.body.classList.add('sheet-open');
     $('#sheet h2').textContent = { needs: 'Estado', rels: 'Gente', barrio: 'Barrio', build: 'Catálogo', menu: 'Menú' }[name];
-    $('#sheet .sheet-body').scrollTop = 0;
+    if (this.lastPanel !== name) { this.comfort.reset(); $('#sheet').classList.remove('tall'); } this.lastPanel = name;
     this.reframe(true);
     if (name === 'needs') this.renderNeeds();
     if (name === 'rels') this.renderRels(true);
@@ -390,7 +395,7 @@ export class UI {
   renderBuild(cat = this.buildCat || CATEGORIES[0]) {
     this.buildCat = cat; const st = this.state; const body = $('#sheet .sheet-body');
     body.innerHTML = `<div class="tabs">${CATEGORIES.map((c) => `<button data-c="${c}" class="${c === cat ? 'on' : ''}">${c}</button>`).join('')}</div><div class="grid"></div><p class="hint">Toca un mueble de la casa para moverlo o venderlo. El tiempo se para mientras construyes.</p>`;
-    body.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) this.renderBuild(b.dataset.c); };
+    body.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { this.comfort.reset(); this.renderBuild(b.dataset.c); } };
     const grid = body.querySelector('.grid');
     if (cat === 'Estilo') return this.renderStyle(body, grid);
     if (cat === 'Paredes') return this.renderWallTools(body, grid);

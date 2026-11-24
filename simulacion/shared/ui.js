@@ -17,8 +17,15 @@ export function toast(msg, kind = 'info', ic = null) {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 220); }, kind === 'bad' ? 6000 : 4000);
 }
 let modalEl;
+// Tocar fuera de una ventana (o la tecla Esc) la cierra con su propio botón de cerrar/cancelar, si lo tiene
+const CLOSE_RX = /^(Cerrar|Cancelar|Quedármelo|Vale|Seguir|No)$/;
+function softClose() { if (!modalEl || modalEl.hidden) return; const b = [...modalEl.querySelectorAll('.modal-box button')].find((x) => CLOSE_RX.test(x.textContent.trim())); if (b) b.click(); }
 export function modal(html) {
-  if (!modalEl) { modalEl = document.createElement('div'); modalEl.className = 'modal'; modalEl.innerHTML = '<div class="modal-box"></div>'; document.body.appendChild(modalEl); }
+  if (!modalEl) {
+    modalEl = document.createElement('div'); modalEl.className = 'modal'; modalEl.innerHTML = '<div class="modal-box"></div>'; document.body.appendChild(modalEl);
+    modalEl.addEventListener('click', (e) => { if (e.target === modalEl) softClose(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') softClose(); });
+  }
   modalEl.hidden = false; const box = modalEl.firstChild; box.innerHTML = html; box.scrollTop = 0; return box;
 }
 export const modalOpen = () => modalEl && !modalEl.hidden;
@@ -32,6 +39,24 @@ export function confirm(text, yes) {
   box.querySelector('#m_no').onclick = closeModal; box.querySelector('#m_yes').onclick = () => { closeModal(); yes(); };
 }
 // Hoja inferior reutilizable
+// Hace un panel más cómodo: asa para arrastrar (abajo cierra, arriba lo agranda)
+// y no salta arriba del todo cada vez que se actualiza su contenido.
+export function sheetComfort(el, body, close) {
+  const grab = document.createElement('div'); grab.className = 'grabber'; grab.innerHTML = '<i></i>'; el.prepend(grab);
+  let saved = 0, restoring = false;
+  body.addEventListener('scroll', () => { if (!restoring) saved = body.scrollTop; }, { passive: true });
+  new MutationObserver(() => { if (!saved) return; restoring = true; body.scrollTop = saved; requestAnimationFrame(() => { body.scrollTop = Math.min(saved, body.scrollHeight); restoring = false; }); }).observe(body, { childList: true });
+  let y0 = null, dy = 0;
+  const handle = [grab, el.querySelector('.sheet-head')];
+  for (const h of handle) {
+    if (!h) continue;
+    h.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; y0 = e.clientY; dy = 0; el.style.transition = 'none'; try { h.setPointerCapture(e.pointerId); } catch { /* */ } });
+    h.addEventListener('pointermove', (e) => { if (y0 == null) return; dy = e.clientY - y0; if (dy > 0) el.style.transform = `translateY(${dy}px)`; });
+    const end = () => { if (y0 == null) return; y0 = null; el.style.transition = ''; el.style.transform = ''; if (dy > 70) close(); else if (dy < -30) el.classList.add('tall'); else if (Math.abs(dy) < 6 && h === grab) el.classList.toggle('tall'); };
+    h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+  }
+  return { reset() { saved = 0; body.scrollTop = 0; }, };
+}
 export class Sheet {
   constructor() {
     this.el = document.createElement('section'); this.el.className = 'sheet closed';
@@ -39,8 +64,9 @@ export class Sheet {
     document.body.appendChild(this.el); this.body = this.el.querySelector('.sheet-body');
     this.el.querySelector('.close').onclick = () => this.close();
     this.name = null; this.onClose = null;
+    this.comfort = sheetComfort(this.el, this.body, () => this.close());
   }
-  open(name, title) { this.name = name; this.el.querySelector('h2').textContent = title; this.el.classList.remove('closed'); this.body.scrollTop = 0; }
+  open(name, title) { if (this.name !== name) { this.comfort.reset(); this.el.classList.remove('tall'); } this.name = name; this.el.querySelector('h2').textContent = title; this.el.classList.remove('closed'); }
   close() { if (!this.name) return; this.name = null; this.el.classList.add('closed'); this.onClose?.(); }
   get isOpen() { return !!this.name; }
 }
