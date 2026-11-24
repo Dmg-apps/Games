@@ -4,7 +4,7 @@ import * as Look from '../shared/look.js';
 Look.setStyle('cubito'); // vegetación y rocas en estilo cubito (diseño propio)
 import { buildingMesh as propMesh, People } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
-import { cubeModel } from './cube3d.js';
+import { cubeModel, cubeScale } from './cube3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
@@ -216,16 +216,23 @@ function callVet(a) {
 // Lo que ocupa sitio dentro de un recinto (radio en casillas): los animales se ponen al lado, no dentro
 const SOLID = { charca: 0.46, nenufares: 0.44, establo: 0.78, arbol: 0.32, acacia: 0.3, roca: 0.5, cueva: 0.62, cuevaroca: 0.66, trepador: 0.5, pajar: 0.45, comedero: 0.42, termitero: 0.3, tronco: 0.25, hielo: 0.42, tobogan: 0.5, troncocaido: 0.5, colmena: 0.2, juguete: 0.22, bambu: 0.3, helechos: 0.25, juncos: 0.2, islote: 0.48 };
 function freeSpot(a, e, x, z) {
-  const me = Math.max(0.2, SPECIES[a.sp].body[0] * 0.45 * (a.baby ? 0.55 : 1));
+  const me = Math.max(0.18, SPECIES[a.sp].body[0] * 0.45 * cubeScale(a.sp) * (a.baby ? 0.55 : 1));
   for (let k = 0; k < 3; k++) {
     for (const it of e.items) { const r = SOLID[it.type]; if (!r) continue; const cx = it.x + 0.5, cz = it.z + 0.5, dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz), need = r + me; if (d < need) { const ux = d > 0.01 ? dx / d : Math.cos(a.x * 7), uz = d > 0.01 ? dz / d : Math.sin(a.z * 7); x = cx + ux * need; z = cz + uz * need; } }
-    for (const o of st.animals) { if (o === a || o.enc !== a.enc) continue; const ox = o.tx ?? o.x, oz = o.tz ?? o.z, dx = x - ox, dz = z - oz, d = Math.hypot(dx, dz), need = me + Math.max(0.2, SPECIES[o.sp].body[0] * 0.4); if (d < need && !(a.baby && o.id === a.mother)) { const ux = d > 0.01 ? dx / d : 1, uz = d > 0.01 ? dz / d : 0; x = ox + ux * need; z = oz + uz * need; } }
+    for (const o of st.animals) { if (o === a || o.enc !== a.enc) continue; const ox = o.tx ?? o.x, oz = o.tz ?? o.z, dx = x - ox, dz = z - oz, d = Math.hypot(dx, dz), need = me + Math.max(0.18, SPECIES[o.sp].body[0] * 0.4 * cubeScale(o.sp)); if (d < need && !(a.baby && o.id === a.mother)) { const ux = d > 0.01 ? dx / d : 1, uz = d > 0.01 ? dz / d : 0; x = ox + ux * need; z = oz + uz * need; } }
   }
   return { x, z };
 }
 function decide(a, e) {
-  const S = SPECIES[a.sp], h = hourOf(st.time), inside = (x, z) => ({ x: Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, x)), z: Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, z)) });
-  const go = (x, z, state, mins) => { const p = inside(x, z); const q = freeSpot(a, e, p.x, p.z); const r = inside(q.x, q.z); a.tx = r.x; a.tz = r.z; a.state = state; a.restUntil = st.time + mins; };
+  const S = SPECIES[a.sp], h = hourOf(st.time), mg = Math.max(0.45, Math.min(e.n / 2 - 0.05, S.body[0] * 0.5 * cubeScale(a.sp) * (a.baby ? 0.55 : 1) + 0.28));
+  const inside = (x, z) => ({ x: Math.min(e.x + e.n - mg, Math.max(e.x + mg, x)), z: Math.min(e.z + e.n - mg, Math.max(e.z + mg, z)) });
+  const blocked = (x, z) => e.items.some((it) => SOLID[it.type] && Math.hypot(x - it.x - 0.5, z - it.z - 0.5) < SOLID[it.type] + 0.2);
+  const go = (x, z, state, mins) => {
+    let p = inside(x, z);
+    for (let k = 0; k < 4; k++) { const q = freeSpot(a, e, p.x, p.z); p = inside(q.x, q.z); if (!blocked(p.x, p.z)) break; }
+    // si sigue chocando (p. ej. una roca en una esquina), busca otro sitio libre del recinto
+    for (let k = 0; k < 12 && blocked(p.x, p.z); k++) p = inside(e.x + rnd(mg, e.n - mg), e.z + rnd(mg, e.n - mg));
+    a.tx = p.x; a.tz = p.z; a.state = state; a.restUntil = st.time + mins; };
   if (a.sick && Math.random() < 0.7) return go(a.x, a.z, 'sick', rnd(20, 40));
   if ((a.trust ?? 100) < 40 && Math.random() < 0.55) { const hide = e.items.find((i) => ENRICH[i.type]?.hide); return hide ? go(hide.x + 0.5 + rnd(-0.6, 0.6), hide.z + 0.5 + rnd(-0.6, 0.6), 'hide', rnd(20, 40)) : go(e.x + (a.x - e.x < e.n / 2 ? 0.6 : e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'hide', rnd(20, 40)); }
   if (h >= 21 || h < 6) { if (a.state !== 'sleep') { const mom = a.mother && st.animals.find((m) => m.id === a.mother); go(mom ? mom.x + 0.2 : a.x + rnd(-1, 1), mom ? mom.z + 0.15 : a.z + rnd(-1, 1), 'sleep', 60); } else a.restUntil = st.time + 30; return; }
@@ -330,11 +337,11 @@ function welfare() { if (!st.animals.length) return 0; return Math.round(st.anim
 const totalVisitors = () => st.history.reduce((t, h) => t + (h.visitors || 0), 0) + st.today.visitors;
 const CHAPTERS = [
   { title: 'Abre el santuario', intro: 'Prepara tu primer recinto y acoge a un animal que necesita hogar.', reward: 1500, goals: [['Construye un recinto', () => st.enclosures.length >= 1], ['Acoge a tu primer animal rescatado', () => st.rescued >= 1], ['Recibe a 10 visitantes', () => totalVisitors() >= 10]] },
-  { title: 'Un hogar para todos', intro: 'Cada vez llegan más avisos de rescate. Haz sitio y cuida bien de cada uno.', reward: 3000, goals: [['Acoge a 4 animales rescatados', () => st.rescued >= 4], ['Bienestar del parque al 60 %', () => welfare() >= 60], ['Abre una tienda para los visitantes', () => st.buildings.some((b) => BUILDINGS[b.type].sells)]] },
-  { title: 'Ganarse su confianza', intro: 'Los animales rescatados desconfían. Con cuidados, comida y paciencia, se sentirán en casa.', reward: 4000, goals: [['3 animales con confianza al 80 %', () => st.animals.filter((a) => (a.trust ?? 100) >= 80 && a.rescued).length >= 3], ['Contrata a un veterinario', () => (st.staff.vet || 0) > 0]] },
+  { title: 'Un hogar para todos', intro: 'Cada vez llegan más avisos de rescate. Haz sitio y cuida bien de cada uno.', reward: 3000, goals: [['Acoge a 4 animales rescatados', () => st.rescued >= 4], ['Bienestar del parque al 60 %', () => welfare() >= 60], ['Abre una tienda para los visitantes', () => st.buildings.some((b) => BUILDINGS[b.type].sells)]] },
+  { title: 'Ganarse su confianza', intro: 'Los animales rescatados desconfían. Con cuidados, comida y paciencia, se sentirán en casa.', reward: 4000, goals: [['3 animales con confianza al 80 %', () => st.animals.filter((a) => (a.trust ?? 100) >= 80 && a.rescued).length >= 3], ['Contrata a un veterinario', () => (st.staff.vet || 0) > 0]] },
   { title: 'Los felinos del circo', intro: 'Un circo va a cerrar y sus grandes felinos necesitan un sitio enorme y tranquilo.', reward: 6000, goals: [['Ten un recinto grande (8×8)', () => st.enclosures.some((e) => e.n >= 8)], ['Acoge a un león o un tigre', () => st.animals.some((a) => ['leon', 'tigre'].includes(a.sp) && a.rescued)]] },
-  { title: 'Nueva vida', intro: 'Cuando un animal se siente seguro, forma familia. Ese es el mejor premio.', reward: 6000, goals: [['Nace una cría en el santuario', () => (st.births || 0) >= 1], ['Bienestar del parque al 70 %', () => welfare() >= 70]] },
-  { title: 'Un santuario de referencia', intro: 'Todo el mundo habla de tu santuario. Demuestra que es el mejor.', reward: 10000, goals: [['Llega a 3★ de fama', () => st.fame >= 3], ['Ten 8 especies distintas', () => new Set(st.animals.map((a) => a.sp)).size >= 8], ['Bienestar del parque al 75 %', () => welfare() >= 75]] },
+  { title: 'Nueva vida', intro: 'Cuando un animal se siente seguro, forma familia. Ese es el mejor premio.', reward: 6000, goals: [['Nace una cría en el santuario', () => (st.births || 0) >= 1], ['Bienestar del parque al 70 %', () => welfare() >= 70]] },
+  { title: 'Un santuario de referencia', intro: 'Todo el mundo habla de tu santuario. Demuestra que es el mejor.', reward: 10000, goals: [['Llega a 3★ de fama', () => st.fame >= 3], ['Ten 8 especies distintas', () => new Set(st.animals.map((a) => a.sp)).size >= 8], ['Bienestar del parque al 75 %', () => welfare() >= 75]] },
 ];
 function checkGoals() {
   const C = CHAPTERS[st.chapter]; if (!C) return;
@@ -477,7 +484,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   if (type === 'pajar') { const straw = new THREE.MeshLambertMaterial({ map: strawTex() }); for (const [x, y, z, r] of [[-0.2, 0.14, 0, 0.1], [0.2, 0.14, 0.05, -0.1], [0, 0.42, 0.02, 0.3]]) at(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.3), straw), x, y, z, r); for (let i = 0; i < 6; i++) { const w = box(0.02, 0.005, 0.12, '#e8c860'); at(w, rnd(-0.45, 0.45), 0.01, rnd(-0.35, 0.35), rnd(0, 3)); } }
   if (type === 'comedero') { at(box(0.8, 0.06, 0.32, '#8a5a32', 0.01), 0, 0.3, 0); for (const sz of [-1, 1]) { const sd = box(0.8, 0.14, 0.03, '#7a4e2a'); at(sd, 0, 0.38, sz * 0.15); } for (const [x, z] of [[-0.35, -0.12], [0.35, -0.12], [-0.35, 0.12], [0.35, 0.12]]) at(box(0.05, 0.3, 0.05, '#6a4222'), x, 0.15, z); const hay = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.24), new THREE.MeshLambertMaterial({ map: strawTex() })); at(hay, 0, 0.38, 0); }
   if (type === 'establo') { // granero de bloques: paredes, tejado a dos aguas bien encajado y puerta
-    g.scale.setScalar(1.45); const red = M('#b8452e');
+    g.scale.setScalar(1.2); const red = M('#b8452e');
     const wall = new THREE.Mesh(new RoundedBoxGeometry(0.9, 0.6, 0.75, 2, 0.03), red); at(wall, 0, 0.3, 0);
     const tri = new THREE.Shape(); tri.moveTo(-0.45, 0); tri.lineTo(0.45, 0); tri.lineTo(0, 0.3); tri.closePath();
     const gable = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.75, bevelEnabled: false }), red); at(gable, 0, 0.6, -0.375);
@@ -496,7 +503,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   // ---- ártico
   if (type === 'hielo') { const ice = new THREE.MeshLambertMaterial({ color: 0xbfe6f5, transparent: true, opacity: 0.85 }); for (const [x, y, z, sz] of [[-0.2, 0.15, 0, 0.3], [0.18, 0.12, 0.1, 0.24], [0, 0.4, 0.02, 0.22], [0.25, 0.1, -0.22, 0.18]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), ice); b.rotation.set(rnd(-0.2, 0.2), rnd(0, 3), rnd(-0.2, 0.2)); at(b, x, y, z, b.rotation.y); } }
   if (type === 'tobogan') { const snow = M('#f4f8fb'); const hill = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), snow); hill.scale.set(1, 0.9, 0.8); at(hill, -0.15, 0, 0); const slide = box(0.26, 0.03, 0.85, '#bfe3f2'); slide.rotation.x = 0.55; at(slide, 0.15, 0.24, 0.2, 0.9); }
-  if (type === 'cueva') { g.scale.set(1.15, 1.5, 1.15); const ice = M('#e2f2fa'); const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), ice); at(dome, 0, 0, 0); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.17, 12, 0, Math.PI), M('#3a5a6a')); at(hole, 0, 0.0, 0.44); for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.45 * Math.cos(i * 0.45 + 0.2), 0.006, 3, 24), M('#c4dce8')); ring.rotation.x = Math.PI / 2; at(ring, 0, 0.45 * Math.sin(i * 0.45 + 0.2), 0); } }
+  if (type === 'cueva') { g.scale.set(1.05, 1.25, 1.05); const ice = M('#e2f2fa'); const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), ice); at(dome, 0, 0, 0); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.17, 12, 0, Math.PI), M('#3a5a6a')); at(hole, 0, 0.0, 0.44); for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.45 * Math.cos(i * 0.45 + 0.2), 0.006, 3, 24), M('#c4dce8')); ring.rotation.x = Math.PI / 2; at(ring, 0, 0.45 * Math.sin(i * 0.45 + 0.2), 0); } }
   // ---- humedal
   if (type === 'nenufares') { const w = new THREE.Mesh(new THREE.CircleGeometry(0.46, 20), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.9 })); w.rotation.x = -Math.PI / 2; at(w, 0, 0.04, 0); g.userData.water = w; for (let i = 0; i < 5; i++) { const pad = new THREE.Mesh(new THREE.CircleGeometry(0.08, 10, 0.3, Math.PI * 1.8), M('#4a9a4a')); pad.rotation.x = -Math.PI / 2; at(pad, rnd(-0.28, 0.28), 0.05, rnd(-0.28, 0.28)); if (i % 2 === 0) { const fl = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.05, 6), M(i % 4 ? '#f6f0f4' : '#f08ab4')); at(fl, pad.position.x, 0.08, pad.position.z); } } }
   if (type === 'juncos') for (let i = 0; i < 16; i++) { const h = 0.45 + Math.random() * 0.4; const r = cyl(0.008, 0.014, h, i % 3 ? '#6a9a3a' : '#7aa848', 3); r.rotation.z = rnd(-0.18, 0.18); at(r, rnd(-0.35, 0.35), h / 2, rnd(-0.35, 0.35)); if (i % 3 === 0) at(cyl(0.022, 0.022, 0.09, '#6a4a2a', 6), r.position.x, h - 0.04, r.position.z); }
@@ -504,7 +511,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   // ---- bosque
   if (type === 'troncocaido') { const t = cyl(0.13, 0.15, 1.1, '#6a4a2e', 10); t.rotation.z = Math.PI / 2; at(t, 0, 0.14, 0, 0.5); for (const sx of [-1, 1]) { const end = cyl(0.13, 0.13, 0.01, '#c8a06a', 10); end.rotation.z = Math.PI / 2; end.position.set(sx * 0.55, 0, 0); t.add(end); end.rotation.set(0, 0, 0); end.position.set(0, sx * 0.555, 0); } for (let i = 0; i < 4; i++) at(new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), M('#4e7a3a')), rnd(-0.3, 0.3), 0.27, rnd(-0.12, 0.12)); for (let i = 0; i < 3; i++) { const m2 = cyl(0.03, 0.01, 0.04, '#d8c8a0', 6); at(m2, 0.3 + i * 0.05, 0.03, 0.15); const cap = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), M('#c0432a')); at(cap, 0.3 + i * 0.05, 0.05, 0.15); } }
   if (type === 'colmena') { const post = cyl(0.05, 0.06, 0.8, '#6a4a2e'); at(post, 0, 0.4, 0); const hive = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), M('#e0a830')); hive.scale.set(1, 1.25, 1); at(hive, 0.12, 0.66, 0); for (let i = 0; i < 4; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15 * Math.sin((i + 1) / 5 * Math.PI), 0.012, 4, 14), M('#c88a20')); ring.rotation.x = Math.PI / 2; at(ring, 0.12, 0.66 + (i - 1.5) * 0.08, 0); } const hole = new THREE.Mesh(new THREE.CircleGeometry(0.03, 8), M('#3a2a10')); at(hole, 0.12, 0.6, 0.155); const arm = box(0.16, 0.03, 0.03, '#6a4a2e'); at(arm, 0.06, 0.82, 0); }
-  if (type === 'cuevaroca') { g.scale.setScalar(1.35); for (const [x, y, z, sz, c] of [[-0.3, 0.2, 0, 0.32, '#8a8378'], [0.3, 0.2, 0, 0.32, '#7d776d'], [0, 0.5, -0.05, 0.36, '#958e82'], [0, 0.18, -0.3, 0.28, '#8a8378']]) at(Look.rock(sz, c, seed + x * 10 + z * 7 + 1), x, y, z); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.2, 12, 0, Math.PI), M('#2a2620')); at(hole, 0, 0.02, 0.18); }
+  if (type === 'cuevaroca') { g.scale.setScalar(1.15); for (const [x, y, z, sz, c] of [[-0.3, 0.2, 0, 0.32, '#8a8378'], [0.3, 0.2, 0, 0.32, '#7d776d'], [0, 0.5, -0.05, 0.36, '#958e82'], [0, 0.18, -0.3, 0.28, '#8a8378']]) at(Look.rock(sz, c, seed + x * 10 + z * 7 + 1), x, y, z); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.2, 12, 0, Math.PI), M('#2a2620')); at(hole, 0, 0.02, 0.18); }
   Look.shadows(g, true, false);
   return g;
 }
@@ -590,7 +597,7 @@ function syncAnimals(t) {
     // mientras se mueve: el animal cogido va con el dedo; los de un recinto que se mueve, con él
     if (mv && mv.kind === 'animal' && mv.ref === a) m.g.position.set(mv.px, 0.55 + Math.sin(t * 6) * 0.04, mv.pz);
     else if (mv && mv.kind === 'enc' && a.enc === mv.ref.id) m.g.position.set(a.x + mv.x - mv.ref.x, 0.2, a.z + mv.z - mv.ref.z);
-    const k = a.baby ? 0.55 : 1; m.g.scale.setScalar(k);
+    const k = (a.baby ? 0.55 : 1) * (m.baseScale || 1); m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
     const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
     if (m.glb) { // modelo animado: elige la animación según lo que hace y a qué velocidad va de verdad
@@ -885,7 +892,7 @@ function hud() {
   $('#money b').textContent = eur(st.money);
   const h = hourOf(st.time); const open = h >= 9 && h < 20;
   $('#clock .t b').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor(st.time % 60)).padStart(2, '0')}`;
-  $('#clock .t span').textContent = `Día ${dayOf(st.time) + 1} · ${open ? 'Abierto' : 'Cerrado'} · ${visitors.length} visitantes`;
+  $("#clock .t span").textContent = `Día ${dayOf(st.time) + 1}${open ? "" : " · cerrado"}`;
   $('#fame b').textContent = `${stars()}★`;
   const rdot = $('#tools [data-t="animal"] .dot'); if (rdot) rdot.hidden = !st.rescues.length;
   document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));

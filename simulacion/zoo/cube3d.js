@@ -87,7 +87,13 @@ const LOOK = {
   tortuga: { arch: 'turtle' },
 };
 
-export function cubeModel(sp) {
+// Escala del mundo: 1 casilla = 2 m y una persona mide 0,8 (1,6 m). Cada especie se reduce a su tamaño real
+// (altura a la cruz real ÷ 2), para que animales, personas, vallas y edificios tengan proporciones creíbles.
+const SCALE = { cabra: 0.75, alpaca: 0.68, llama: 0.75, huarizo: 0.7, caballo: 0.9, burro: 0.8, mula: 0.85, cebra: 0.82, cebrallo: 0.85, cebrasno: 0.82, vaca: 0.88, ciervo: 0.6, zorro: 0.55, lobo: 0.62,
+  leon: 0.66, tigre: 0.65, ligre: 0.75, tigon: 0.68, osopolar: 0.82, osopardo: 0.72, pizzly: 0.76, panda: 0.56, elefante: 1.05, jirafa: 1.0, mono: 0.8, canguro: 0.9, pinguino: 0.85, flamenco: 0.8, tortuga: 1 };
+export const cubeScale = (sp) => SCALE[sp] ?? 0.8;
+export function cubeModel(sp) { const m = buildCube(sp); m.baseScale = cubeScale(sp); m.g.scale.setScalar(m.baseScale); return m; }
+function buildCube(sp) {
   const S = SPECIES[sp] || SPECIES.cabra; const L = LOOK[sp] || { fur: 'plain', ears: 'side', snout: 0.5, tail: 'stub' };
   const [c0, c1, c2] = S.colors; const arch = L.arch || 'quad';
   if (arch === 'penguin') return penguin(sp, S);
