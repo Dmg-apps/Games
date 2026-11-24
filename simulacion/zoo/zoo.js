@@ -1,12 +1,13 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-import { buildingMesh as propMesh, People } from './props3d.js';
+import { buildingMesh as propMesh, People, GlbPeople } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
+import { loadModel, peek, instance as modelInstance, preload as preloadModels, staticModel } from '../shared/assets.js';
 import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
 
 const KEY = 'parque_save_v1';
@@ -357,8 +358,11 @@ const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico:
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
 function enrichMesh(type, biome = 'sabana', seed = 1) {
   const g = new THREE.Group();
-  if (type === 'arbol') g.add(tree(1.25, BIOME_TREE[biome], seed));
-  if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
+  // árboles y rocas con modelos de verdad (Kenney, CC0) cuando ya están cargados
+  const GTREE = { granja: 'tree_oak', sabana: 'tree_fat', selva: 'tree_palm', artico: 'tree_pine_tall', humedal: 'tree_oak', bosque: 'tree_pine' };
+  if (type === 'arbol') { const t = staticModel(`nature/${GTREE[biome] || 'tree_oak'}.glb`, { height: biome === 'selva' ? 2.6 : 2.3 }); if (t) { t.rotation.y = seed % 6; g.add(t, blob(1.1, 1.1, 0.3)); } else g.add(tree(1.25, BIOME_TREE[biome], seed)); }
+  if (type === 'roca' && peek('nature/rock_large.glb')) { const a = staticModel('nature/rock_large.glb', { length: 0.75 }), b = staticModel('nature/rock_small.glb', { length: 0.35 }), c = staticModel('nature/rock_tall.glb', { length: 0.4 }); a.position.set(-0.15, 0, 0.05); b.position.set(0.3, 0, 0.25); c.position.set(0.15, 0, -0.25); a.rotation.y = seed; c.rotation.y = seed * 2; g.add(a, b, c); }
+  else if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
   if (type === 'charca') {
     const bank = new THREE.Mesh(new THREE.CircleGeometry(0.88, 24), mat('#8a7a52')); bank.rotation.x = -Math.PI / 2; bank.position.y = 0.03; bank.receiveShadow = true; g.add(bank);
     const w = new THREE.Mesh(new THREE.CircleGeometry(0.74, 24), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.92 })); w.rotation.x = -Math.PI / 2; w.position.y = 0.045; g.add(w); g.userData.water = w;
@@ -431,7 +435,41 @@ function faceToPath(b) { const P = pathSet(); for (const [dx, dz, r] of [[0, 1, 
 
 // Animales orgánicos (ver animals3d.js)
 const animalMeshes = new Map();
-function animalModel(sp) { const m = organicModel(sp); const [L, , W] = SPECIES[sp].body; m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m; }
+// Especies con modelo 3D profesional animado (Quaternius, CC0). tint: tono que se le da; stripes: rayas de cebra
+const GLB = {
+  caballo: { file: 'animals/horse.glb', len: 1.25 }, burro: { file: 'animals/donkey.glb', len: 0.95 },
+  llama: { file: 'animals/alpaca.glb', len: 0.95 }, alpaca: { file: 'animals/alpaca.glb', len: 0.85 },
+  cebra: { file: 'animals/white_horse.glb', len: 1.15, stripes: true }, mula: { file: 'animals/donkey.glb', len: 1.05, tint: '#9a7050' },
+  vaca: { file: 'animals/cow.glb', len: 1.3 }, ciervo: { file: 'animals/stag.glb', len: 1.15 }, zorro: { file: 'animals/fox.glb', len: 0.7 }, lobo: { file: 'animals/wolf.glb', len: 1.0 },
+};
+let glbReady = false;
+// naturaleza: al cargar, se rehacen recintos y decoración con los modelos nuevos
+preloadModels(['tree_oak', 'tree_fat', 'tree_palm', 'tree_pine', 'tree_pine_tall', 'tree_autumn', 'rock_large', 'rock_small', 'rock_tall'].map((n) => `nature/${n}.glb`)).then(() => { rebuildEnclosures(); rebuildBuildings(); });
+preloadModels([...new Set(Object.values(GLB).map((v) => v.file))]).then(() => { glbReady = true; for (const [, m] of animalMeshes) groups.animals.remove(m.g); animalMeshes.clear(); });
+// Rayas de cebra pintadas en el modelo (solo en las partes claras)
+function zebraize(root, len) {
+  root.updateMatrixWorld(true); const qg = root.getWorldQuaternion(new THREE.Quaternion());
+  root.traverse((o) => { if (!o.isMesh) return;
+    // dirección del cuerpo y escala, medidas en el espacio propio de la malla (el esqueleto la escala)
+    const q = o.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(qg); const ws = o.getWorldScale(new THREE.Vector3());
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize(), up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize();
+    const k = 9 / (len / Math.max(1e-6, ws.x));
+    const m = o.material = o.material.clone(); m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { uK: { value: k }, uDir: { value: dir }, uUp: { value: up } });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vZp;').replace('#include <skinning_vertex>', '#include <skinning_vertex>\nvZp = transformed;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vZp; uniform float uK; uniform vec3 uDir; uniform vec3 uUp;').replace('#include <map_fragment>', '#include <map_fragment>\nfloat lumZ = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); float zz = dot(vZp, uDir), yy = dot(vZp, uUp); float st = smoothstep(0.3, 0.6, abs(sin((zz + 0.18 * sin(yy * uK * 0.5)) * uK)));\nif (lumZ > 0.3) diffuseColor.rgb *= mix(0.08, 1.0, st);');
+    }; m.customProgramCacheKey = () => 'zebra' + k.toFixed(3);
+  });
+}
+function tintModel(root, hex) { const c = new THREE.Color(hex); root.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.lerp(c, 0.55); } }); }
+function glbAnimal(sp) {
+  const G = GLB[sp]; const gl = G && peek(G.file); if (!gl) return null;
+  const it = modelInstance(gl, { length: G.len }); if (G.stripes) zebraize(it.g, Math.max(it.size.x, it.size.z) || 1); if (G.tint) tintModel(it.g, G.tint);
+  it.glb = true; it.play('Idle'); return it;
+}
+function animalModel(sp) {
+  const m = glbAnimal(sp) || organicModel(sp); const [L, , W] = SPECIES[sp].body; m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m;
+}
 function syncAnimals(t) {
   const seen = new Set();
   for (const a of st.animals) {
@@ -445,6 +483,14 @@ function syncAnimals(t) {
     const k = a.baby ? 0.55 : 1; m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
     const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
+    if (m.glb) { // modelo animado: elige la animación según lo que hace
+      if (moving) m.play(a.state === 'play' ? ['Gallop', 'Walk'] : 'Walk', { speed: a.baby ? 1.3 : 1 });
+      else if (headDown) m.play('Eating'); else if (sleeping) m.play(['Idle_Headlow', 'Idle_2_HeadLow', 'Idle'], { speed: 0.35 });
+      else if (a.state === 'play') m.play(['Jump_toIdle', 'Jump_ToIdle', 'Idle_2']); else m.play(['Idle', 'Idle_2']);
+      m.update(m.lastT ? Math.min(0.1, t - m.lastT) : 0); m.lastT = t;
+      if (a.state === 'play' && !moving) m.g.rotation.y += Math.sin(t * 4) * 0.02;
+      continue;
+    }
     m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -S.legs * 0.85 : 0;
     m.legs.forEach((l, i) => { l.visible = !sleeping; l.rotation.x = S.hop ? 0 : (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5; const k = l.userData.knee; if (k) k.rotation.x = l.userData.back ? -Math.max(0, l.rotation.x) * 1.1 : Math.max(0, -l.rotation.x) * 1.1; });
     m.neck.rotation.x = m.neckRx + (headDown ? 0.9 + Math.sin(t * 3 + a.x) * 0.08 : sleeping ? 0.6 : 0);
@@ -457,7 +503,8 @@ function syncAnimals(t) {
 }
 const peopleMeshes = new Map();
 let people = null;
-function syncPeople(t) { (people ||= new People(groups.people, 90)).sync(visitors, t); }
+let glbPeople = null;
+function syncPeople(t) { const rest = (glbPeople ||= new GlbPeople(groups.people, eng.hq ? 40 : 24)).sync(visitors, t); (people ||= new People(groups.people, 90)).sync(rest, t); }
 function rebuildLitter() { const g = groups.litter; g.clear(); for (const l of st.litter) { const b = box(0.12, 0.04, 0.08, l.c); b.position.set(l.x + 0.3 + Math.random() * 0.4, 0.08, l.z + 0.3 + Math.random() * 0.4); b.rotation.y = Math.random() * 3; g.add(b); } }
 
 groups.extra = new THREE.Group(); S3.add(groups.extra);
@@ -839,7 +886,7 @@ function crossPairs(e) {
 }
 // ---------- fotos de los animales ----------
 // Se dibujan una vez por especie (con el mismo modelo 3D del parque) y se guardan
-function zooPhotos(sps) { return thumbs('zoo-animal', [...new Set(sps)], (sp) => { const g = organicModel(sp).g; g.rotation.y = -0.5; return g; }, { size: 120, dir: [0.35, 0.3, 1], fit: 0.85 }); }
+function zooPhotos(sps) { return thumbs(glbReady ? 'zoo-animal-g' : 'zoo-animal', [...new Set(sps)], (sp) => { const m = glbAnimal(sp); if (m) { m.update(0.4); m.g.rotation.y = 1.1; return m.g; } const g = organicModel(sp).g; g.rotation.y = -0.5; return g; }, { size: 120, dir: [0.35, 0.3, 1], fit: 0.85 }); }
 const zimg = (src, biome, size = 56) => src ? `<img class="zphoto" src="${src}" alt="" style="width:${size}px;height:${size}px;background:radial-gradient(circle at 50% 40%, #fff8, transparent 70%), ${BIOMES[biome]?.color || '#9cc46a'}">` : `<span class="tilebox">${icon('paw')}</span>`;
 function crossSection(e) {
   const pairs = crossPairs(e); const cph = zooPhotos(pairs.flatMap(({ m, f }) => [m.sp, f.sp]));

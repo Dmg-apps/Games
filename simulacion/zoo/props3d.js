@@ -1,6 +1,7 @@
 // Tiendas, decoración y visitantes del parque, con más detalle.
 // Cada quiosco tiene su forma, toldo, mostrador, cartel y un reclamo en el tejado.
 // Los visitantes se dibujan "instanciados": todos juntos en pocas llamadas de dibujo, con piernas y brazos que se mueven.
+import { peek, instance as modelInstance, preload as preloadModels, staticModel } from '../shared/assets.js';
 import { THREE, mat, blob, canvasTexture } from '../shared/engine3d.js';
 import { RoundedBoxGeometry } from '../shared/vendor/RoundedBoxGeometry.js';
 import * as Look from '../shared/look.js';
@@ -103,7 +104,7 @@ export function buildingMesh(b, BUILDINGS) {
       g.add(at(sph(0.012, '#f5c842', 6, 4), fx, 0.115 + h, fz)); }
     const bush = Look.bush(0.12, b.x + b.z, '#2f6e34', '#6aae52'); g.add(at(bush, 0, 0.1, 0));
   } else if (b.type === 'arbolp') {
-    g = new THREE.Group(); const t = Look.tree((b.x + b.z) % 3 ? 'roble' : 'abedul', 1.1, b.x * 3 + b.z); g.add(t);
+    g = new THREE.Group(); const t = staticModel(['nature/tree_oak.glb', 'nature/tree_fat.glb', 'nature/tree_pine.glb'][(b.x * 3 + b.z) % 3], { height: 2.1 }) || Look.tree((b.x + b.z) % 3 ? 'roble' : 'abedul', 1.1, b.x * 3 + b.z); t.rotation.y = (b.x * 7 + b.z) % 6; g.add(t);
     g.add(at(cyl(0.3, 0.32, 0.08, '#bdb2a0', 16), 0, 0.04, 0)); g.add(at(cyl(0.27, 0.27, 0.02, '#5a3e28', 16), 0, 0.08, 0)); g.add(blob(1.0, 1.0, 0.3));
   } else if (b.type === 'fuente') {
     g = new THREE.Group(); const stone = mat('#d8d0c2'), stone2 = mat('#c4baa8');
@@ -118,6 +119,27 @@ export function buildingMesh(b, BUILDINGS) {
   } else { g = new THREE.Group(); g.add(rb(0.5, 0.5, 0.5, '#ccc')); }
   if (B.cat === 'Tiendas') { g.add(blob(1.3, 1.3, 0.35)); }
   return g;
+}
+
+// ---------- visitores con modelos animados (Kenney Mini Characters, CC0) ----------
+// Los primeros "max" visitantes se dibujan con personajes de verdad; el resto, con las figuras sencillas.
+const PEOPLE_FILES = ['a', 'b', 'c', 'd', 'e', 'f'].flatMap((k) => [`people/mini_male_${k}.glb`, `people/mini_female_${k}.glb`]).filter((f) => !f.endsWith('female_a.glb')); // (esa lleva algo parecido a un arma)
+export class GlbPeople {
+  constructor(scene, max = 30) { this.scene = scene; this.max = max; this.map = new Map(); this.ready = false; this.lastT = 0; preloadModels(PEOPLE_FILES).then((r) => { this.ready = r.every(Boolean); }); }
+  // Devuelve los visitantes que no ha dibujado (para las figuras sencillas)
+  sync(list, t) {
+    if (!this.ready) return list;
+    const dt = this.lastT ? Math.min(0.1, t - this.lastT) : 0; this.lastT = t;
+    const shown = list.slice(0, this.max); const seen = new Set();
+    for (const p of shown) {
+      seen.add(p.id); let r = this.map.get(p.id);
+      if (!r) { const gl = peek(PEOPLE_FILES[Math.floor(Math.abs(p.id) * 1e6) % PEOPLE_FILES.length]); r = modelInstance(gl, { height: p.kid ? 0.48 : 0.66 }); r.g.add(blob(0.36, 0.36, 0.3)); r.g.traverse((o) => { o.castShadow = false; }); this.scene.add(r.g); this.map.set(p.id, r); }
+      const walk = p.path && p.path.length; r.play(walk ? 'walk' : 'idle', { speed: walk ? 1.1 : 1 }); r.update(dt);
+      r.g.position.set(p.x + 0.5, 0.05, p.z + 0.5); r.g.rotation.y = p.dir || 0;
+    }
+    for (const [id, r] of this.map) if (!seen.has(id)) { this.scene.remove(r.g); this.map.delete(id); }
+    return list.slice(this.max);
+  }
 }
 
 // ---------- visitores ----------

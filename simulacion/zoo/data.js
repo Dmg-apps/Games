@@ -34,6 +34,11 @@ export const SPECIES = {
   tigre: { label: 'Tigre', biome: 'selva', price: 2600, appeal: 7, fame: 3, space: 6, body: [1.0, 0.47, 0.37], legs: 0.46, neck: 0.15, head: 0.19, colors: ['#e8862a', '#f8f0e2', '#171210'], feat: ['tail_long'] },
   osopardo: { label: 'Oso pardo', biome: 'bosque', price: 2300, appeal: 6, fame: 3, space: 7, body: [1.0, 0.6, 0.55], legs: 0.42, neck: 0.18, head: 0.22, colors: ['#6e4628', '#5e3c22', '#2a1a10'], feat: ['ears_round'] },
   panda: { label: 'Panda', biome: 'selva', price: 5000, appeal: 9, fame: 4.5, space: 6, body: [0.8, 0.55, 0.5], legs: 0.34, neck: 0.15, head: 0.26, colors: ['#f6f4ee', '#1c1c1c', '#1c1c1c'], feat: ['panda', 'ears_round'] },
+  // Con modelo 3D profesional (Quaternius, CC0)
+  vaca: { label: 'Vaca', biome: 'granja', price: 450, appeal: 1, fame: 0, space: 4, social: true, body: [0.95, 0.5, 0.45], legs: 0.45, neck: 0.2, head: 0.18, colors: ['#7a4a2a', '#f2ece0', '#2a1a10'], feat: [] },
+  ciervo: { label: 'Ciervo', biome: 'bosque', price: 900, appeal: 3, fame: 1, space: 5, social: true, body: [0.85, 0.45, 0.32], legs: 0.6, neck: 0.35, head: 0.15, colors: ['#9a6a40', '#e8d4b0', '#3a2a1a'], feat: [] },
+  zorro: { label: 'Zorro', biome: 'bosque', price: 700, appeal: 3, fame: 1, space: 3, body: [0.5, 0.25, 0.18], legs: 0.22, neck: 0.08, head: 0.1, colors: ['#d8742a', '#f4ece0', '#2a1a10'], feat: [] },
+  lobo: { label: 'Lobo', biome: 'bosque', price: 1800, appeal: 5, fame: 2, space: 6, social: true, body: [0.75, 0.38, 0.25], legs: 0.4, neck: 0.12, head: 0.15, colors: ['#7a7a80', '#d8d8d8', '#2a2a2a'], feat: [] },
 };
 
 // Objetos dentro de los recintos (enriquecimiento)
@@ -90,7 +95,7 @@ export const VET_VISIT = 80; // llamar al veterinario una vez
 export const FOOD_COST = 15;
 
 export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara', 'Bimba', 'Canela', 'Trufa', 'Pelusa', 'Golfo', 'Jazmín', 'Lirio', 'Menta', 'Ocre', 'Pimienta', 'Ramón', 'Sombra', 'Tango', 'Uva', 'Vainilla', 'Yuca', 'Zafiro', 'Arena', 'Bombón', 'Cacao', 'Dátil', 'Eco', 'Fresa', 'Gofio', 'Higo', 'Indi', 'Jara', 'Kala', 'Lima', 'Mango', 'Nuez', 'Olivo', 'Pan', 'Queso', 'Roble', 'Salvia', 'Tomillo', 'Ulises', 'Vega', 'Wanda', 'Xoco', 'Yago', 'Zarza', 'Ámbar', 'Brisa', 'Cometa', 'Dino', 'Estrella', 'Faro', 'Gema', 'Hada', 'Iris', 'Jade', 'Kumo', 'Loto', 'Merlín', 'Niebla', 'Ópalo', 'Pompón', 'Quimera', 'Rizos', 'Saltarín', 'Trueno', 'Umbra', 'Volcán'];
-export const CARNIVORES = ['leon', 'osopolar', 'tigre', 'osopardo', 'ligre', 'tigon', 'pizzly'];
+export const CARNIVORES = ['leon', 'osopolar', 'tigre', 'osopardo', 'ligre', 'tigon', 'pizzly', 'lobo', 'zorro'];
 
 // Cruces posibles en la naturaleza (o en cautividad) entre especies emparentadas.
 // Los híbridos no se compran: solo se consiguen cruzando. Muchos son estériles, como en la realidad.
@@ -132,4 +137,4 @@ export const TRAITS = {
   grunon: { m: 'Gruñón', f: 'Gruñona', desc: 'Necesita su espacio: se aparta de los demás.' },
 };
 // Género gramatical de cada especie (para que los textos concuerden: "una cebra", "un león")
-for (const k of ['cabra', 'alpaca', 'llama', 'cebra', 'jirafa', 'tortuga', 'mula']) SPECIES[k].fem = true;
+for (const k of ['cabra', 'alpaca', 'llama', 'cebra', 'jirafa', 'tortuga', 'mula', 'vaca']) SPECIES[k].fem = true;
