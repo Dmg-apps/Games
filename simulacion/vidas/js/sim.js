@@ -573,6 +573,7 @@ function interrupt(state, s) {
     if (o) o.users = o.users.filter((u) => u !== s.id);
     if (c.onObj && c.spot) { s.x = c.spot.x; s.y = c.spot.y; }
   }
+  if (c.tvId) { const tv = objById(state, c.tvId); if (tv) tv.users = tv.users.filter((u) => u !== s.id); }
   if (c.bedId) {
     const o = objById(state, c.bedId);
     if (o) o.users = o.users.filter((u) => u !== s.id);
@@ -611,6 +612,17 @@ function startNext(state, s) {
     if (!o) return;
     const avail = objectActions(state, s, o).find((x) => x.id === item.act);
     if (!avail || avail.disabled) { if (s.home) toast(`${s.name}: ${avail ? avail.disabled : 'no puede'}`, 'warn', s.id); return; }
+    // Ver la tele desde un sofá libre cercano, si lo hay
+    if (item.act === 'tele' && s.age !== 'bebe') {
+      const cx = o.x + 0.5, cy = o.y + 0.5;
+      const sofas = state.objects.filter((q) => q.type === 'sofa' && q.users.length < (OBJECTS.sofa.cap || 2) && Math.hypot(q.x + 1 - cx, q.y + 0.5 - cy) < 6).sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+      for (const sofa of sofas) {
+        const rs = nearestSpot(state, s, objTiles(sofa)); if (!rs) continue;
+        sofa.users.push(s.id); o.users.push(s.id);
+        s.cur = { kind: 'obj', act: item.act, objId: sofa.id, tvId: o.id, phase: 'walk', t: 0, spot: rs.spot, onObj: true, icon: a.ic, label: a.label };
+        s.path = rs.path; return;
+      }
+    }
     const r = nearestSpot(state, s, objTiles(o));
     if (!r) { if (s.home) toast(`${s.name} no puede llegar a ${def.name}`, 'warn', s.id); return; }
     o.users.push(s.id);

@@ -344,7 +344,7 @@ function poseOf(state, s) {
       return { id: 'type', arms: (t) => [[-0.75, -0.1, -1.0 + Math.sin(t * 18) * 0.08], [-0.75, 0.1, -1.0 - Math.sin(t * 18) * 0.08]] };
     }
     case 'leer': return { id: 'read', prop: 'book', arms: () => [[-0.9, -0.25, -1.3], [-0.9, 0.25, -1.3]] };
-    case 'tele': return { id: 'tv' };
+    case 'tele': return c.tvId ? { id: 'sofa', sit: true, seat: 0.44, arms: () => [[-0.2, -0.25, -0.5], [-0.2, 0.25, -0.5]] } : { id: 'tv' };
     case 'bailar': return { id: 'dance', bounce: true, sway: true, arms: (t) => [[-2.6 + Math.sin(t * 7) * 0.6, -0.3, -0.5], [-2.6 - Math.sin(t * 7) * 0.6, 0.3, -0.5]] };
     case 'juguetes': return { id: 'toys', sit: true, seat: 0.15, bounce: true, arms: (t) => [[-0.8, -0.2, -0.6], [-1.2 + Math.sin(t * 6) * 0.4, 0.2, -0.6]] };
     case 'regar': return { id: 'water', prop: 'can', arms: () => [[0, -0.1, -0.15], [-1.1, 0.1, -0.3]] };

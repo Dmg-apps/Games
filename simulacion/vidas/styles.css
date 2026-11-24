@@ -17,6 +17,8 @@
 html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #7fc3ee; color: var(--ink); font-family: 'Nunito', ui-rounded, system-ui, -apple-system, sans-serif; font-weight: 600; }
 body { height: 100dvh; }
+/* En el iPhone instalado, 100dvh deja una franja abajo: el cuerpo ocupa toda la pantalla */
+body { position: fixed; inset: 0; height: auto; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; padding: 0; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 input, select { font: inherit; font-size: 16px; color: var(--ink); }
 [hidden] { display: none !important; }
