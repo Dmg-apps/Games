@@ -476,19 +476,26 @@ function syncAnimals(t) {
     seen.add(a.id); let m = animalMeshes.get(a.id);
     if (!m) { m = animalModel(a.sp); Look.shadows(m.g, eng.hq, false); m.g.userData.animal = a.id; animalMeshes.set(a.id, m); groups.animals.add(m.g); }
     const moving = a.tx != null && (Math.abs(a.tx - a.x) > 0.05 || Math.abs(a.tz - a.z) > 0.05);
-    m.g.position.set(a.x, 0.05, a.z); if (a.dir != null) m.g.rotation.y = a.dir;
+    // giro suave (no de golpe) hacia donde va
+    const rdt = m.rt ? Math.min(0.1, t - m.rt) : 0; m.rt = t;
+    if (a.dir != null) { if (m.yaw == null) m.yaw = a.dir; let dA = a.dir - m.yaw; dA = Math.atan2(Math.sin(dA), Math.cos(dA)); m.yaw += dA * Math.min(1, rdt * 5); m.g.rotation.y = m.yaw; }
+    // velocidad real (para que las patas vayan al ritmo y no "patinen")
+    if (m.px != null && rdt > 0) { const v = Math.hypot(a.x - m.px, a.z - m.pz) / rdt; m.vel = (m.vel || 0) + (Math.min(v, 8) - (m.vel || 0)) * Math.min(1, rdt * 6); }
+    m.px = a.x; m.pz = a.z;
+    m.g.position.set(a.x, 0.05, a.z);
     // mientras se mueve: el animal cogido va con el dedo; los de un recinto que se mueve, con él
     if (mv && mv.kind === 'animal' && mv.ref === a) m.g.position.set(mv.px, 0.55 + Math.sin(t * 6) * 0.04, mv.pz);
     else if (mv && mv.kind === 'enc' && a.enc === mv.ref.id) m.g.position.set(a.x + mv.x - mv.ref.x, 0.2, a.z + mv.z - mv.ref.z);
     const k = a.baby ? 0.55 : 1; m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
     const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
-    if (m.glb) { // modelo animado: elige la animación según lo que hace
-      if (moving) m.play(a.state === 'play' ? ['Gallop', 'Walk'] : 'Walk', { speed: a.baby ? 1.3 : 1 });
+    if (m.glb) { // modelo animado: elige la animación según lo que hace y a qué velocidad va de verdad
+      const L = (GLB[a.sp]?.len || 1) * (a.baby ? 0.55 : 1), v = m.vel || 0;
+      m.walking = m.walking ? v > 0.04 : v > 0.12; // con margen, para que no parpadee entre andar y parar
+      if (m.walking) { const walkV = 0.55 * L, runV = 2.2 * L; if (v > walkV * 1.9) m.play('Gallop', { speed: Math.max(0.7, Math.min(2, v / runV)) }); else m.play('Walk', { speed: Math.max(0.6, Math.min(1.8, v / walkV)) }); }
       else if (headDown) m.play('Eating'); else if (sleeping) m.play(['Idle_Headlow', 'Idle_2_HeadLow', 'Idle'], { speed: 0.35 });
       else if (a.state === 'play') m.play(['Jump_toIdle', 'Jump_ToIdle', 'Idle_2']); else m.play(['Idle', 'Idle_2']);
-      m.update(m.lastT ? Math.min(0.1, t - m.lastT) : 0); m.lastT = t;
-      if (a.state === 'play' && !moving) m.g.rotation.y += Math.sin(t * 4) * 0.02;
+      m.update(rdt);
       continue;
     }
     m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -S.legs * 0.85 : 0;
