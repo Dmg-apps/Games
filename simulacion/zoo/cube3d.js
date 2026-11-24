@@ -103,12 +103,12 @@ export function cubeModel(sp) {
   const fur = lam(furTex(sp, furKind, furC, furKind === 'spots' ? c1 : furKind === 'patches' ? '#ffffff' : c1, c2));
   // tronco
   // tronco (el canguro, casi de pie e inclinado hacia delante)
-  const torso = roo ? block(Wb, BL * 1.0, BH * 0.72, fur, 0.28) : block(Lb, Hb, Wb, fur, L.fluffy ? 0.38 : 0.22);
+  const torso = roo ? block(Wb, BL * 1.0, BH * 0.72, fur, 0.28) : block(Wb, Hb, Lb, fur, L.fluffy ? 0.38 : 0.22);
   if (roo) { at(torso, 0, legH + BL * 0.42, 0); torso.rotation.x = 0.32; } else at(torso, 0, legH + Hb / 2, 0);
   body.add(torso);
   // barriga clara
-  if (!roo && !['stripes', 'tiger', 'patches', 'spots'].includes(L.fur) && L.fur !== 'panda') { const belly = block(Lb * 0.7, Hb * 0.25, Wb * 1.02, mix(c0, c1, 0.7), 0.4); at(belly, 0, legH + Hb * 0.16, 0); body.add(belly); }
-  if (L.fur === 'panda') { const band = block(Lb * 0.34, Hb * 1.04, Wb * 1.04, '#1c1c1c', 0.3); at(band, 0, legH + Hb / 2, Lb * 0.22); body.add(band); }
+  if (!roo && !['stripes', 'tiger', 'patches', 'spots'].includes(L.fur) && L.fur !== 'panda') { const belly = block(Wb * 1.02, Hb * 0.25, Lb * 0.7, mix(c0, c1, 0.7), 0.4); at(belly, 0, legH + Hb * 0.16, 0); body.add(belly); }
+  if (L.fur === 'panda') { const band = block(Wb * 1.04, Hb * 1.04, Lb * 0.34, '#1c1c1c', 0.3); at(band, 0, legH + Hb / 2, Lb * 0.22); body.add(band); }
   // patas
   const legs = []; const legColor = L.fur === 'panda' ? '#1c1c1c' : L.legStripes ? null : shade(c0, 0.92); const hoof = L.cat || L.bear || L.fur === 'panda' || sp === 'lobo' || sp === 'zorro' || sp === 'mono' ? null : c2;
   const legMat = L.legStripes ? lam(furTex(sp + '-leg', 'stripes', c0, c1, c2)) : lam(legColor);
