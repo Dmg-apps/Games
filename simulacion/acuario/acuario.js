@@ -119,7 +119,22 @@ function tick(dt) {
 function hourly(h) {
   if (h % (has('escaparate') ? 2 : 3) === 0 && st.requests.length < (has('escaparate') ? 4 : 3)) newRequest();
   st.requests = st.requests.filter((r) => r.until > st.time);
+  if (h >= 9 && h < 21) shopSales();
   if (h === 21) endOfDay();
+}
+// ---------- venta con precio propio ----------
+// Valor de mercado: lo que un cliente pagaría de buena gana (más que el proveedor)
+const fairPrice = (f) => Math.max(5, Math.round(price(f) * 1.6));
+// Probabilidad por hora de que alguien lo compre según lo caro que lo pongas
+function buyChance(f, ask) { const r = ask / fairPrice(f); return Math.max(0, Math.min(0.6, 0.32 * Math.exp(-(r - 0.75) * 2.6))) * (has('escaparate') ? 1.5 : 1) * (1 + Math.min(st.rep, 30) / 60); }
+function chanceLabel(c) { return c >= 0.3 ? ['Se venderá enseguida', '#25c48f'] : c >= 0.15 ? ['Se venderá pronto', '#25c48f'] : c >= 0.06 ? ['Tardará un poco', '#f5a524'] : c > 0.015 ? ['Muy caro: tardará mucho', '#e5484d'] : ['Nadie lo pagará', '#e5484d']; }
+function shopSales() {
+  for (const f of st.fish.filter((q) => q.ask)) {
+    if (Math.random() >= buyChance(f, f.ask)) continue;
+    const c = CUSTOMERS[Math.floor(Math.random() * CUSTOMERS.length)]; const fair = f.ask <= fairPrice(f) * 1.2;
+    st.fish = st.fish.filter((q) => q !== f); selected.delete(f.id); st.money += f.ask; st.sold++; if (fair) st.rep += 0.3;
+    toast(`${c.name} ha comprado a ${f.name} por ${eur(f.ask)}`, 'good', 'coin'); logDay('sale', c.name);
+  }
 }
 function newRequest() {
   // a veces piden otra especie (de las que ya se pueden comprar)
@@ -596,7 +611,7 @@ function renderPanel() {
       ${t.breeding ? `<div class="card"><b>${icon('egg')} Hay huevos</b><div class="hint">Eclosionarán en ${Math.max(1, Math.round((t.breeding.until - st.time)))} min de juego</div></div>` : ''}
       <div class="sec">${icon('fish')} Animales (${fs.length}/${TANK_CAP})</div>
       <p class="hint">Toca la foto de un macho y una hembra adultos de la misma especie para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
-      <div class="list">${fs.map((f) => `<div class="li fishrow"><label class="pick"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'}>${imgTag(fph[photoOf(f)], 60)}</label><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'cría'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g, spOf(f))}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra animales en Comprar.</p>'}</div>
+      <div class="list">${fs.map((f) => `<div class="li fishrow"><label class="pick"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'}>${imgTag(fph[photoOf(f)], 60)}</label><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'cría'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g, spOf(f))}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn sm mint" data-sell="${f.id}">${f.ask ? `En venta · ${eur(f.ask)}` : 'Vender'}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra animales en Comprar.</p>'}</div>
       <button class="btn" id="breed" style="width:100%;margin-top:6px" ${selected.size === 2 && !t.breeding ? '' : 'disabled'}>${icon('egg')} Criar con los dos marcados</button>
       <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}"><span class="cdot" style="background:${decoColor(d, t.dc?.[k])}"></span> ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
       <p class="hint" style="margin-top:8px">Toca una para verla de cerca y elegir el color antes de comprarla.${t.deco.length >= 8 ? ' <b>Este acuario ya tiene 8 decoraciones.</b>' : ''}</p>
@@ -638,7 +653,8 @@ function renderPanel() {
   if (name === 'clients') {
     const wantKey = (w) => photoKey(w.sp || 'pez', { c: w.c ?? 0, p: w.p ?? 0, f: w.f ?? 0, glow: !!w.glow });
     const wph = photos(st.requests.filter((r) => r.want.c != null).map((r) => wantKey(r.want)));
-    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="hostface" style="width:46px;height:46px">${avatar(CUSTOMERS[r.cust ?? 0].look)}</span><div style="flex:1;min-width:0"><b>${esc(r.who)}</b><div class="hint" style="font-style:italic">«${esc(CUSTOMERS[r.cust ?? 0].ask.replace('{pez}', wantText(r.want).toLowerCase()))}»</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div>${r.want.c != null ? `<div class="wantpic">${imgTag(wph[wantKey(r.want)], 44)}<span class="hint">Más o menos así${r.want.p == null || r.want.f == null && !r.want.sp ? ' (el resto da igual)' : ''}</span></div>` : ''}</div><div style="text-align:right"><b>${eur(r.price)}</b><br><button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
+    b.innerHTML = st.requests.length ? `<div class="list">${st.requests.map((r) => { const m = st.fish.filter((f) => matches(f, r.want)); return `<div class="li"><span class="hostface" style="width:46px;height:46px">${avatar(CUSTOMERS[r.cust ?? 0].look)}</span><div style="flex:1;min-width:0"><b>${esc(r.who)}</b><div class="hint" style="font-style:italic">«${esc(CUSTOMERS[r.cust ?? 0].ask.replace('{pez}', wantText(r.want).toLowerCase()))}»</div><div class="hint">Caduca en ${Math.round((r.until - st.time) / 60)} h</div>${r.want.c != null ? `<div class="wantpic">${imgTag(wph[wantKey(r.want)], 44)}<span class="hint">Más o menos así${r.want.p == null || r.want.f == null && !r.want.sp ? ' (el resto da igual)' : ''}</span></div>` : ''}</div><div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end"><b>${eur(r.price)}</b>${r.haggled ? '' : `<button class="btn sm alt" data-hg="${r.id}">Regatear</button>`}<button class="btn sm ${m.length ? 'mint' : 'alt'}" data-r="${r.id}" ${m.length ? '' : 'disabled'}>${m.length ? 'Entregar' : 'No tienes'}</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay clientes. Vuelven cada pocas horas. Con más reputación piden peces más raros y pagan más.</p>';
+    b.querySelectorAll('[data-hg]').forEach((x) => (x.onclick = () => haggle(st.requests.find((q) => q.id === x.dataset.hg))));
     b.querySelectorAll('[data-r]').forEach((x) => (x.onclick = () => {
       const r = st.requests.find((q) => q.id === x.dataset.r); const cands = st.fish.filter((f) => matches(f, r.want)).sort((a, c) => price(a) - price(c)); const cph = photos(cands.map(photoOf));
       const box2 = modal(`<h2>¿Cuál entregas?</h2><p class="hint">${esc(r.who)} pide: ${esc(wantText(r.want))}. Paga ${eur(r.price)}.</p><div class="list">${cands.map((f) => `<button class="li" data-f="${f.id}">${imgTag(cph[photoOf(f)], 60)}<div style="flex:1;text-align:left"><b>${esc(f.name)}</b><div class="chips">${geneChips(f.g, spOf(f))}</div></div><b>${eur(r.price)}</b></button>`).join('')}</div><div class="actions"><button class="btn alt" id="cx">Cancelar</button></div>`);
@@ -673,12 +689,48 @@ function renderPanel() {
 }
 // Vender: con su foto grande, para ver bien qué se vende
 function sellFish(f) {
-  if (!f) return; const p = price(f); const ph = photos([photoOf(f)]);
-  const bx = modal(`<h2>¿Vender a ${esc(f.name)}?</h2><div class="photobig">${imgTag(ph[photoOf(f)], 180)}</div>
-    <p style="text-align:center;margin:6px 0"><b>${esc(speciesName(f.g, spOf(f)))}</b><br><span class="hint">${f.sex === 'm' ? '♂ macho' : '♀ hembra'} · ${f.adult ? 'adulto' : 'cría (vale la mitad)'} · ${fishTrait(f)}</span></p>
-    <div class="actions"><button class="btn alt" id="sx">Quedármelo</button><button class="btn mint" id="sok">${icon('coin')} Vender · ${eur(p)}</button></div>`);
+  if (!f) return; const p = price(f), fair = fairPrice(f); const ph = photos([photoOf(f)]);
+  let ask = f.ask || fair; const step = fair >= 200 ? 10 : fair >= 60 ? 5 : 1;
+  const bx = modal(`<h2>Vender a ${esc(f.name)}</h2><div class="photobig">${imgTag(ph[photoOf(f)], 150)}</div>
+    <p style="text-align:center;margin:4px 0"><b>${esc(speciesName(f.g, spOf(f)))}</b><br><span class="hint">${f.sex === 'm' ? '♂ macho' : '♀ hembra'} · ${f.adult ? 'adulto' : 'cría (vale la mitad)'} · ${fishTrait(f)}</span></p>
+    <div class="card" style="margin-top:8px"><b>${icon('shop')} Ponerlo a la venta en la tienda</b><div class="hint">Tú eliges el precio. Los clientes que entran lo compran si les parece bien. Valor de mercado: unos <b>${eur(fair)}</b>.</div>
+      <div class="pricer"><button class="btn alt sm" id="pm">−</button><b id="pv">${eur(ask)}</b><button class="btn alt sm" id="pp">+</button></div>
+      <input type="range" id="pr" min="${Math.max(1, Math.round(fair * 0.4))}" max="${Math.round(fair * 3)}" step="${step}" value="${ask}" style="width:100%">
+      <div id="pc" class="hint" style="text-align:center;font-weight:800"></div>
+      <button class="btn coral" id="pset" style="width:100%;margin-top:6px">${icon('shop')} ${f.ask ? 'Cambiar precio' : 'Poner a la venta'}</button>${f.ask ? `<button class="btn alt sm" id="poff" style="width:100%;margin-top:6px">Retirar de la venta</button>` : ''}</div>
+    <div class="actions"><button class="btn alt" id="sx">Cerrar</button><button class="btn mint" id="sok">${icon('coin')} Vender ya al proveedor · ${eur(p)}</button></div>`);
+  const show = () => { bx.querySelector('#pv').textContent = eur(ask); bx.querySelector('#pr').value = ask; const [t, c] = chanceLabel(buyChance(f, ask)); const pc = bx.querySelector('#pc'); pc.textContent = t; pc.style.color = c; };
+  show();
+  bx.querySelector('#pr').oninput = (e) => { ask = +e.target.value; show(); };
+  bx.querySelector('#pm').onclick = () => { ask = Math.max(1, ask - step); show(); };
+  bx.querySelector('#pp').onclick = () => { ask += step; show(); };
+  bx.querySelector('#pset').onclick = () => { f.ask = ask; closeModal(); toast(`${f.name} está a la venta por ${eur(ask)}`, 'good', 'shop'); renderPanel(); save(); };
+  const off = bx.querySelector('#poff'); if (off) off.onclick = () => { delete f.ask; closeModal(); toast(`${f.name} ya no está a la venta`, 'info'); renderPanel(); save(); };
   bx.querySelector('#sx').onclick = closeModal;
   bx.querySelector('#sok').onclick = () => { closeModal(); st.money += p; st.fish = st.fish.filter((q) => q !== f); selected.delete(f.id); st.sold++; toast(`${f.name} vendido/a · +${eur(p)}`, 'good', 'coin'); renderPanel(); hud(); save(); };
+}
+// Regatear con un cliente que hace un encargo (una vez por cliente)
+function haggle(r) {
+  const base = r.price; let ask = Math.round(base * 1.3); const step = base >= 200 ? 10 : base >= 60 ? 5 : 1;
+  const chance = (a) => Math.max(0.05, Math.min(0.97, 1 - (a / base - 1) * 1.5 + Math.min(st.rep, 30) / 100));
+  const C = CUSTOMERS[r.cust ?? 0];
+  const bx = modal(`<h2>Regatear con ${esc(r.who)}</h2><p class="hint">Ofrece ${eur(base)}. Pide más, pero si te pasas puede negarse. Solo se puede regatear una vez.</p>
+    <div class="pricer"><button class="btn alt sm" id="pm">−</button><b id="pv"></b><button class="btn alt sm" id="pp">+</button></div>
+    <input type="range" id="pr" min="${base}" max="${base * 2}" step="${step}" value="${ask}" style="width:100%"><div id="pc" class="hint" style="text-align:center;font-weight:800"></div>
+    <div class="actions"><button class="btn alt" id="hx">Cancelar</button><button class="btn coral" id="hok">Pedir este precio</button></div>`);
+  const show = () => { bx.querySelector('#pv').textContent = eur(ask); bx.querySelector('#pr').value = ask; const c = chance(ask); const pc = bx.querySelector('#pc'); pc.textContent = c > 0.8 ? 'Seguramente acepte' : c > 0.5 ? 'Puede que acepte' : c > 0.25 ? 'Difícil que acepte' : 'Casi seguro que dirá que no'; pc.style.color = c > 0.5 ? '#25c48f' : c > 0.25 ? '#f5a524' : '#e5484d'; };
+  show();
+  bx.querySelector('#pr').oninput = (e) => { ask = +e.target.value; show(); };
+  bx.querySelector('#pm').onclick = () => { ask = Math.max(base, ask - step); show(); };
+  bx.querySelector('#pp').onclick = () => { ask = Math.min(base * 2, ask + step); show(); };
+  bx.querySelector('#hx').onclick = closeModal;
+  bx.querySelector('#hok').onclick = () => {
+    r.haggled = true; closeModal();
+    if (Math.random() < chance(ask)) { r.price = ask; toast(`${r.who}: «Vale, trato hecho: ${eur(ask)}»`, 'good', 'coin'); }
+    else if (ask > base * 1.6 && Math.random() < 0.4) { st.requests = st.requests.filter((q) => q !== r); toast(`${r.who} se ha ido sin comprar: «¡Qué caro!»`, 'bad'); }
+    else toast(`${r.who}: «No, no. Mi oferta sigue siendo ${eur(base)}»`, 'warn');
+    renderPanel(); save();
+  };
 }
 function moveFish(fid) {
   const f = st.fish.find((q) => q.id === fid);

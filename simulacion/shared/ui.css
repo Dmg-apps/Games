@@ -162,3 +162,7 @@ canvas.stage, #game { -webkit-touch-callout: none; -webkit-user-select: none; us
 @media (orientation: landscape) and (max-height: 560px) { .grabber { display: none; } }
 .sheet-body .btn.sm, .modal-box .btn.sm { min-height: 40px; }
 .sheet-body .chip { min-height: 30px; }
+.pricer { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 8px 0 2px; }
+.pricer b { font-size: 26px; min-width: 110px; text-align: center; }
+.pricer .btn { width: 46px; font-size: 22px; }
+.card .pricer .btn { background: #fff; }
