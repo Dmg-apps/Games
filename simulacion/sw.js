@@ -1,5 +1,5 @@
 // Service worker de Simulación (generado por tools/build-sw.py). Guarda la app para jugar sin conexión.
-const CACHE = 'simulacion-6031fff74d';
+const CACHE = 'simulacion-4098d7b484';
 const FILES = ["./", "acuario/acuario.js", "acuario/data.js", "acuario/index.html", "hub.js", "icons/icon-192.png", "icons/icon.svg", "index.html", "manifest.webmanifest", "shared/cloud-config.js", "shared/cloud.js", "shared/cloudui.js", "shared/engine3d.js", "shared/fonts/nunito.woff2", "shared/gestures.js", "shared/icons.js", "shared/look.js", "shared/sound.js", "shared/thumbs.js", "shared/ui.css", "shared/ui.js", "shared/vendor/RoundedBoxGeometry.js", "shared/vendor/three.module.min.js", "vidas/icons/icon-192.png", "vidas/icons/icon.svg", "vidas/index.html", "vidas/js/cloud-config.js", "vidas/js/cloud.js", "vidas/js/data.js", "vidas/js/icons.js", "vidas/js/main.js", "vidas/js/notify.js", "vidas/js/render.js", "vidas/js/render3d.js", "vidas/js/sim.js", "vidas/js/ui.js", "vidas/styles.css", "zoo/animals3d.js", "zoo/cube3d.js", "zoo/data.js", "zoo/index.html", "zoo/props3d.js", "zoo/zoo.js"];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {

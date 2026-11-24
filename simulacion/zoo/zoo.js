@@ -9,7 +9,7 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
+import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -20,6 +20,9 @@ const pk = (x, z) => x + ',' + z;
 const hourOf = (t) => (t % 1440) / 60, dayOf = (t) => Math.floor(t / 1440);
 
 // ---------- estado ----------
+// Tamaño del parque: empieza en 22×22 y se puede comprar más terreno (st.size)
+let N = N0, ENTRANCE = { ...ENTRANCE0 };
+const LAND = [{ size: 28, price: 5000, fame: 1.5 }, { size: 34, price: 12000, fame: 2.5 }, { size: 40, price: 25000, fame: 3.5 }];
 function newPark() {
   const st = { v: 1, nextId: 1, money: 12000, time: 8 * 60, lastHour: 8, speed: 1, ticket: 15, fame: 1, paths: [], enclosures: [], animals: [], buildings: [], staff: { keeper: 1, cleaner: 0 }, litter: [], today: { visitors: 0, income: 0, spent: 0 }, history: [], lastSaved: Date.now() };
   for (let z = ENTRANCE.z; z >= ENTRANCE.z - 6; z--) st.paths.push(pk(ENTRANCE.x, z));
@@ -28,6 +31,7 @@ function newPark() {
 }
 const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newPark();
+if (st.size) { N = st.size; ENTRANCE = { x: Math.floor(N / 2), z: N - 1 }; }
 st.staff.vet ??= 0;
 for (const a of st.animals) a.trait ||= pick(Object.keys(TRAITS));
 const traitLabel = (a) => TRAITS[a.trait]?.[a.sex] || '';
@@ -316,6 +320,20 @@ function tick(dt) {
   while (st.lastHour < hr) { st.lastHour++; hourly(st.lastHour % 24); }
   animalsTick(dt); visitorsTick(dt);
 }
+function expandLand() {
+  const next = LAND.find((l) => l.size > N); if (!next) return;
+  if (st.fame < next.fame) return toast(`Necesitas ${next.fame}★ de fama para comprar más terreno`, 'warn');
+  if (st.money < next.price) return toast('No hay dinero suficiente', 'warn');
+  confirm(`¿Comprar terreno hasta ${next.size}×${next.size} por ${eur(next.price)}? El parque crece por los lados y por el fondo.`, () => {
+    const dx = Math.floor(next.size / 2) - Math.floor(N / 2), dz = next.size - N; const mv = (o) => { if (o) { o.x += dx; o.z += dz; } };
+    for (const e of st.enclosures) { mv(e); e.items.forEach(mv); (e.nests || []).forEach(mv); mv(e.food); }
+    for (const a of st.animals) { mv(a); if (a.tx != null) { a.tx += dx; a.tz += dz; } }
+    st.buildings.forEach(mv); st.litter.forEach(mv);
+    st.paths = st.paths.map((k) => { const [x, z] = k.split(',').map(Number); return pk(x + dx, z + dz); });
+    // (la entrada antigua cae justo en la nueva: los caminos siguen conectados)
+    st.money -= next.price; st.size = next.size; swapping = false; save(); location.reload();
+  });
+}
 function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
 // Con la app cerrada: pasa el tiempo más despacio y se estima lo ganado
 function offline() {
@@ -371,11 +389,8 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   const g = new THREE.Group();
   if (type === 'arbol') g.add(tree(1.25, BIOME_TREE[biome], seed));
   if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
-  if (type === 'charca') {
-    const bank = new THREE.Mesh(new THREE.CircleGeometry(0.49, 24), mat('#8a7a52')); bank.rotation.x = -Math.PI / 2; bank.position.y = 0.03; bank.receiveShadow = true; g.add(bank);
-    const w = new THREE.Mesh(new THREE.CircleGeometry(0.41, 24), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.92 })); w.rotation.x = -Math.PI / 2; w.position.y = 0.045; g.add(w); g.userData.water = w;
-    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + rnd(-0.2, 0.2); const r = Look.rock(0.045 + Math.random() * 0.03, '#8d877a', seed + i); r.position.set(Math.cos(a) * 0.45, 0.02, Math.sin(a) * 0.45); g.add(r); }
-    if (biome !== 'artico') for (let i = 0; i < 5; i++) { const rd = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.3 + Math.random() * 0.15, 0.02), mat('#5a8a3a')); const a = 2 + i * 0.25; rd.position.set(Math.cos(a) * 0.36, 0.17, Math.sin(a) * 0.36); rd.rotation.z = rnd(-0.2, 0.2); g.add(rd); }
+  if (type === 'charca') { // el agua se dibuja junta para todo el recinto (pondMesh); aquí solo la zona que se puede tocar
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.95), new THREE.MeshBasicMaterial({ visible: false })); hit.position.y = 0.06; g.add(hit);
   }
   if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshLambertMaterial({ map: ballTex() })); b.position.y = 0.17; b.rotation.z = 0.4; g.add(b, blob(0.5, 0.5)); }
   if (type === 'bambu') for (let i = 0; i < 7; i++) { const h = 1.0 + Math.random() * 0.6; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, h, 6, 4), mat(i % 2 ? '#7ab84a' : '#5e9e3c')); c.position.set(Math.cos(i * 1.7) * 0.22, h / 2, Math.sin(i * 2.3) * 0.22); c.rotation.z = rnd(-0.08, 0.08); g.add(c);
@@ -431,6 +446,31 @@ function groundTex(b) {
   }, [2, 2]);
   return biomeTex[b];
 }
+// Charcas: las casillas de agua que se tocan forman una sola charca más grande, con una orilla continua
+function pondMesh(e) {
+  const tiles = e.items.filter((i) => i.type === 'charca'); if (!tiles.length) return null;
+  const set = new Set(tiles.map((t) => pk(t.x, t.z))), has = (x, z) => set.has(pk(x, z));
+  const PX = 48, S = e.n * PX; const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d');
+  const shape = (r, w) => { // círculo en cada casilla + puentes entre vecinas + relleno de los huecos 2×2
+    for (const t of tiles) { const cx = (t.x - e.x + 0.5) * PX, cz = (t.z - e.z + 0.5) * PX; x.beginPath(); x.arc(cx, cz, r * PX, 0, 7); x.fill();
+      if (has(t.x + 1, t.z)) x.fillRect(cx, cz - w * PX / 2, PX, w * PX); if (has(t.x, t.z + 1)) x.fillRect(cx - w * PX / 2, cz, w * PX, PX);
+      if (has(t.x + 1, t.z) && has(t.x, t.z + 1) && has(t.x + 1, t.z + 1)) x.fillRect(cx, cz, PX, PX); } };
+  x.fillStyle = '#8a7a52'; shape(0.5, 1.0); // orilla de tierra
+  x.fillStyle = '#6aa0b8'; shape(0.43, 0.86); // borde de agua poco profunda
+  x.fillStyle = '#3f8fc4'; shape(0.36, 0.72); // agua
+  x.globalCompositeOperation = 'source-atop'; x.strokeStyle = 'rgba(255,255,255,0.35)'; x.lineWidth = 2; for (let i = 0; i < tiles.length * 5; i++) { const t = tiles[i % tiles.length]; const cx = (t.x - e.x + 0.2 + Math.random() * 0.6) * PX, cz = (t.z - e.z + 0.2 + Math.random() * 0.6) * PX; x.beginPath(); x.arc(cx, cz, 4 + Math.random() * 6, 3.6, 5.8); x.stroke(); }
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(e.n, e.n), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(e.x + e.n / 2, 0.062, e.z + e.n / 2); m.receiveShadow = true; m.renderOrder = 1; g.add(m);
+  // piedras y juncos solo por el borde de fuera (donde no hay otra casilla de agua)
+  const R = Look.seeded(tiles.length * 13 + e.x * 7 + e.z);
+  for (const t of tiles) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { if (has(t.x + dx, t.z + dz)) continue;
+    const ox = t.x + 0.5 + dx * 0.46 + (R() - 0.5) * 0.5 * (dz ? 1 : 0), oz = t.z + 0.5 + dz * 0.46 + (R() - 0.5) * 0.5 * (dx ? 1 : 0);
+    if (R() < 0.6) { const r = Look.rock(0.05 + R() * 0.03, '#8d877a', Math.floor(R() * 99)); r.position.set(ox, 0.06, oz); g.add(r); }
+    else if (e.biome !== 'artico') for (let k = 0; k < 3; k++) { const rd = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.28 + R() * 0.16, 0.022), mat(k % 2 ? '#5a8a3a' : '#6e9e44')); rd.position.set(ox + (R() - 0.5) * 0.12, 0.2, oz + (R() - 0.5) * 0.12); rd.rotation.z = (R() - 0.5) * 0.3; g.add(rd); } }
+  return g;
+}
 const postGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.84, 6), postMat = mat('#6a4a2a');
 function rebuildEnclosures() {
   const g = groups.enc; g.clear(); eng.shadowsDirty?.();
@@ -444,6 +484,7 @@ function rebuildEnclosures() {
     for (let i = 0; i <= e.n; i++) for (const [x, z] of [[e.x + i, e.z], [e.x + i, e.z + e.n], [e.x, e.z + i], [e.x + e.n, e.z + i]]) { const p = new THREE.Mesh(postGeo, postMat); p.position.set(x, 0.42, z); p.castShadow = true; eg.add(p); }
     eg.children.forEach((c) => { if (c.geometry?.type === 'BoxGeometry' && c !== ground) c.castShadow = true; });
     e.items.forEach((it, i) => { const m = enrichMesh(it.type, e.biome, it.x * 7 + it.z); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); m.userData.item = e.id + ':' + i; eg.add(m); });
+    const pond = pondMesh(e); if (pond) eg.add(pond);
   }
 }
 function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = propMesh(b, BUILDINGS); Look.shadows(m, true, false); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.rotation.y = faceToPath(b); m.userData.bld = b.id; g.add(m); } }
@@ -839,11 +880,13 @@ function renderPanel() {
       <div class="stat"><span class="tile" style="background:#8b5cf6">${icon('paw')}</span><span>Animales</span><b>${st.animals.length} en ${st.enclosures.length} recintos</b></div></div>
       <div class="sec">Precio de la entrada</div><div class="row" style="align-items:center"><button class="btn sm alt" id="tm">−</button><b style="flex:1;text-align:center;font-size:20px">${st.ticket} €</b><button class="btn sm alt" id="tp">+</button></div>
       <p class="hint">Más caro da más por visitante pero vienen menos.</p>
+      <div class="sec">${icon('map')} Terreno</div>${(() => { const nx = LAND.find((l) => l.size > N); return `<div class="card"><b>Tu parque mide ${N}×${N} casillas</b><div class="hint">${nx ? `Si se te queda pequeño, compra terreno: crece hasta ${nx.size}×${nx.size}.${st.fame < nx.fame ? ` Necesitas ${nx.fame}★ de fama.` : ''}` : 'Has comprado todo el terreno disponible.'}</div>${nx ? `<button class="btn coral" id="land" style="width:100%;margin-top:8px" ${st.fame < nx.fame ? 'disabled' : ''}>${icon('map')} Comprar terreno · ${eur(nx.price)}</button>` : ''}</div>`; })()}
       <div class="sec">${icon('cloud')} Copia en la nube</div><div id="cloudbox"></div>
       <div class="sec">Calidad gráfica</div><div class="seg" id="q"><button data-v="eco">Ahorro</button><button data-v="alta">Alta</button></div>
       ${soundRow()}
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
     bindSound(b);
+    const landB = b.querySelector('#land'); if (landB) landB.onclick = expandLand;
     b.querySelector('#tm').onclick = () => { st.ticket = Math.max(0, st.ticket - 5); renderPanel(); };
     b.querySelector('#tp').onclick = () => { st.ticket = Math.min(60, st.ticket + 5); renderPanel(); };
     renderCloud(b.querySelector('#cloudbox'), { slot: 'parque', sync: cloud, onLogin: afterCloudLogin, refresh: renderPanel });

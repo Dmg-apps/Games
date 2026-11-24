@@ -193,26 +193,30 @@ function offline() {
 
 // ---------- dibujo 3D ----------
 const canvas = $('#stage');
-const eng = new Engine(canvas, { target: [0, 0.8, 0.5], dist: 15, minDist: 2.2, maxDist: 60, bounds: 10, pitch: 0.55, yaw: 0.35 });
-const overviewDist = () => eng.fitDist(13), tankDist = () => eng.fitDist(3.8);
+// Tamaño de la tienda: se puede ampliar con el local de al lado (6 m más por nivel, 3 acuarios más)
+const RW = 6 * (st.shopLevel || 0), CX = RW / 2;
+const maxTanks = () => MAX_TANKS + 3 * (st.shopLevel || 0);
+const SHOP_LEVELS = [{ price: 3000, rep: 5 }, { price: 8000, rep: 12 }];
+const eng = new Engine(canvas, { target: [CX, 0.8, 0.5], dist: 15, minDist: 2.2, maxDist: 70, bounds: 10 + RW, pitch: 0.55, yaw: 0.35 });
+const overviewDist = () => eng.fitDist(13 + RW * 0.85), tankDist = () => eng.fitDist(3.8);
 eng.cam.dist = overviewDist();
 const S3 = eng.scene;
-Look.setupLook(eng, { cx: 0, cz: 0.5, size: 9.5, height: 16, exposure: 1.05, sunColor: 0xfff0dc, hemiSky: 0xf2f6ff, hemiGround: 0x8a6a4a });
+Look.setupLook(eng, { cx: CX, cz: 0.5, size: 9.5 + RW / 2, height: 16, exposure: 1.05, sunColor: 0xfff0dc, hemiSky: 0xf2f6ff, hemiGround: 0x8a6a4a });
 const shadowed = (o, cast = true, recv = true) => Look.shadows(o, cast, recv);
 // la tienda está en una calle: acera alrededor, muros bajos delante (vista en corte) y calle que se pierde en la niebla
 S3.fog = new THREE.Fog('#e6f2f6', 30, 75);
 const street = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshLambertMaterial({ map: Look.pavingTex(60), color: '#d8d4cc' })); street.rotation.x = -Math.PI / 2; street.position.y = -0.21; street.receiveShadow = true; S3.add(street);
-for (const [w, d, x, z] of [[16.4, 0.2, 0, 6.6], [0.2, 12.2, 8.1, 0.5]]) { const lw = box(w, 0.3, d, '#e4eef0'); lw.position.set(x, 0.05, z); S3.add(lw); const cap = box(w + 0.02, 0.04, d + 0.02, '#3a8fb8'); cap.position.set(x, 0.22, z); S3.add(cap); }
+for (const [w, d, x, z] of [[16.4 + RW, 0.2, CX, 6.6], [0.2, 12.2, 8.1 + RW, 0.5]]) { const lw = box(w, 0.3, d, '#e4eef0'); lw.position.set(x, 0.05, z); S3.add(lw); const cap = box(w + 0.02, 0.04, d + 0.02, '#3a8fb8'); cap.position.set(x, 0.22, z); S3.add(cap); }
 for (let i = 0; i < 10; i++) { const tr = Look.tree(i % 3 ? 'roble' : 'abedul', 1.6 + (i % 3) * 0.3, i); const side = i % 2; tr.position.set(side ? 11 + (i % 4) : -12 + i * 2.6, -0.2, side ? -6 + i * 1.6 : -9.5 - (i % 3)); S3.add(tr); }
-const floor = new THREE.Mesh(new THREE.BoxGeometry(16, 0.2, 12), [mat('#8a5a35'), mat('#8a5a35'), new THREE.MeshLambertMaterial({ map: Look.woodTex([4, 6], ['#c99a66', '#bb8a56']) }), mat('#6e4528'), mat('#8a5a35'), mat('#8a5a35')]); floor.position.set(0, -0.1, 0.5); floor.receiveShadow = true; S3.add(floor);
+const floor = new THREE.Mesh(new THREE.BoxGeometry(16 + RW, 0.2, 12), [mat('#8a5a35'), mat('#8a5a35'), new THREE.MeshLambertMaterial({ map: Look.woodTex([4 + RW / 4, 6], ['#c99a66', '#bb8a56']) }), mat('#6e4528'), mat('#8a5a35'), mat('#8a5a35')]); floor.position.set(CX, -0.1, 0.5); floor.receiveShadow = true; S3.add(floor);
 // paredes: zócalo de azulejo y pintura arriba
 const wallTex = canvasTexture(256, (x, s) => { x.fillStyle = '#eef6f7'; x.fillRect(0, 0, s, s); for (let i = 0; i < 900; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,0.12)' : 'rgba(80,110,120,0.05)'; x.fillRect(Math.random() * s, Math.random() * s, 2, 2); } }, [4, 1]);
-const w1 = new THREE.Mesh(new THREE.BoxGeometry(16, 4, 0.2), new THREE.MeshLambertMaterial({ map: wallTex, emissive: new THREE.Color('#3a4446') })); w1.position.set(0, 2, -5.5); S3.add(w1);
+const w1 = new THREE.Mesh(new THREE.BoxGeometry(16 + RW, 4, 0.2), new THREE.MeshLambertMaterial({ map: wallTex, emissive: new THREE.Color('#3a4446') })); w1.position.set(CX, 2, -5.5); S3.add(w1);
 const w2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4, 12), new THREE.MeshLambertMaterial({ map: wallTex, color: '#eef4f6' })); w2.position.set(-8, 2, 0.5); S3.add(w2);
 w1.receiveShadow = w2.receiveShadow = true;
-const tiles1 = new THREE.Mesh(new THREE.BoxGeometry(16, 1.1, 0.05), new THREE.MeshLambertMaterial({ map: Look.tileTex([16, 1], '#f4f8f8', '#c6d4d8') })); tiles1.position.set(0, 0.55, -5.38); S3.add(tiles1);
+const tiles1 = new THREE.Mesh(new THREE.BoxGeometry(16 + RW, 1.1, 0.05), new THREE.MeshLambertMaterial({ map: Look.tileTex([16 + RW, 1], '#f4f8f8', '#c6d4d8') })); tiles1.position.set(CX, 0.55, -5.38); S3.add(tiles1);
 const tiles2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.1, 12), new THREE.MeshLambertMaterial({ map: Look.tileTex([12, 1], '#f4f8f8', '#c6d4d8') })); tiles2.position.set(-7.88, 0.55, 0.5); S3.add(tiles2);
-for (const [w, d, x, z] of [[16, 0.06, 0, -5.35], [0.06, 12, -7.85, 0.5]]) { const t = box(w, 0.06, d, '#3a8fb8'); t.position.set(x, 1.12, z); S3.add(t); const bb = box(w, 0.12, d, '#6e4a2c'); bb.position.set(x, 0.06, z); S3.add(bb); }
+for (const [w, d, x, z] of [[16 + RW, 0.06, CX, -5.35], [0.06, 12, -7.85, 0.5]]) { const t = box(w, 0.06, d, '#3a8fb8'); t.position.set(x, 1.12, z); S3.add(t); const bb = box(w, 0.12, d, '#6e4a2c'); bb.position.set(x, 0.06, z); S3.add(bb); }
 // ventana con luz de día
 const win = new THREE.Group(); win.position.set(-7.85, 2.3, 2.4);
 const glassW = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), new THREE.MeshBasicMaterial({ map: canvasTexture(128, (x, s) => { const g = x.createLinearGradient(0, 0, 0, s); g.addColorStop(0, '#bfe4fa'); g.addColorStop(0.7, '#e8f6ff'); g.addColorStop(0.71, '#9ccc7a'); g.addColorStop(1, '#7ab05a'); x.fillStyle = g; x.fillRect(0, 0, s, s); x.fillStyle = 'rgba(255,255,255,0.9)'; for (const [cx, cy] of [[30, 30], [90, 20]]) { x.beginPath(); x.ellipse(cx, cy, 18, 7, 0, 0, 7); x.fill(); } }) }));
@@ -240,7 +244,9 @@ function shelfUnit(x, z, rotY = 0) {
 S3.add(shelfUnit(-5.2, -5.12), shelfUnit(-2.8, -5.12));
 // plantas en macetas
 function pot(x, z, s = 1) { const g = new THREE.Group(); g.position.set(x, 0, z); const pt = new THREE.Mesh(new THREE.CylinderGeometry(0.22 * s, 0.16 * s, 0.38 * s, 14), mat('#c8704a')); pt.position.y = 0.19 * s; g.add(pt); const b = Look.bush(0.32 * s, Math.round(x * 3 + z), '#2f6e34', '#6aae52'); b.position.y = 0.3 * s; g.add(b); for (let i = 0; i < 6; i++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05 * s, 0.6 * s, 4), mat('#3e8a44')); l.scale.z = 0.2; l.position.set(Math.cos(i) * 0.08 * s, 0.6 * s, Math.sin(i) * 0.08 * s); l.rotation.set(Math.sin(i) * 0.5, i, Math.cos(i) * 0.5); g.add(l); } return shadowed(g); }
-S3.add(pot(-7.3, -4.8, 1.3), pot(7.3, -4.8, 1.1), pot(-7.3, 5.8, 1));
+S3.add(pot(-7.3, -4.8, 1.3), pot(7.3 + RW, -4.8, 1.1), pot(-7.3, 5.8, 1));
+// en la parte ampliada: columna que marca el antiguo muro y otra estantería
+if (RW) { const col = box(0.4, 4, 0.4, '#e4eef0'); col.position.set(8, 2, -5.3); S3.add(col); S3.add(shelfUnit(8 + RW - 2.4, -5.12)); }
 // alfombra y mostrador con caja registradora
 const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.4), new THREE.MeshLambertMaterial({ map: canvasTexture(128, (x, s) => { x.fillStyle = '#2f6f8f'; x.fillRect(0, 0, s, s); x.strokeStyle = '#f2e6c8'; x.lineWidth = 4; x.strokeRect(8, 8, s - 16, s - 16); x.lineWidth = 2; x.strokeRect(16, 16, s - 32, s - 32); for (let i = 0; i < 500; i++) { x.fillStyle = 'rgba(255,255,255,0.05)'; x.fillRect(Math.random() * s, Math.random() * s, 2, 2); } }) }));
 rug.rotation.x = -Math.PI / 2; rug.position.set(5, 0.01, 2.6); rug.receiveShadow = true; S3.add(rug);
@@ -268,13 +274,13 @@ function tankPos(t) { if (t.pos) return t.pos; const i = st.tanks.indexOf(t); co
 // Un acuario nuevo va al primer hueco libre (los demás pueden haberse movido)
 function placeNewTank() {
   const t = newTank('t' + st.nextId++); st.tanks.push(t);
-  const spots = [...SLOTS.map(([x, z]) => ({ x, z, r: 0 }))]; for (let z = -4.5; z <= 5.5; z += 0.5) for (let x = -6; x <= 6.5; x += 0.5) spots.push({ x, z, r: 0 }, { x, z, r: 1 });
+  const spots = [...SLOTS.map(([x, z]) => ({ x, z, r: 0 }))]; for (let z = -4.5; z <= 5.5; z += 0.5) for (let x = -6; x <= 6.5 + RW; x += 0.5) spots.push({ x, z, r: 0 }, { x, z, r: 1 });
   t.pos = spots.find((p) => tankFits(t, p)) || { x: 0, z: 0, r: 0 };
 }
 const tankYaw = (t) => tankPos(t).r * Math.PI / 2;
 function tankFits(t, p) {
   const odd = p.r % 2, hx = (odd ? TD : TW) / 2 + 0.1, hz = (odd ? TW : TD) / 2 + 0.1;
-  if (p.x - hx < -7.85 || p.x + hx > 7.9 || p.z - hz < -5.35 || p.z + hz > 6.4) return false;
+  if (p.x - hx < -7.85 || p.x + hx > 7.9 + RW || p.z - hz < -5.35 || p.z + hz > 6.4) return false;
   if (p.x + hx > 3.5 && p.x - hx < 6.9 && p.z + hz > 3.55 && p.z - hz < 4.85) return false; // mostrador
   return st.tanks.every((o) => { if (o === t) return true; const q = tankPos(o), oo = q.r % 2, ox = (oo ? TD : TW) / 2 + 0.1, oz = (oo ? TW : TD) / 2 + 0.1; return Math.abs(p.x - q.x) >= hx + ox + 0.2 || Math.abs(p.z - q.z) >= hz + oz + 0.2; });
 }
@@ -594,7 +600,7 @@ function openTank(tid) {
 }
 function openPanel(name) {
   if (sheet.name === name) return sheet.close();
-  focusTank = null; eng.focus(0, 0.5, overviewDist()); eng.cam.target.y = 0.8; eng.cam.pitch = 0.55;
+  focusTank = null; eng.focus(CX, 0.5, overviewDist()); eng.cam.target.y = 0.8; eng.cam.pitch = 0.55;
   sheet.open(name, { buy: 'Comprar', clients: 'Clientes', album: 'Álbum de variedades', shop: 'Mejoras de la tienda', info: 'Arrecife' }[name]); renderPanel(); hud();
 }
 function stat(ic, color, label, v, txt) { return `<div class="stat"><span class="tile" style="background:${color}">${icon(ic)}</span><span>${label}</span><div style="display:flex;gap:8px;align-items:center"><div class="bar"><i style="transform:scaleX(${v / 100});background:${v < 30 ? '#e5484d' : color}"></i></div>${txt ? `<b style="font-size:12px;min-width:38px">${txt}</b>` : ''}</div></div>`; }
@@ -644,11 +650,13 @@ function renderPanel() {
     b.innerHTML = `<div class="sec">Animales del proveedor</div><p class="hint">Llegan adultos al primer acuario con sitio. Con más reputación (★) desbloqueas especies nuevas.</p><div class="list">
       ${sps.map(([k, S]) => { const lock = st.rep < S.rep; const pk = photoKey(k, k === 'pez' ? { c: 1, p: 1, f: 1 } : { c: S.colors[0], p: S.pats[S.pats.length > 1 ? 1 : 0], f: 0, glow: k === 'medusa' }); return `<div class="li" style="${lock ? 'opacity:.55' : ''}">${imgTag(ph[pk], 60)}<div style="flex:1;min-width:0"><b>${S.label}</b><div class="hint">${S.desc}${S.clean ? ' <b>Limpia.</b>' : ''}${lock ? ` <b>Necesita ${S.rep}★ de reputación.</b>` : ''}</div></div><button class="btn sm" data-sp="${k}" ${lock ? 'disabled' : ''}>${eur(S.price)}</button></div>`; }).join('')}
       <div class="li"><span class="tilebox">${icon('egg')}</span><div style="flex:1"><b>Huevo sorpresa</b><div class="hint">Un pez que puede salir poco común</div></div><button class="btn sm" id="b2">60 €</button></div></div>
-      <div class="sec">Acuarios</div><button class="li" id="bt" style="width:100%" ${n >= MAX_TANKS ? 'disabled' : ''}><span class="tilebox">${icon('box')}</span><div style="flex:1;text-align:left"><b>Nuevo acuario</b><div class="hint">${n}/${MAX_TANKS} acuarios</div></div><b>${n >= MAX_TANKS ? 'Completo' : eur(TANK_PRICE(n))}</b></button>`;
+      <div class="sec">Acuarios</div><button class="li" id="bt" style="width:100%" ${n >= maxTanks() ? 'disabled' : ''}><span class="tilebox">${icon('box')}</span><div style="flex:1;text-align:left"><b>Nuevo acuario</b><div class="hint">${n}/${maxTanks()} acuarios</div></div><b>${n >= maxTanks() ? 'Completo' : eur(TANK_PRICE(n))}</b></button>
+      ${(() => { const lv = st.shopLevel || 0, nx = SHOP_LEVELS[lv]; return nx ? `<div class="card" style="margin-top:8px"><b>${icon('home')} Ampliar la tienda</b><div class="hint">Te quedas sin sitio: alquila el local de al lado. La tienda crece 6 metros y caben 3 acuarios más (hasta ${maxTanks() + 3}).${st.rep < nx.rep ? ` Necesitas ${nx.rep}★ de reputación.` : ''}</div><button class="btn coral" id="grow" style="width:100%;margin-top:8px" ${st.rep < nx.rep ? 'disabled' : ''}>${icon('home')} Ampliar · ${eur(nx.price)}</button></div>` : '<p class="hint">La tienda ya está ampliada al máximo.</p>'; })()}`;
     const target = () => st.tanks.find((t) => fishIn(t).length < TANK_CAP);
     b.querySelectorAll('[data-sp]').forEach((x) => (x.onclick = () => { const sp = x.dataset.sp, S = SPECIES[sp]; const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < S.price) return toast('No hay dinero suficiente', 'warn'); st.money -= S.price; const g = genesFor(sp); const f = addFish(st, t.id, g, null, true, sp); toast(`${f.name} (${speciesName(g, sp)}) llega al acuario ${st.tanks.indexOf(t) + 1}`, 'good', 'fish'); renderPanel(); hud(); save(); }));
     b.querySelector('#b2').onclick = () => { const t = target(); if (!t) return toast('Todos los acuarios están llenos', 'warn'); if (st.money < 60) return toast('No hay dinero suficiente', 'warn'); st.money -= 60; const g = genesFor('pez', true); addFish(st, t.id, g); toast(`Del huevo ha salido: ${speciesName(g)}`, 'good', 'egg'); hud(); save(); };
-    b.querySelector('#bt').onclick = () => { if (n >= MAX_TANKS) return; const p = TANK_PRICE(n); if (st.money < p) return toast('No hay dinero suficiente', 'warn'); st.money -= p; placeNewTank(); toast('Nuevo acuario instalado', 'good', 'box'); renderPanel(); hud(); save(); };
+    const growB = b.querySelector('#grow'); if (growB) growB.onclick = () => { const nx = SHOP_LEVELS[st.shopLevel || 0]; if (!nx) return; if (st.money < nx.price) return toast('No hay dinero suficiente', 'warn'); confirm(`¿Ampliar la tienda por ${eur(nx.price)}? Tendrás sitio para 3 acuarios más.`, () => { st.money -= nx.price; st.shopLevel = (st.shopLevel || 0) + 1; save(); location.reload(); }); };
+    b.querySelector('#bt').onclick = () => { if (n >= maxTanks()) return; const p = TANK_PRICE(n); if (st.money < p) return toast('No hay dinero suficiente', 'warn'); st.money -= p; placeNewTank(); toast('Nuevo acuario instalado', 'good', 'box'); renderPanel(); hud(); save(); };
   }
   if (name === 'clients') {
     const wantKey = (w) => photoKey(w.sp || 'pez', { c: w.c ?? 0, p: w.p ?? 0, f: w.f ?? 0, glow: !!w.glow });
@@ -842,7 +850,7 @@ eng.onDoubleTap = (sx, sy) => {
   if (close) { eng.cam.distT = Math.max(eng.cam.min, eng.cam.dist * 0.6); return; }
   const tid = eng.pick(sx, sy, [...tankGroups.values()].map((r) => r.g), 'tank'); if (tid) enterClose(tid);
 };
-sheet.onClose = () => { if (entering) return; focusTank = null; eng.cam.pitch = 0.55; eng.focus(0, 0.5, overviewDist()); eng.cam.target.y = 0.8; hud(); };
+sheet.onClose = () => { if (entering) return; focusTank = null; eng.cam.pitch = 0.55; eng.focus(CX, 0.5, overviewDist()); eng.cam.target.y = 0.8; hud(); };
 
 document.querySelector('#speeds').innerHTML = [['pause', 0], ['play', 1], ['ff', 2], ['fff', 3]].map(([ic, s]) => `<button data-s="${s}">${icon(ic)}</button>`).join('');
 document.querySelector('#speeds').onclick = (e) => { const b = e.target.closest('button'); if (b) { st.speed = +b.dataset.s; hud(); } };
