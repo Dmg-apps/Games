@@ -169,3 +169,10 @@ canvas.stage, #game { -webkit-touch-callout: none; -webkit-user-select: none; us
 .card .pricer .btn { background: #fff; }
 .zphoto { border-radius: 14px; object-fit: cover; flex: none; display: block; }
 .item .zphoto { margin: 0 auto 4px; }
+/* Objetivo actual (campaña) */
+.goalpill { position: fixed; left: 10px; top: calc(var(--safe-t) + 62px); z-index: 6; display: flex; align-items: center; gap: 8px; max-width: min(62vw, 300px); padding: 8px 12px 8px 10px; border-radius: 16px; text-align: left; font: inherit; color: var(--ink); }
+.goalpill svg { width: 22px; height: 22px; flex: none; color: #f08a1c; }
+.goalpill b { display: block; font-size: 13px; line-height: 1.2; }
+.goalpill i { display: block; font-style: normal; font-size: 11px; color: var(--ink-3); font-weight: 700; }
+body.sheet-open .goalpill { display: none; }
+#tools .dot { position: absolute; top: 4px; right: 18%; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 2px #fff; }

@@ -137,3 +137,14 @@ export const TRAITS = {
 };
 // Género gramatical de cada especie (para que los textos concuerden: "una cebra", "un león")
 for (const k of ['cabra', 'alpaca', 'llama', 'cebra', 'jirafa', 'tortuga', 'mula', 'vaca']) SPECIES[k].fem = true;
+
+// ---------- Santuario: rescates y adopciones ----------
+// Cada rescate trae una historia y un estado al llegar. trust: confianza inicial (0-100).
+export const RESCUES = {
+  circo: { title: 'Un circo cierra', ic: 'alert', trust: 10, fame: 0.15, species: ['leon', 'tigre', 'elefante', 'osopardo', 'caballo', 'mono', 'burro'], story: 'Viene de un circo que ha cerrado. Nunca ha pisado la hierba y le asusta la gente: necesita calma.' },
+  granja: { title: 'Granja abandonada', ic: 'home', trust: 30, hungry: true, fame: 0.08, species: ['cabra', 'burro', 'caballo', 'vaca', 'llama', 'alpaca'], story: 'Lo encontraron en una granja abandonada, delgado y con poca comida. Agradecerá un buen plato.' },
+  decomiso: { title: 'Rescate del tráfico ilegal', ic: 'alert', trust: 15, fame: 0.2, species: ['mono', 'tortuga', 'pinguino', 'flamenco', 'panda', 'tigre', 'canguro'], story: 'La policía lo ha rescatado del comercio ilegal de animales. Viajó encerrado y desconfía de todo.' },
+  herido: { title: 'Herido, ya curado', ic: 'heart', trust: 35, injured: true, fame: 0.12, species: ['ciervo', 'zorro', 'lobo', 'osopolar', 'flamenco', 'tortuga', 'jirafa'], story: 'Sufrió un accidente y ya está curado, pero no puede volver a la naturaleza. Aún cojea un poco.' },
+  huerfano: { title: 'Cría huérfana', ic: 'heart', trust: 25, baby: true, fame: 0.15, species: ['jirafa', 'elefante', 'cebra', 'canguro', 'osopolar', 'panda', 'leon', 'lobo', 'ciervo'], story: 'Cría huérfana: su madre no pudo cuidarla. Necesita compañía y alguien pendiente de ella.' },
+  centro: { title: 'Otro centro sin sitio', ic: 'users', trust: 50, fame: 0.05, species: ['cebra', 'jirafa', 'canguro', 'pinguino', 'llama', 'alpaca', 'lobo', 'zorro', 'vaca'], story: 'Otro centro de rescate se ha quedado sin sitio y busca un hogar tranquilo para él.' },
+};

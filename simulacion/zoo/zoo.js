@@ -9,7 +9,7 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
+import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -32,6 +32,7 @@ function newPark() {
 const HAD_LOCAL = !!store.load(KEY);
 let st = store.load(KEY) || newPark();
 if (st.size) { N = st.size; ENTRANCE = { x: Math.floor(N / 2), z: N - 1 }; }
+st.rescues ||= []; st.rescued ||= 0; st.chapter ||= 0; st.births ||= 0;
 st.staff.vet ??= 0;
 for (const a of st.animals) a.trait ||= pick(Object.keys(TRAITS));
 const traitLabel = (a) => TRAITS[a.trait]?.[a.sex] || '';
@@ -100,7 +101,7 @@ function visitorThink(v) {
   const t = pick(cands); v.target = t; v.path = bfsPath(v, t) || [];
 }
 // Lo que dicen los visitantes (bocadillos sobre sus cabezas)
-function logEvent(kind, text, who) { (st.today.events ||= []).push({ kind, text, who }); }
+function logEvent(kind, text, who) { (st.today.events ||= []).push({ kind, text, who }); if (['birth', 'hatch', 'hybrid'].includes(kind)) st.births = (st.births || 0) + 1; }
 function speak(v, text) { if (visitors.filter((q) => q.say && q.say.until > st.time).length >= 4) return; v.say = { text, until: st.time + 9 }; }
 function comment(v, e, as) {
   if (Math.random() > 0.35 || !as.length) return; const a = pick(as); const S = SPECIES[a.sp]; const name = a.name, sp = S.label.toLowerCase(); const un = S.fem ? 'una' : 'un', o = S.fem ? 'a' : 'o', ese = S.fem ? 'Esa' : 'Ese';
@@ -120,7 +121,7 @@ function visitorArrive(v) {
   if (t.enc && !v.seen.has(t.enc)) {
     const e = st.enclosures.find((q) => q.id === t.enc); if (e) {
       v.seen.add(t.enc); const as = animalsIn(e); comment(v, e, as);
-      const appeal = as.reduce((s, a) => s + SPECIES[a.sp].appeal * (a.baby ? 1.5 : 1), 0);
+      const appeal = as.reduce((s, a) => s + SPECIES[a.sp].appeal * (a.baby ? 1.5 : 1) * (0.5 + (a.trust ?? 100) / 200), 0);
       v.happy = clamp(v.happy + Math.min(30, appeal * 1.6) * (encHappy(e) / 100) + (encHappy(e) < 35 ? -6 : 0) + as.filter((a) => a.trait === 'presumido' || a.trait === 'curioso').length * 3);
     }
   }
@@ -165,6 +166,7 @@ function animalsTick(dt) {
   for (const a of st.animals) {
     a.hunger = clamp(a.hunger - 0.07 * dt * (a.trait === 'gloton' ? 1.5 : 1));
     a.happy += (animalHappy(a) - a.happy) * Math.min(1, 0.02 * dt);
+    if (a.trust != null && a.trust < 100) a.trust = clamp(a.trust + (a.happy > 55 && !a.sick ? 0.012 * (st.staff.keeper ? 1 : 0.4) * (a.trait === 'timido' ? 0.6 : 1) : -0.004) * dt);
     if (a.baby && st.time - a.born > 4 * 1440) { a.baby = false; toast(`La cría de ${SPECIES[a.sp].label.toLowerCase()} ya es adulta`, 'good', 'paw'); }
     const e = st.enclosures.find((q) => q.id === a.enc); if (!e) continue;
     if (a.preg && st.time >= a.preg.until) {
@@ -225,6 +227,7 @@ function decide(a, e) {
   const S = SPECIES[a.sp], h = hourOf(st.time), inside = (x, z) => ({ x: Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, x)), z: Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, z)) });
   const go = (x, z, state, mins) => { const p = inside(x, z); const q = freeSpot(a, e, p.x, p.z); const r = inside(q.x, q.z); a.tx = r.x; a.tz = r.z; a.state = state; a.restUntil = st.time + mins; };
   if (a.sick && Math.random() < 0.7) return go(a.x, a.z, 'sick', rnd(20, 40));
+  if ((a.trust ?? 100) < 40 && Math.random() < 0.55) { const hide = e.items.find((i) => ENRICH[i.type]?.hide); return hide ? go(hide.x + 0.5 + rnd(-0.6, 0.6), hide.z + 0.5 + rnd(-0.6, 0.6), 'hide', rnd(20, 40)) : go(e.x + (a.x - e.x < e.n / 2 ? 0.6 : e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'hide', rnd(20, 40)); }
   if (h >= 21 || h < 6) { if (a.state !== 'sleep') { const mom = a.mother && st.animals.find((m) => m.id === a.mother); go(mom ? mom.x + 0.2 : a.x + rnd(-1, 1), mom ? mom.z + 0.15 : a.z + rnd(-1, 1), 'sleep', 60); } else a.restUntil = st.time + 30; return; }
   if (e.food && st.time < e.food.until && a.hunger < 90) return go(e.food.x + rnd(-0.35, 0.35), e.food.z + rnd(-0.35, 0.35), 'eat', 25);
   const mom = a.baby && a.mother && st.animals.find((m) => m.id === a.mother && m.enc === a.enc);
@@ -261,7 +264,7 @@ function breeding() {
     const as = animalsIn(e);
     for (const sp of new Set(as.map((a) => a.sp))) {
       if (SPECIES[sp].sterile) continue;
-      const g = as.filter((a) => a.sp === sp && !a.baby);
+      const g = as.filter((a) => a.sp === sp && !a.baby && (a.trust ?? 100) >= 50);
       if (!g.some((a) => a.sex === 'm') || !g.some((a) => a.sex === 'f')) continue;
       const avg = g.reduce((t, a) => t + a.happy, 0) / g.length;
       const space = (e.n * e.n) / (as.reduce((t, m) => t + SPECIES[m.sp].space, 0) + SPECIES[sp].space * 0.5);
@@ -283,7 +286,79 @@ function hatchNests() {
     if (e.nests) e.nests = e.nests.filter((q) => st.time < q.until);
   }
 }
+// ---------- santuario: rescates ----------
+const pickSp = (list) => { const ok = list.filter((sp) => SPECIES[sp] && SPECIES[sp].fame <= st.fame + 0.6); return ok.length ? pick(ok) : null; };
+function newRescue(first = false) {
+  const kinds = Object.keys(RESCUES); let kind, sp;
+  for (let i = 0; i < 12 && !sp; i++) { kind = first ? 'granja' : pick(kinds); sp = pickSp(first ? ['cabra', 'burro'] : RESCUES[kind].species); }
+  if (!sp) return; const K = RESCUES[kind]; const n = first ? 2 : K.baby ? 1 : SPECIES[sp].social && Math.random() < 0.55 ? 2 : 1;
+  st.rescues.push({ id: id(), kind, sp, n, sexes: n === 2 ? ['m', 'f'] : [Math.random() < 0.5 ? 'm' : 'f'], baby: !!K.baby, until: st.time + (first ? 99999 : 1440 * 1.5) });
+  if (!first) toast(`Nuevo rescate: ${K.title.toLowerCase()} (${SPECIES[sp].label.toLowerCase()})`, 'info', 'paw');
+  hud();
+}
+function rescueTick() {
+  const before = st.rescues.length; const gone = st.rescues.filter((r) => r.until < st.time); st.rescues = st.rescues.filter((r) => r.until >= st.time);
+  if (gone.length) toast(`Otro centro ha acogido ${gone.length > 1 ? 'a varios animales' : `al ${SPECIES[gone[0].sp].label.toLowerCase()}`} que esperaba hogar`, 'info');
+  if (st.rescues.length < 3 && Math.random() < 0.22) newRescue();
+  if (before !== st.rescues.length && sheet.name === 'animal') renderPanel();
+}
+// ¿Qué recintos le sirven? (su hábitat y algo de espacio)
+function encFits(e, sp, n = 1) { const as = animalsIn(e); const used = as.reduce((t, m) => t + SPECIES[m.sp].space * (m.baby ? 0.5 : 1), 0); return { biome: e.biome === SPECIES[sp].biome, room: (e.n * e.n) - used >= SPECIES[sp].space * n * 0.9, danger: CARNIVORES.includes(sp) !== as.some((m) => CARNIVORES.includes(m.sp)) && as.length > 0 }; }
+function acceptRescue(r) {
+  const S = SPECIES[r.sp], K = RESCUES[r.kind];
+  const list = st.enclosures.map((e) => ({ e, f: encFits(e, r.sp, r.n) }));
+  const ok = list.filter((x) => x.f.room && !x.f.danger).sort((a, b) => (b.f.biome - a.f.biome));
+  const bx = modal(`<h2>${K.title}</h2><div class="photobig">${zimg(zooPhotos([r.sp])[r.sp], S.biome, 150)}</div><p style="text-align:center;margin:4px 0"><b>${r.n > 1 ? `${r.n} × ` : ''}${S.label}${r.baby ? ' (cría)' : ''}</b></p><p class="hint" style="text-align:center">${K.story}</p>
+    <div class="sec">¿En qué recinto vivirá?</div>${ok.length ? `<div class="list">${ok.map(({ e, f }) => `<button class="li" data-enc="${e.id}"><span class="tilebox" style="background:${BIOMES[e.biome].color}">${icon('fence')}</span><div style="flex:1;text-align:left"><b>Recinto de ${BIOMES[e.biome].label.toLowerCase()} ${e.n}×${e.n}</b><div class="hint">${animalsIn(e).length} animales${f.biome ? ' · <b style="color:#1a9a6a">su hábitat ideal</b>' : ` · prefiere ${BIOMES[S.biome].label.toLowerCase()}`}</div></div></button>`).join('')}</div>` : `<div class="card"><b>No tienes un recinto preparado</b><div class="hint">Construye un recinto de <b>${BIOMES[S.biome].label.toLowerCase()}</b> con sitio${CARNIVORES.includes(r.sp) ? ', solo para carnívoros' : ''}, y vuelve antes de que lo acoja otro centro.</div></div>`}
+    <div class="actions"><button class="btn alt" id="rx">Cerrar</button>${ok.length ? '' : `<button class="btn coral" id="rbuild">${icon('fence')} Construir recinto</button>`}</div>`);
+  bx.querySelector('#rx').onclick = closeModal;
+  const rb = bx.querySelector('#rbuild'); if (rb) rb.onclick = () => { closeModal(); view.encSel = { biome: S.biome, size: SPECIES[r.sp].space > 5 ? 'L' : 'M' }; openPanel('enc'); };
+  bx.querySelectorAll('[data-enc]').forEach((x) => (x.onclick = () => {
+    const e = st.enclosures.find((q) => q.id === x.dataset.enc); closeModal();
+    const names = [];
+    for (let i = 0; i < r.n; i++) { const a = addAnimal(r.sp, e, r.baby); a.sex = r.sexes[i] || a.sex; a.rescued = r.kind; a.trust = K.trust + rnd(-5, 5); if (K.hungry) a.hunger = 25; if (K.injured) a.sick = { kind: 'pata', since: st.time }; a.story = K.story; a.arrived = dayOf(st.time) + 1; names.push(a.name); }
+    st.rescues = st.rescues.filter((q) => q !== r); st.rescued += r.n; st.fame = clamp(st.fame + K.fame, 0, 5);
+    logEvent('rescue', S.label, names.join(' y '));
+    Sound.play('baby'); toast(`${names.join(' y ')} ${r.n > 1 ? 'han llegado' : 'ha llegado'} al santuario. Dale tiempo para ganar confianza.`, 'good', 'heart');
+    if (st.rescued === r.n) say('rufina', '¡Tu primer rescate!', `${names[0]} está asustado/a y no conoce este sitio. Si come bien, tiene su hábitat y alguien que lo cuide, irá cogiendo confianza día a día.`, 'Entendido', null, '<p>Toca al animal para ver su historia y su <b>confianza</b>. Los animales con poca confianza se esconden y no crían.</p>');
+    renderPanel(); hud(); save(); checkGoals();
+  }));
+}
+// Bienestar del parque (0-100): felicidad, confianza y salud de todos los animales
+function welfare() { if (!st.animals.length) return 0; return Math.round(st.animals.reduce((t, a) => t + a.happy * 0.6 + (a.trust ?? 100) * 0.25 + (a.sick ? 0 : 15), 0) / st.animals.length); }
+// ---------- campaña ----------
+const totalVisitors = () => st.history.reduce((t, h) => t + (h.visitors || 0), 0) + st.today.visitors;
+const CHAPTERS = [
+  { title: 'Abre el santuario', intro: 'Prepara tu primer recinto y acoge a un animal que necesita hogar.', reward: 1500, goals: [['Construye un recinto', () => st.enclosures.length >= 1], ['Acoge a tu primer animal rescatado', () => st.rescued >= 1], ['Recibe a 10 visitantes', () => totalVisitors() >= 10]] },
+  { title: 'Un hogar para todos', intro: 'Cada vez llegan más avisos de rescate. Haz sitio y cuida bien de cada uno.', reward: 3000, goals: [['Acoge a 4 animales rescatados', () => st.rescued >= 4], ['Bienestar del parque al 60 %', () => welfare() >= 60], ['Abre una tienda para los visitantes', () => st.buildings.some((b) => BUILDINGS[b.type].sells)]] },
+  { title: 'Ganarse su confianza', intro: 'Los animales rescatados desconfían. Con cuidados, comida y paciencia, se sentirán en casa.', reward: 4000, goals: [['3 animales con confianza al 80 %', () => st.animals.filter((a) => (a.trust ?? 100) >= 80 && a.rescued).length >= 3], ['Contrata a un veterinario', () => (st.staff.vet || 0) > 0]] },
+  { title: 'Los felinos del circo', intro: 'Un circo va a cerrar y sus grandes felinos necesitan un sitio enorme y tranquilo.', reward: 6000, goals: [['Ten un recinto grande (8×8)', () => st.enclosures.some((e) => e.n >= 8)], ['Acoge a un león o un tigre', () => st.animals.some((a) => ['leon', 'tigre'].includes(a.sp) && a.rescued)]] },
+  { title: 'Nueva vida', intro: 'Cuando un animal se siente seguro, forma familia. Ese es el mejor premio.', reward: 6000, goals: [['Nace una cría en el santuario', () => (st.births || 0) >= 1], ['Bienestar del parque al 70 %', () => welfare() >= 70]] },
+  { title: 'Un santuario de referencia', intro: 'Todo el mundo habla de tu santuario. Demuestra que es el mejor.', reward: 10000, goals: [['Llega a 3★ de fama', () => st.fame >= 3], ['Ten 8 especies distintas', () => new Set(st.animals.map((a) => a.sp)).size >= 8], ['Bienestar del parque al 75 %', () => welfare() >= 75]] },
+];
+function checkGoals() {
+  const C = CHAPTERS[st.chapter]; if (!C) return;
+  if (C.goals.every(([, ok]) => ok())) {
+    st.money += C.reward; st.chapter++; Sound.play('good'); const nx = CHAPTERS[st.chapter];
+    say('rufina', `¡Capítulo completado: ${C.title}!`, nx ? `Te has ganado ${eur(C.reward)} para seguir creciendo. Siguiente reto: <b>${nx.title}</b>. ${nx.intro}` : `Te has ganado ${eur(C.reward)}. Has completado la campaña: tu santuario es un ejemplo para todos. Sigue rescatando y cuidando a tu ritmo.`, '¡Vamos!', null, nx ? `<div class="card"><b>${icon('flag')} ${nx.title}</b><ul style="padding-left:18px;margin:6px 0">${nx.goals.map(([t]) => `<li>${t}</li>`).join('')}</ul></div>` : '');
+    hud(); save();
+  }
+  renderGoal();
+}
+function renderGoal() {
+  let el = $('#goalpill'); if (!el) { el = document.createElement('button'); el.id = 'goalpill'; el.className = 'goalpill glass'; el.onclick = goalsModal; document.body.appendChild(el); }
+  const C = CHAPTERS[st.chapter]; if (!C) { el.hidden = true; return; }
+  const done = C.goals.filter(([, ok]) => ok()).length, next = C.goals.find(([, ok]) => !ok());
+  el.hidden = false; el.innerHTML = `${icon('flag')}<span><b>${next ? next[0] : C.title}</b><i>Capítulo ${st.chapter + 1} · ${done}/${C.goals.length}</i></span>`;
+}
+function goalsModal() {
+  const C = CHAPTERS[st.chapter]; if (!C) return;
+  const bx = modal(`<h2>${icon('flag')} Capítulo ${st.chapter + 1}: ${C.title}</h2><p class="hint">${C.intro}</p><div class="list">${C.goals.map(([t, ok]) => `<div class="li"><span class="tilebox" style="background:${ok() ? '#25c48f' : 'var(--fill)'};color:${ok() ? '#fff' : 'inherit'}">${icon(ok() ? 'check' : 'flag')}</span><div style="flex:1"><b>${t}</b></div></div>`).join('')}</div>
+    <p class="hint">Recompensa: <b>${eur(C.reward)}</b>. Bienestar actual del parque: <b>${welfare()} %</b>.</p><div class="actions"><button class="btn coral" id="gx">Cerrar</button></div>`);
+  bx.querySelector('#gx').onclick = closeModal;
+}
 function hourly(h) {
+  rescueTick(); checkGoals();
   hatchNests(); health();
   if (h === 9 || h === 17) feedTimes();
   if (h === 6) breeding();
@@ -292,6 +367,7 @@ function hourly(h) {
 }
 // Al final del día: "La Gaceta Salvaje", el periódico del parque, con los titulares de la jornada
 function endOfDay() {
+  if (st.animals.length) st.fame = clamp(st.fame + (welfare() - 55) / 600, 0, 5);
   const wages = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner + (st.staff.vet || 0) * WAGES.vet, food = st.animals.length * FOOD_COST;
   st.money -= wages + food; st.today.spent += wages + food;
   const d = { day: dayOf(st.time) + 1, ...st.today, profit: st.today.income - st.today.spent, stars: stars() };
@@ -737,8 +813,8 @@ eng.onTap = (sx, sy) => {
   }
   if (view.tool === 'animal') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
-    const S = SPECIES[view.opt]; if (st.money < S.price) return toast('No hay dinero suficiente', 'warn');
-    st.money -= S.price; const a = addAnimal(view.opt, e); logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
+    const S = SPECIES[view.opt]; const fee = Math.round(S.price * 0.5); if (st.money < fee) return toast('No hay dinero suficiente', 'warn');
+    st.money -= fee; const a = addAnimal(view.opt, e); a.trust = 55; a.rescued = 'adopcion'; a.story = 'Nació en otro santuario y ha venido en adopción. Se adapta rápido.'; a.arrived = dayOf(st.time) + 1; logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
     toast(e.biome !== S.biome ? `${a.name} (${S.label.toLowerCase()}) ha llegado, pero prefiere el hábitat de ${BIOMES[S.biome].label.toLowerCase()}` : `${a.name} (${S.label.toLowerCase()}, ${a.sex === 'm' ? 'macho' : 'hembra'}) llega al parque. Puedes cambiarle el nombre en su ficha`, e.biome !== S.biome ? 'warn' : 'good', 'paw');
     hud(); save(); return;
   }
@@ -800,7 +876,9 @@ function animalCardTick(force = false) {
     <div class="hint">Está ${STATE_TXT[a.state] || 'tranquilo'}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
     ${a.sick ? `<div class="sickrow">${icon('alert')} <div style="flex:1;min-width:0"><b>Se encuentra mal: ${ILLNESS[a.sick.kind].toLowerCase()}</b><div class="hint">${sickWhy(a).length ? 'Por qué: ' + sickWhy(a).join(', ') + '. ' : ''}${st.staff.vet ? 'El veterinario lo atenderá pronto.' : ''}</div></div><button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
-    <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>`;
+    <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>
+    ${a.trust != null ? `<div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#8b5cf6">${icon('smile')}</span><span>Confianza</span><div class="bar"><i style="transform:scaleX(${a.trust / 100});background:${a.trust < 40 ? '#f5a524' : '#8b5cf6'}"></i></div></div>` : ''}
+    ${a.story ? `<div class="hint" style="margin-top:6px">${icon('book')} ${a.story}${a.trust != null ? (a.trust < 40 ? ' Aún desconfía: se esconde y no criará.' : a.trust < 80 ? ' Va cogiendo confianza.' : ' Ya se siente en casa.') : ''}</div>` : ''}`;
   el.hidden = false;
 }
 function hud() {
@@ -809,6 +887,7 @@ function hud() {
   $('#clock .t b').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor(st.time % 60)).padStart(2, '0')}`;
   $('#clock .t span').textContent = `Día ${dayOf(st.time) + 1} · ${open ? 'Abierto' : 'Cerrado'} · ${visitors.length} visitantes`;
   $('#fame b').textContent = `${stars()}★`;
+  const rdot = $('#tools [data-t="animal"] .dot'); if (rdot) rdot.hidden = !st.rescues.length;
   document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));
   document.querySelectorAll('#tools button').forEach((b) => b.classList.toggle('on', b.dataset.t === sheet.name || (b.dataset.t === 'path' && view.tool === 'path')));
 }
@@ -817,7 +896,7 @@ function renderToolInfo() {
   let txt = '';
   if (view.tool === 'path') txt = `${icon('path')} ${view.erase ? 'Borrar caminos: arrastra el dedo' : `Caminos: arrastra el dedo · ${PATH_PRICE} € por casilla`} <button class="btn sm alt" id="ti_erase">${view.erase ? 'Construir' : 'Borrar'}</button>`;
   if (view.tool === 'enc') txt = `${icon('fence')} Recinto ${SIZES[view.opt.size].label.toLowerCase()} de ${BIOMES[view.opt.biome].label.toLowerCase()} · toca el terreno ${view.pending ? `<button class="btn sm mint" id="ti_ok">Construir · ${eur(SIZES[view.opt.size].price)}</button>` : ''}`;
-  if (view.tool === 'animal') txt = `${icon('paw')} Toca un recinto para soltar: ${SPECIES[view.opt].label} (${eur(SPECIES[view.opt].price)})`;
+  if (view.tool === 'animal') txt = `${icon('paw')} Toca el recinto donde vivirá: ${SPECIES[view.opt].label} (adopción ${eur(Math.round(SPECIES[view.opt].price * 0.5))})`;
   if (view.tool === 'enrich') txt = `${icon('tree')} Toca dentro de un recinto: ${ENRICH[view.opt].label}`;
   if (view.tool === 'move') txt = `${icon('move')} Arrastra el dedo para mover ${LABEL[view.opt.kind](view.opt.ref)}`;
   if (view.tool === 'build') txt = `${icon('shop')} Toca una casilla libre${BUILDINGS[view.opt].cat === 'Tiendas' ? ' junto a un camino' : ''}: ${BUILDINGS[view.opt].label}`;
@@ -835,7 +914,7 @@ function renderToolInfo() {
 function openPanel(name) {
   if (sheet.name === name) return sheet.close();
   setTool(null);
-  const titles = { enc: 'Recintos', animal: 'Animales', build: 'Tiendas y decoración', staff: 'Personal', info: 'Parque' };
+  const titles = { enc: 'Recintos', animal: 'Rescates y adopciones', build: 'Tiendas y decoración', staff: 'Personal', info: 'Parque' };
   sheet.open(name, titles[name]); renderPanel(); hud();
 }
 const soundRow = () => { const p = Sound.prefs(); return `<div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn sm ${p.music ? '' : 'alt'}" id="snd_m" style="flex:1">${icon('music')} Música ${p.music ? 'sí' : 'no'}</button><button class="btn sm ${p.sfx ? '' : 'alt'}" id="snd_s" style="flex:1">${icon('bell')} Efectos ${p.sfx ? 'sí' : 'no'}</button></div>`; };
@@ -857,7 +936,12 @@ function renderPanel() {
   }
   if (name === 'animal') {
     const zph = zooPhotos(Object.keys(SPECIES).filter((k) => !SPECIES[k].hybrid));
-    b.innerHTML = `<p class="hint">Más fama desbloquea especies. Las felices tienen crías si hay macho y hembra y espacio.</p><div class="grid">${Object.entries(SPECIES).filter(([, v]) => !v.hybrid).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}>${zimg(zph[k], v.biome, 64)}${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(v.price)}</span>`}</button>`; }).join('')}</div>`;
+    const adopt = (v) => Math.round(v.price * 0.5);
+    b.innerHTML = `<div class="sec">${icon('heart')} Animales que necesitan hogar</div><p class="hint">Avisos de rescate: acógelos gratis si tienes un recinto preparado. Si tardas, los acogerá otro centro.</p>
+      ${st.rescues.length ? `<div class="list">${st.rescues.map((r) => { const S = SPECIES[r.sp], K = RESCUES[r.kind]; const fit = st.enclosures.some((e) => { const f = encFits(e, r.sp, r.n); return f.room && !f.danger; }); return `<div class="li rescue">${zimg(zph[r.sp], S.biome, 64)}<div style="flex:1;min-width:0"><b>${K.title}</b><div class="hint"><b>${r.n > 1 ? `${r.n} × ` : ''}${S.label}${r.baby ? ' (cría)' : ''}</b> · ${BIOMES[S.biome].label}</div><div class="hint" style="font-style:italic">${K.story}</div><div class="hint">${r.until > st.time + 99000 ? '' : `Espera hogar ${Math.max(1, Math.round((r.until - st.time) / 60))} h más · `}${fit ? '<b style="color:#1a9a6a">Tienes sitio</b>' : 'Necesita recinto'}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn sm coral" data-res="${r.id}">Acoger</button><button class="btn sm alt" data-skip="${r.id}">No puedo</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay avisos. Llegan cada pocas horas.</p>'}
+      <div class="sec">${icon('users')} Adoptar de otros centros</div><p class="hint">Animales nacidos en otros santuarios que buscan familia. Pagas una pequeña cuota de adopción y el transporte. Más fama desbloquea especies.</p><div class="grid">${Object.entries(SPECIES).filter(([, v]) => !v.hybrid).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}>${zimg(zph[k], v.biome, 64)}${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(adopt(v))}</span>`}</button>`; }).join('')}</div>`;
+    b.querySelectorAll('[data-res]').forEach((x) => (x.onclick = () => acceptRescue(st.rescues.find((r) => r.id === x.dataset.res))));
+    b.querySelectorAll('[data-skip]').forEach((x) => (x.onclick = () => { st.rescues = st.rescues.filter((r) => r.id !== x.dataset.skip); toast('Otro centro se encargará de él', 'info'); renderPanel(); save(); }));
     b.insertAdjacentHTML('beforeend', `<div class="sec">${icon('sparkle')} Cruces · ${(st.hybrids || []).length}/${Object.keys(HYBRIDS).length} descubiertos</div><p class="hint">No se compran: nacen al cruzar especies emparentadas en un mismo recinto (toca el recinto → Cruces). Son muy raros y atraen muchos visitantes.</p><div class="grid">${CROSSES.map((c) => { const H = HYBRIDS[c.child], got = (st.hybrids || []).includes(c.child); return `<div class="item ${got ? '' : 'locked'}" style="cursor:default"><span class="tilebox" style="background:${got ? BIOMES[H.biome].color : '#e8e4f0'}">${icon(got ? 'paw' : 'sparkle')}</span>${got ? H.label : '¿?'}<span class="d">${SPECIES[c.a || c.m].label}${c.m ? ' ♂' : ''} × ${SPECIES[c.b || c.f].label}${c.f ? ' ♀' : ''}</span>${got ? `<span class="d">${H.desc}</span>` : ''}</div>`; }).join('')}</div>`);
     b.querySelectorAll('[data-a]').forEach((x) => (x.onclick = () => { sheet.close(); setTool('animal', x.dataset.a); }));
   }
@@ -979,7 +1063,7 @@ function animalCard(aid) { const a = st.animals.find((q) => q.id === aid); if (!
 
 document.querySelector('#speeds').innerHTML = [['pause', 0], ['play', 1], ['ff', 2], ['fff', 3]].map(([ic, s]) => `<button data-s="${s}">${icon(ic)}</button>`).join('');
 document.querySelector('#speeds').onclick = (e) => { const b = e.target.closest('button'); if (b) { st.speed = +b.dataset.s; hud(); } };
-document.querySelector('#tools').innerHTML = [['path', 'path', 'Caminos'], ['enc', 'fence', 'Recintos'], ['animal', 'paw', 'Animales'], ['build', 'shop', 'Tiendas'], ['staff', 'users', 'Personal'], ['info', 'chart', 'Parque']].map(([t, ic, l]) => `<button data-t="${t}">${icon(ic)}<span>${l}</span></button>`).join('');
+document.querySelector('#tools').innerHTML = [['path', 'path', 'Caminos'], ['enc', 'fence', 'Recintos'], ['animal', 'heart', 'Rescates'], ['build', 'shop', 'Tiendas'], ['staff', 'users', 'Personal'], ['info', 'chart', 'Parque']].map(([t, ic, l]) => `<button data-t="${t}" style="position:relative">${icon(ic)}<span>${l}</span>${t === 'animal' ? '<i class="dot" hidden></i>' : ''}</button>`).join('');
 document.querySelector('#tools').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.t === 'path') { sheet.close(); setTool(view.tool === 'path' ? null : 'path'); hud(); } else openPanel(b.dataset.t); };
 $('#money .badge').innerHTML = icon('coin'); $('#clock .badge').innerHTML = icon('sun'); $('#fame .badge').innerHTML = icon('star'); $('#back a').innerHTML = icon('home');
 $('#camctl').innerHTML = `<button class="glass" data-r="1">${icon('rotate')}</button><button class="glass" data-r="-1" style="transform:scaleX(-1)">${icon('rotate')}</button>`;
@@ -1000,7 +1084,8 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else say('rufina', 'Te damos la bienvenida a Parque Salvaje', `¡Hola! Soy Rufina, llevo cuarenta años cuidando animales y ahora te ayudaré con este parque.`, '¡A construir!', null, `<p>Construye tu propio parque de animales:</p><ul style="padding-left:18px;line-height:1.6"><li><b>Recintos</b>: elige hábitat y tamaño, junto a un camino.</li><li><b>Animales</b>: cada especie quiere su hábitat, espacio y compañía.</li><li><b>Caminos</b>: arrastra el dedo para que lleguen los visitantes.</li><li><b>Tiendas</b> y <b>decoración</b> para que gasten y vuelvan contentos.</li><li>La <b>fama</b> desbloquea especies nuevas.</li></ul>`);
+if (store.load(KEY)) offline(); else { newRescue(true); say('rufina', 'Bienvenida a tu santuario', '¡Hola! Soy Rufina. Llevo cuarenta años rescatando animales y ahora este santuario es tuyo. Aquí no se compran animales: se rescatan, se cuidan y se les da una segunda vida.', '¡Empezamos!', null, `<ul style="padding-left:18px;line-height:1.6"><li><b>Rescates</b>: llegan avisos de animales que necesitan hogar. Acógelos si tienes un recinto preparado.</li><li><b>Recintos</b>: cada especie necesita su hábitat, espacio y compañía.</li><li><b>Confianza</b>: los rescatados llegan asustados. Con buenos cuidados se sienten en casa.</li><li><b>Visitantes</b>: con caminos y tiendas, financian el santuario.</li><li>Sigue los <b>objetivos</b> de arriba para avanzar en la historia.</li></ul><p>Ya tienes tu primer aviso: dos animales de una granja abandonada.</p>`); }
+renderGoal();
 hud();
 $('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); });
 Sound.init('zoo');
