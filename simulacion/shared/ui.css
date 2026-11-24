@@ -166,3 +166,5 @@ canvas.stage, #game { -webkit-touch-callout: none; -webkit-user-select: none; us
 .pricer b { font-size: 26px; min-width: 110px; text-align: center; }
 .pricer .btn { width: 46px; font-size: 22px; }
 .card .pricer .btn { background: #fff; }
+.zphoto { border-radius: 14px; object-fit: cover; flex: none; display: block; }
+.item .zphoto { margin: 0 auto 4px; }
