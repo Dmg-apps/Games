@@ -892,7 +892,7 @@ function hud() {
   $('#money b').textContent = eur(st.money);
   const h = hourOf(st.time); const open = h >= 9 && h < 20;
   $('#clock .t b').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor(st.time % 60)).padStart(2, '0')}`;
-  $("#clock .t span").textContent = `Día ${dayOf(st.time) + 1}${open ? "" : " · cerrado"}`;
+  $("#clock .t span").textContent = `Día ${dayOf(st.time) + 1}`;
   $('#fame b').textContent = `${stars()}★`;
   const rdot = $('#tools [data-t="animal"] .dot'); if (rdot) rdot.hidden = !st.rescues.length;
   document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));
