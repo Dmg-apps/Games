@@ -9,13 +9,18 @@ export const PATTERNS = [{ id: 'liso', label: 'liso', r: 1 }, { id: 'rayas', lab
 export const FINS = [{ id: 'corta', label: 'Aleta corta', short: 'Corta', r: 1 }, { id: 'larga', label: 'Aleta larga', short: 'Larga', r: 1.5 }, { id: 'velo', label: 'Cola de velo', short: 'Velo', r: 2.2 }];
 export const TOTAL_COMBOS = COLORS.length * PATTERNS.length * FINS.length;
 
+// Decoración: cada una puede ser de varios colores (el primero es el de siempre)
 export const DECOS = {
-  planta: { label: 'Planta', price: 20, happy: 6, ic: 'leaf' },
-  roca: { label: 'Rocas', price: 15, happy: 4, ic: 'box' },
-  castillo: { label: 'Castillo', price: 60, happy: 10, ic: 'home' },
-  cofre: { label: 'Cofre del tesoro', price: 80, happy: 10, ic: 'star' },
-  burbujas: { label: 'Burbujas', price: 50, happy: 12, ic: 'bubbles' },
-  coral: { label: 'Coral', price: 40, happy: 8, ic: 'sparkle' },
+  planta: { label: 'Planta', price: 20, happy: 6, ic: 'leaf', colors: [['Verde', '#3a9a5a'], ['Lima', '#8ac43a'], ['Rojiza', '#b04a3a'], ['Morada', '#7a4aa0']] },
+  roca: { label: 'Rocas', price: 15, happy: 4, ic: 'box', colors: [['Gris', '#8a857e'], ['Arena', '#c8b088'], ['Volcánica', '#4a4a50'], ['Roja', '#a0583a']] },
+  castillo: { label: 'Castillo', price: 60, happy: 10, ic: 'home', colors: [['Arena', '#d8c8a8'], ['Rosa', '#e8b0c0'], ['Blanco', '#f0efe8'], ['Azul', '#9ab8d8']] },
+  cofre: { label: 'Cofre del tesoro', price: 80, happy: 10, ic: 'star', colors: [['Madera', '#8a5a2a'], ['Rojo', '#a03a2a'], ['Negro', '#3a3030'], ['Verde', '#3a6a4a']] },
+  burbujas: { label: 'Burbujas', price: 50, happy: 12, ic: 'bubbles', colors: [['Gris', '#555555'], ['Dorado', '#c9a24a'], ['Azul', '#3a6ab0']] },
+  coral: { label: 'Coral', price: 40, happy: 8, ic: 'sparkle', colors: [['Coral', '#f07a6a'], ['Rosa', '#f59ab8'], ['Naranja', '#f5b860'], ['Violeta', '#a07ae0']] },
+  barco: { label: 'Barco hundido', price: 120, happy: 14, ic: 'box', colors: [['Madera', '#7a5232'], ['Musgo', '#5a7a5a'], ['Gris', '#6a6a70']] },
+  anfora: { label: 'Ánfora', price: 35, happy: 6, ic: 'drop', colors: [['Terracota', '#c0683a'], ['Azul', '#3a6aa0'], ['Blanca', '#e8e0d0']] },
+  concha: { label: 'Concha gigante', price: 70, happy: 9, ic: 'sparkle', colors: [['Perla', '#f0e6dc'], ['Rosa', '#f0b4c4'], ['Azul', '#a8c8e8']] },
+  estrella: { label: 'Estrella de mar', price: 25, happy: 5, ic: 'star', colors: [['Naranja', '#f08a3a'], ['Roja', '#d8443a'], ['Morada', '#9a5ac0'], ['Amarilla', '#f2c83a']] },
 };
 export const UPGRADES = {
   filtro: { label: 'Filtro potente', desc: 'El agua se ensucia la mitad de rápido', price: 150, ic: 'drop' },

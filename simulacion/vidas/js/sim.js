@@ -2,7 +2,7 @@
 // así que puede sustituirse por uno 3D sin tocar este archivo.
 import {
   NEEDS, BABY_NEEDS, DECAY, BABY_DECAY, TRAITS, AGES, AGE_ORDER, OBJECTS, ACTIONS, SOCIALS,
-  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, SEASONS, WEATHER, WINDOW_PRICE, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS,
+  CAREERS, SCHOOL, MOODLETS, WORRIES, SKINS, HAIR_COLORS, CLOTHES, NAMES_F, NAMES_M, NAMES_X, gx, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, SEASONS, WEATHER, WINDOW_PRICE, EYE_STYLES, EYE_COLORS, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, TINTS, FURN_STYLES,
 } from './data.js';
 
 export const GRID = 12;      // tamaño del solar
@@ -114,7 +114,9 @@ function furnish(state) {
   tryPlace('telefono', againstWall());
   for (const t of ['planta', 'lampara', 'estanteria', 'cuadro']) if (Math.random() < 0.5) tryPlace(t, t === 'estanteria' ? againstWall() : anywhere(t === 'cuadro' ? 1 : 0));
   for (let i = 0, n = pick([1, 2, 3]); i < n; i++) tryPlace(pick(['arbol', 'arbol', 'planta']), garden());
-  for (const o of state.objects) { const d = OBJECTS[o.type]; if (d.tint && Math.random() < 0.8) o.tint = pick(TINTS); }
+  // cada casa nueva tiene su propio estilo de muebles (a veces mezclado)
+  const ks = Object.keys(FURN_STYLES), hs = pick(ks), alt = pick(ks);
+  for (const o of state.objects) { const d = OBJECTS[o.type]; const sty = Math.random() < 0.8 ? hs : alt; if (sty !== 'moderno') o.style = sty; if (d.tint && Math.random() < 0.45) o.tint = pick(TINTS); }
 }
 function allReachable(state) {
   const { dist, blocked } = bfs(state, EXIT.x, EXIT.y);
@@ -265,8 +267,8 @@ export function canPlace(state, type, x, y, rot, ignoreId = null) {
   }
   return true;
 }
-export function placeObject(state, type, x, y, rot, free = false) {
-  const o = { id: 'o' + state.nextId++, type, x, y, rot, users: [] };
+export function placeObject(state, type, x, y, rot, free = false, style = null) {
+  const o = { id: 'o' + state.nextId++, type, x, y, rot, users: [] }; if (style && style !== 'moderno') o.style = style;
   state.objects.push(o);
   if (!free) state.money -= OBJECTS[type].price;
   return o;
@@ -274,6 +276,10 @@ export function placeObject(state, type, x, y, rot, free = false) {
 export function moveObject(state, o, x, y, rot) {
   freeObjectUsers(state, o);
   o.x = x; o.y = y; o.rot = rot;
+}
+export function restyleObject(state, o) {
+  const ks = Object.keys(FURN_STYLES); const n = ks[(ks.indexOf(o.style || 'moderno') + 1) % ks.length];
+  if (n === 'moderno') delete o.style; else o.style = n; return n;
 }
 export function recolorObject(state, o) {
   const d = OBJECTS[o.type]; if (!d.tint) return;

@@ -331,3 +331,30 @@ Object.assign(MOODLETS, {
   carta: { label: 'Ha leído una carta muy especial', mood: 25, dur: 1440 },
   paseo: { label: 'Buen paseo', mood: 8, dur: 240 },
 });
+
+// ---------- Estilos de muebles ----------
+// Cada mueble puede tener un estilo: cambia la madera, los electrodomésticos, la tela y la forma de las esquinas.
+export const FURN_STYLES = {
+  moderno: { label: 'Moderno', desc: 'El de siempre: líneas limpias' },
+  nordico: { label: 'Nórdico', desc: 'Madera clara, blanco y gris suave', wood: '#d9c09a', appl: '#f7f6f1', fabric: '#b9c0c8', radius: 0.07 },
+  rustico: { label: 'Rústico', desc: 'Madera oscura, cuadrados y robustos', wood: '#6e4524', appl: '#efe3c8', fabric: '#a5493a', radius: 0.01, rough: 0.95 },
+  clasico: { label: 'Clásico', desc: 'Nogal, terciopelo y remates dorados', wood: '#5a2f1d', appl: '#f2e9d6', fabric: '#7a2a40', trim: '#c9a24a' },
+  retro: { label: 'Retro', desc: 'Colores alegres de los años 60', wood: '#a0602f', appl: '#9fd6c4', fabric: '#e2a12c', radius: 0.055 },
+  industrial: { label: 'Industrial', desc: 'Metal negro, hormigón y cuero', wood: '#3c3b3e', appl: '#8d949b', fabric: '#7a4a2e', radius: 0.015, metal: true },
+};
+const WOODS = new Set(['#a8784a', '#7a5432', '#7a5a3a', '#6a4a2a', '#9a7a5a', '#8a6a4a', '#b08a5a', '#8a6a42', '#6a4a32', '#f2e6d0', '#e8d5b0']);
+const APPLS = new Set(['#e9eef2', '#d9d4cc', '#f4f6f8', '#e6eaee', '#cfe3ee']);
+const hx = (c) => { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const lum = (c) => { const [r, g, b] = hx(c); return (r * 0.3 + g * 0.59 + b * 0.11) / 255; };
+const toHex = (r, g, b) => '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+// Ajusta el brillo de un color manteniendo su tono
+function relight(base, l) { const [r, g, b] = hx(base); const k = l / Math.max(0.05, lum(base)); return toHex(r * k, g * k, b * k); }
+// Color final de una caja de un mueble según su estilo y su color personalizado
+export function styledColor(def, o, col) {
+  if (o.tint && def.tint) { const ti = def.tint.indexOf(col); if (ti >= 0) return ti === 0 ? o.tint : relight(o.tint, lum(o.tint) * (1 - 0.12 * ti)); }
+  const S = FURN_STYLES[o.style]; if (!S || !S.wood || !col.startsWith('#')) return col;
+  if (def.tint) { const ti = def.tint.indexOf(col); if (ti >= 0) return ti === 0 ? S.fabric : relight(S.fabric, lum(S.fabric) * (1 - 0.12 * ti)); }
+  if (WOODS.has(col)) { const ref = lum('#8a6a4a'); return relight(S.wood, Math.min(0.92, lum(S.wood) * (lum(col) / ref) ** 0.8)); }
+  if (APPLS.has(col)) return S.appl;
+  return col;
+}

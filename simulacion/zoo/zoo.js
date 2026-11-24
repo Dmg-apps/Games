@@ -6,7 +6,8 @@ import { animalModel as organicModel, setDetail as setAnimalDetail } from './ani
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
-import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
+import { thumbs, preview } from '../shared/thumbs.js';
+import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -50,7 +51,7 @@ function animalHappy(a) {
   const e = st.enclosures.find((q) => q.id === a.enc); const S = SPECIES[a.sp]; if (!e) return 0;
   const mates = animalsIn(e); const same = mates.filter((m) => m.sp === a.sp).length;
   const space = (e.n * e.n) / mates.reduce((t, m) => t + SPECIES[m.sp].space * (m.baby ? 0.5 : 1), 0);
-  const enrich = e.items.length;
+  const enrich = e.items.reduce((n, i) => n + (ENRICH[i.type]?.biome === e.biome ? 1.5 : ENRICH[i.type]?.biome ? 0.3 : 1), 0);
   let h = a.hunger * 0.35 + (e.biome === S.biome ? 25 : 0) + Math.min(1, space) * 18 + Math.min(1, enrich / 3) * 12 + (S.social ? (same >= 2 ? 10 : 0) : 10);
   if (space < 0.6) h -= 15;
   return clamp(h);
@@ -212,13 +213,13 @@ function decide(a, e) {
   if (e.food && st.time < e.food.until && a.hunger < 90) return go(e.food.x + rnd(-0.35, 0.35), e.food.z + rnd(-0.35, 0.35), 'eat', 25);
   const mom = a.baby && a.mother && st.animals.find((m) => m.id === a.mother && m.enc === a.enc);
   if (mom && Math.random() < 0.75) return go(mom.x + rnd(-0.5, 0.5), mom.z + rnd(-0.5, 0.5), 'follow', rnd(2, 6));
-  const pond = e.items.find((i) => i.type === 'charca'), toy = e.items.find((i) => i.type === 'juguete');
+  const pond = e.items.find((i) => ENRICH[i.type]?.water), toy = e.items.find((i) => ENRICH[i.type]?.play);
   const r = Math.random();
   // carácter
   if (a.trait === 'dormilon' && r < 0.3) return go(a.x, a.z, 'sleep', rnd(20, 50));
   if (a.trait === 'jugueton' && r < 0.35) return toy ? go(toy.x + 0.5, toy.z + 0.5, 'play', 12) : go(a.x + rnd(-1.5, 1.5), a.z + rnd(-1.5, 1.5), 'play', 4);
   if (a.trait === 'curioso' && r < 0.4) { const P = pathSet(); let best = null; for (let i = 0; i < e.n; i++) for (const [x, z, ox, oz] of [[e.x + i, e.z - 1, 0.5, 0.6], [e.x + i, e.z + e.n, 0.5, -0.6], [e.x - 1, e.z + i, 0.6, 0.5], [e.x + e.n, e.z + i, -0.6, 0.5]]) if (P.has(pk(x, z))) best = [x + ox, z + oz]; if (best) return go(best[0], best[1], 'watch', rnd(10, 25)); }
-  if (a.trait === 'timido' && r < 0.45) { const hide = e.items.find((i) => i.type === 'arbol' || i.type === 'roca' || i.type === 'bambu'); if (hide) return go(hide.x + 0.5 + rnd(-0.5, 0.5), hide.z + 0.5 + rnd(-0.5, 0.5), 'hide', rnd(15, 35)); }
+  if (a.trait === 'timido' && r < 0.45) { const hide = e.items.find((i) => ENRICH[i.type]?.hide); if (hide) return go(hide.x + 0.5 + rnd(-0.5, 0.5), hide.z + 0.5 + rnd(-0.5, 0.5), 'hide', rnd(15, 35)); }
   if (a.trait === 'presumido' && r < 0.3) return go(a.x, a.z, 'pose', rnd(6, 14));
   if (a.trait === 'grunon' && r < 0.4) { const near = animalsIn(e).find((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 1.2); if (near) return go(a.x + (a.x - near.x) * 2, a.z + (a.z - near.z) * 2, 'wander', 0); }
   if (pond && r < 0.12) return go(pond.x + 0.5 + rnd(-0.6, 0.6), pond.z + 0.5 + rnd(-0.6, 0.6), 'drink', 12);
@@ -367,9 +368,35 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ map: ballTex() })); b.position.y = 0.22; b.rotation.z = 0.4; g.add(b, blob(0.5, 0.5)); }
   if (type === 'bambu') for (let i = 0; i < 7; i++) { const h = 1.0 + Math.random() * 0.6; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, h, 6, 4), mat(i % 2 ? '#7ab84a' : '#5e9e3c')); c.position.set(Math.cos(i * 1.7) * 0.22, h / 2, Math.sin(i * 2.3) * 0.22); c.rotation.z = rnd(-0.08, 0.08); g.add(c);
     for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 3), mat('#4e8e34')); l.scale.z = 0.2; l.position.set(c.position.x + 0.08, h * (0.55 + k * 0.15), c.position.z); l.rotation.z = -1.1; l.rotation.y = k * 2; g.add(l); } }
+  const M = (c) => mat(c), cyl = (rt, rb, h, c, seg = 8) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), typeof c === 'string' ? M(c) : c);
+  const at = (o, x, y, z, ry = 0) => { o.position.set(x, y, z); o.rotation.y = ry; g.add(o); return o; };
+  // ---- granja
+  if (type === 'pajar') { const straw = new THREE.MeshLambertMaterial({ map: strawTex() }); for (const [x, y, z, r] of [[-0.2, 0.14, 0, 0.1], [0.2, 0.14, 0.05, -0.1], [0, 0.42, 0.02, 0.3]]) at(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.3), straw), x, y, z, r); for (let i = 0; i < 6; i++) { const w = box(0.02, 0.005, 0.12, '#e8c860'); at(w, rnd(-0.45, 0.45), 0.01, rnd(-0.35, 0.35), rnd(0, 3)); } }
+  if (type === 'comedero') { at(box(0.8, 0.06, 0.32, '#8a5a32', 0.01), 0, 0.3, 0); for (const sz of [-1, 1]) { const sd = box(0.8, 0.14, 0.03, '#7a4e2a'); at(sd, 0, 0.38, sz * 0.15); } for (const [x, z] of [[-0.35, -0.12], [0.35, -0.12], [-0.35, 0.12], [0.35, 0.12]]) at(box(0.05, 0.3, 0.05, '#6a4222'), x, 0.15, z); const hay = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.24), new THREE.MeshLambertMaterial({ map: strawTex() })); at(hay, 0, 0.38, 0); }
+  if (type === 'establo') { const wall = box(0.9, 0.55, 0.7, '#b8452e'); at(wall, 0, 0.275, 0); for (const sx of [-1, 1]) { const roof = box(0.56, 0.04, 0.82, '#5a4a40'); roof.rotation.z = sx * 0.6; at(roof, sx * 0.22, 0.7, 0); } const gable = new THREE.Mesh(new THREE.CylinderGeometry(0.001, 0.45, 0.32, 3, 1), M('#b8452e')); gable.rotation.set(Math.PI / 2, 0, 0); gable.scale.set(1.05, 1, 0.66); at(gable, 0, 0.66, 0); const door = box(0.34, 0.4, 0.02, '#f2ece0'); at(door, 0, 0.2, 0.36); const x1 = box(0.42, 0.03, 0.025, '#f2ece0'); x1.rotation.z = 0.85; at(x1, 0, 0.2, 0.375); const x2 = box(0.42, 0.03, 0.025, '#f2ece0'); x2.rotation.z = -0.85; at(x2, 0, 0.2, 0.375); }
+  // ---- sabana
+  if (type === 'acacia') { const trunk = cyl(0.04, 0.07, 0.95, '#6a4a2e'); trunk.rotation.z = 0.12; at(trunk, 0, 0.47, 0); for (const [x, y, z, sc] of [[0.05, 1.0, 0, 1], [-0.25, 0.92, 0.1, 0.7], [0.3, 0.95, -0.12, 0.65]]) { const c = new THREE.Mesh(new THREE.SphereGeometry(0.38 * sc, 10, 6), M(sc === 1 ? '#6e8a3a' : '#7e9a44')); c.scale.y = 0.28; at(c, x, y, z); } }
+  if (type === 'termitero') { for (const [x, h, r] of [[0, 0.9, 0.2], [0.18, 0.55, 0.12], [-0.14, 0.42, 0.1]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 9, 3), M('#b07a4a')); const p = c.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + Math.sin(p.getY(i) * 14 + i) * 0.08)); c.geometry.computeVertexNormals(); at(c, x, h / 2, x * 0.4); } }
+  if (type === 'tronco') { const t = cyl(0.12, 0.15, 0.7, '#7a5a3c', 10); at(t, 0, 0.35, 0); for (let i = 0; i < 5; i++) { const sc = box(0.01, 0.25, 0.02, '#c8a070'); const a = i * 0.5 - 1; at(sc, Math.cos(a) * 0.14, 0.4 + (i % 2) * 0.1, Math.sin(a) * 0.14, -a); } const top = cyl(0.12, 0.12, 0.01, '#c89a6a', 10); at(top, 0, 0.705, 0); }
+  // ---- selva
+  if (type === 'trepador') { for (const [x, z] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) at(cyl(0.035, 0.04, 1.0, '#7a5232'), x, 0.5, z); at(box(0.82, 0.05, 0.82, '#9a6a3c', 0.01), 0, 0.82, 0); const rope = M('#d8c08a'); for (const [x, z] of [[-0.2, 0.36], [0.2, 0.36]]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.75, 4), rope); at(r, x, 0.42, z); } for (let i = 0; i < 4; i++) at(box(0.45, 0.025, 0.04, '#9a6a3c'), 0, 0.15 + i * 0.18, 0.36); const vine = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.012, 4, 12, Math.PI), rope); vine.rotation.x = Math.PI; at(vine, 0, 0.82, -0.36); }
+  if (type === 'helechos') for (let k = 0; k < 3; k++) { const cx = (k - 1) * 0.25, cz = (k % 2) * 0.18 - 0.08; for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + k; const f = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.42, 3), M(i % 2 ? '#3f8a3a' : '#2f7032')); f.scale.z = 0.25; f.position.set(cx + Math.cos(a) * 0.12, 0.16, cz + Math.sin(a) * 0.12); f.rotation.set(Math.sin(a) * 0.9, -a, Math.cos(a) * 0.9 + Math.PI / 2 * 0); g.add(f); } }
+  // ---- ártico
+  if (type === 'hielo') { const ice = new THREE.MeshLambertMaterial({ color: 0xbfe6f5, transparent: true, opacity: 0.85 }); for (const [x, y, z, sz] of [[-0.2, 0.15, 0, 0.3], [0.18, 0.12, 0.1, 0.24], [0, 0.4, 0.02, 0.22], [0.25, 0.1, -0.22, 0.18]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), ice); b.rotation.set(rnd(-0.2, 0.2), rnd(0, 3), rnd(-0.2, 0.2)); at(b, x, y, z, b.rotation.y); } }
+  if (type === 'tobogan') { const snow = M('#f4f8fb'); const hill = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), snow); hill.scale.set(1, 0.9, 0.8); at(hill, -0.15, 0, 0); const slide = box(0.26, 0.03, 0.85, '#bfe3f2'); slide.rotation.x = 0.55; at(slide, 0.15, 0.24, 0.2, 0.9); }
+  if (type === 'cueva') { const ice = M('#e2f2fa'); const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), ice); at(dome, 0, 0, 0); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.17, 12, 0, Math.PI), M('#3a5a6a')); at(hole, 0, 0.0, 0.44); for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.45 * Math.cos(i * 0.45 + 0.2), 0.006, 3, 24), M('#c4dce8')); ring.rotation.x = Math.PI / 2; at(ring, 0, 0.45 * Math.sin(i * 0.45 + 0.2), 0); } }
+  // ---- humedal
+  if (type === 'nenufares') { const w = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.9 })); w.rotation.x = -Math.PI / 2; at(w, 0, 0.04, 0); g.userData.water = w; for (let i = 0; i < 6; i++) { const pad = new THREE.Mesh(new THREE.CircleGeometry(0.1, 10, 0.3, Math.PI * 1.8), M('#4a9a4a')); pad.rotation.x = -Math.PI / 2; at(pad, rnd(-0.38, 0.38), 0.05, rnd(-0.38, 0.38)); if (i % 2 === 0) { const fl = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.05, 6), M(i % 4 ? '#f6f0f4' : '#f08ab4')); at(fl, pad.position.x, 0.08, pad.position.z); } } }
+  if (type === 'juncos') for (let i = 0; i < 16; i++) { const h = 0.45 + Math.random() * 0.4; const r = cyl(0.008, 0.014, h, i % 3 ? '#6a9a3a' : '#7aa848', 3); r.rotation.z = rnd(-0.18, 0.18); at(r, rnd(-0.35, 0.35), h / 2, rnd(-0.35, 0.35)); if (i % 3 === 0) at(cyl(0.022, 0.022, 0.09, '#6a4a2a', 6), r.position.x, h - 0.04, r.position.z); }
+  if (type === 'islote') { const w = new THREE.Mesh(new THREE.CircleGeometry(0.85, 22), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.92 })); w.rotation.x = -Math.PI / 2; at(w, 0, 0.04, 0); g.userData.water = w; const isl = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), M('#8aa05a')); isl.scale.y = 0.35; at(isl, 0, 0.03, 0); const nest = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.04, 5, 12), new THREE.MeshLambertMaterial({ map: strawTex() })); nest.rotation.x = Math.PI / 2; at(nest, 0, 0.14, 0); for (let i = 0; i < 2; i++) at(new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), M('#f4efe2')), (i - 0.5) * 0.05, 0.14, 0); }
+  // ---- bosque
+  if (type === 'troncocaido') { const t = cyl(0.13, 0.15, 1.1, '#6a4a2e', 10); t.rotation.z = Math.PI / 2; at(t, 0, 0.14, 0, 0.5); for (const sx of [-1, 1]) { const end = cyl(0.13, 0.13, 0.01, '#c8a06a', 10); end.rotation.z = Math.PI / 2; end.position.set(sx * 0.55, 0, 0); t.add(end); end.rotation.set(0, 0, 0); end.position.set(0, sx * 0.555, 0); } for (let i = 0; i < 4; i++) at(new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), M('#4e7a3a')), rnd(-0.3, 0.3), 0.27, rnd(-0.12, 0.12)); for (let i = 0; i < 3; i++) { const m2 = cyl(0.03, 0.01, 0.04, '#d8c8a0', 6); at(m2, 0.3 + i * 0.05, 0.03, 0.15); const cap = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), M('#c0432a')); at(cap, 0.3 + i * 0.05, 0.05, 0.15); } }
+  if (type === 'colmena') { const post = cyl(0.05, 0.06, 0.8, '#6a4a2e'); at(post, 0, 0.4, 0); const hive = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), M('#e0a830')); hive.scale.set(1, 1.25, 1); at(hive, 0.12, 0.66, 0); for (let i = 0; i < 4; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15 * Math.sin((i + 1) / 5 * Math.PI), 0.012, 4, 14), M('#c88a20')); ring.rotation.x = Math.PI / 2; at(ring, 0.12, 0.66 + (i - 1.5) * 0.08, 0); } const hole = new THREE.Mesh(new THREE.CircleGeometry(0.03, 8), M('#3a2a10')); at(hole, 0.12, 0.6, 0.155); const arm = box(0.16, 0.03, 0.03, '#6a4a2e'); at(arm, 0.06, 0.82, 0); }
+  if (type === 'cuevaroca') { for (const [x, y, z, sz, c] of [[-0.3, 0.2, 0, 0.32, '#8a8378'], [0.3, 0.2, 0, 0.32, '#7d776d'], [0, 0.5, -0.05, 0.36, '#958e82'], [0, 0.18, -0.3, 0.28, '#8a8378']]) at(Look.rock(sz, c, seed + x * 10 + z * 7 + 1), x, y, z); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.2, 12, 0, Math.PI), M('#2a2620')); at(hole, 0, 0.02, 0.18); }
   Look.shadows(g, true, false);
   return g;
 }
+let strawT = null; const strawTex = () => strawT || (strawT = canvasTexture(64, (x, s) => { x.fillStyle = '#e2c066'; x.fillRect(0, 0, s, s); for (let i = 0; i < 220; i++) { x.strokeStyle = ['#c8a048', '#f0d880', '#b89038'][i % 3]; x.lineWidth = 1; const px = Math.random() * s, py = Math.random() * s; x.beginPath(); x.moveTo(px, py); x.lineTo(px + rnd(-10, 10), py + rnd(-3, 3)); x.stroke(); } }));
 let ballT = null; const ballTex = () => ballT || (ballT = canvasTexture(64, (x, s) => { const c = ['#e5484d', '#fff', '#3b82f6', '#fff', '#f5c842', '#fff']; c.forEach((col, i) => { x.fillStyle = col; x.fillRect(i * s / 6, 0, s / 6 + 1, s); }); }));
 const biomeTex = {};
 function groundTex(b) {
@@ -636,7 +663,7 @@ eng.onTap = (sx, sy) => {
   }
   if (view.tool === 'enrich') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
-    if (e.items.some((i) => i.x === t.x && i.z === t.z)) return; const E = ENRICH[view.opt]; if (st.money < E.price) return toast('No hay dinero suficiente', 'warn');
+    if (e.items.some((i) => i.x === t.x && i.z === t.z)) return; const E = ENRICH[view.opt]; if (E.biome && E.biome !== e.biome) return toast(`${E.label} es para recintos de ${BIOMES[E.biome].label.toLowerCase()}`, 'warn'); if (st.money < E.price) return toast('No hay dinero suficiente', 'warn');
     st.money -= E.price; e.items.push({ type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
   }
   if (view.tool === 'build') {
@@ -736,15 +763,16 @@ function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'enc') {
     const sel = view.encSel || { biome: 'sabana', size: 'M' };
+    const eth = thumbs('zoo-' + sel.biome, enrichFor(sel.biome).map(([k]) => k), (k) => enrichMesh(k, sel.biome, 3), { size: 96 });
     b.innerHTML = `<div class="sec">Hábitat</div><div class="seg" id="pb">${Object.entries(BIOMES).map(([k, v]) => `<button data-v="${k}" class="${k === sel.biome ? 'on' : ''}">${v.label}</button>`).join('')}</div>
       <div class="sec">Tamaño</div><div class="grid">${Object.entries(SIZES).map(([k, v]) => `<button class="item ${k === sel.size ? 'on' : ''}" data-s="${k}"><span class="tilebox" style="background:${BIOMES[sel.biome].color}">${icon('fence')}</span>${v.label} ${v.n}×${v.n}<span class="p">${eur(v.price)}</span></button>`).join('')}</div>
       <p class="hint">Cada especie prefiere un hábitat y necesita espacio. Coloca el recinto junto a un camino para que lo vean los visitantes.</p>
       <button class="btn coral" id="pgo" style="width:100%;margin-top:8px">${icon('fence')} Colocar recinto</button>
-      <div class="sec">Objetos para los animales</div><div class="grid">${Object.entries(ENRICH).map(([k, v]) => `<button class="item" data-e="${k}"><span class="tilebox">${icon(v.ic)}</span>${v.label}<span class="p">${eur(v.price)}</span></button>`).join('')}</div>`;
+      <div class="sec">Objetos para ${BIOMES[sel.biome].label.toLowerCase()}</div><p class="hint">Cambia el hábitat de arriba para ver los objetos de cada zona. Los propios de su hábitat alegran más a los animales.</p><div class="grid">${enrichFor(sel.biome).map(([k, v]) => `<button class="item" data-e="${k}"><span class="tilebox" style="background:${BIOMES[sel.biome].color};overflow:hidden">${eth[k] ? `<img src="${eth[k]}" alt="" style="width:100%;height:100%;object-fit:cover">` : icon(v.ic)}</span>${v.label}<span class="d">${v.biome ? BIOMES[v.biome].label : 'Todos los hábitats'}</span><span class="p">${eur(v.price)}</span></button>`).join('')}</div>`;
     b.querySelector('#pb').onclick = (e) => { const x = e.target.closest('button'); if (x) { view.encSel = { ...sel, biome: x.dataset.v }; renderPanel(); } };
     b.querySelectorAll('[data-s]').forEach((x) => (x.onclick = () => { view.encSel = { ...sel, size: x.dataset.s }; renderPanel(); }));
     b.querySelector('#pgo').onclick = () => { sheet.close(); setTool('enc', sel); };
-    b.querySelectorAll('[data-e]').forEach((x) => (x.onclick = () => { sheet.close(); setTool('enrich', x.dataset.e); }));
+    b.querySelectorAll('[data-e]').forEach((x) => (x.onclick = () => enrichPreview(x.dataset.e, sel.biome)));
   }
   if (name === 'animal') {
     b.innerHTML = `<p class="hint">Más fama desbloquea especies. Las felices tienen crías si hay macho y hembra y espacio.</p><div class="grid">${Object.entries(SPECIES).filter(([, v]) => !v.hybrid).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}><span class="tilebox" style="background:${BIOMES[v.biome].color}">${icon('paw')}</span>${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(v.price)}</span>`}</button>`; }).join('')}</div>`;
@@ -839,6 +867,16 @@ function bldCard(b) {
   bx.querySelector('#bx').onclick = closeModal;
   bx.querySelector('#bmv').onclick = () => armMove({ kind: 'bld', ref: b });
   bx.querySelector('#bdel').onclick = () => { closeModal(); st.buildings = st.buildings.filter((q) => q !== b); st.money += Math.round(B.price / 2); hud(); save(); };
+}
+// Ver un objeto en 3D antes de comprarlo
+function enrichPreview(k, biome) {
+  const E = ENRICH[k];
+  const bx = modal(`<h2>${E.label}</h2><div id="pv" style="background:${BIOMES[biome].color};border-radius:16px"></div><p class="hint">${E.biome ? `Propio de ${BIOMES[E.biome].label.toLowerCase()}: alegra más a sus animales.` : 'Vale para cualquier hábitat.'} ${E.hide ? 'Los tímidos se esconden en él.' : E.play ? 'Los juguetones juegan con él.' : E.water ? 'Pueden beber y refrescarse.' : ''} Gíralo con el dedo.</p>
+    <div class="actions"><button class="btn alt" id="px">Cerrar</button><button class="btn coral" id="pok">${icon('tree')} Colocar · ${eur(E.price)}</button></div>`);
+  const pv = preview(bx.querySelector('#pv'), { height: 180 }); pv.set(enrichMesh(k, biome, 3));
+  const done = () => { pv.stop(); closeModal(); };
+  bx.querySelector('#px').onclick = done;
+  bx.querySelector('#pok').onclick = () => { done(); sheet.close(); setTool('enrich', k); };
 }
 function itemCard(key) {
   const [eid, i] = key.split(':'); const e = st.enclosures.find((q) => q.id === eid); const it = e && e.items[+i]; if (!it) return;

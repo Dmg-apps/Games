@@ -1,7 +1,7 @@
 // Renderizador isométrico 2D en canvas. Solo lee el estado de la simulación.
 // Para pasar a 3D bastaría con otra clase con la misma interfaz:
 // resize(), render(state, view), screenToTile(x, y), pickSim(state, x, y), pickObject(state, x, y), addHearts(x, y), centerOn(x, y)
-import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES } from './data.js';
+import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES, styledColor } from './data.js';
 import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf } from './sim.js';
 import { iconImage } from './icons.js';
 
@@ -425,8 +425,7 @@ export class IsoRenderer {
     const boxes = def.boxes.map((b) => rotateBox(b, o.rot, def.w, def.h))
       .sort((a, b) => (a[0] + a[2] / 2 + a[1] + a[3] / 2) - (b[0] + b[2] / 2 + b[1] + b[3] / 2) || a[4] - b[4]);
     for (const b of boxes) {
-      let col = b[6];
-      if (o.tint && def.tint) { const ti = def.tint.indexOf(col); if (ti === 0) col = o.tint; else if (ti > 0) col = shade(o.tint, 0.12 * ti); }
+      let col = styledColor(def, o, b[6]);
       const on = def.power && !state.powerOff && o.users.some((u) => state.sims[u]?.cur?.phase === 'do');
       if (col === '#1a1a22') col = on ? ['#5aa8e8', '#7dd3a8', '#e8a85a', '#a87de8'][Math.floor(performance.now() / 700 + o.x) % 4] : '#1f2230';
       if (col === '#1e1e26' && on) col = '#6ab4ff';

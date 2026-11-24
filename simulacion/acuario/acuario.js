@@ -4,6 +4,7 @@ import * as Look from '../shared/look.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound, avatar } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
+import { thumbs, preview } from '../shared/thumbs.js';
 import { COLORS, PATTERNS, FINS, TOTAL_COMBOS, DECOS, UPGRADES, MAX_TANKS, TANK_CAP, TANK_PRICE, FISH_NAMES, FISH_TRAITS, CUSTOMERS } from './data.js';
 
 const KEY = 'arrecife_save_v1';
@@ -299,14 +300,23 @@ const tid = (t) => t.id;
 // hoja de planta acuática: cinta que se estrecha y se curva
 const leafCache = new Map();
 function leafGeo(h, k) { const key = h.toFixed(2) + (k % 3); if (leafCache.has(key)) return leafCache.get(key); const g = new THREE.PlaneGeometry(0.06, h, 1, 8); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) + h / 2, t = y / h; p.setX(i, p.getX(i) * (1 - t * 0.85)); p.setY(i, y); p.setZ(i, t * t * 0.12 * (k % 2 ? 1 : -1)); } g.computeVertexNormals(); leafCache.set(key, g); return g; }
-function decoMesh(type, i, pos) {
+const tone = (c, k) => '#' + new THREE.Color(c).multiplyScalar(k).getHexString();
+const lighten = (c, k) => '#' + new THREE.Color(c).lerp(new THREE.Color('#ffffff'), k).getHexString();
+// Color elegido de una decoración (índice en su paleta)
+const decoColor = (type, ci = 0) => { const p = DECOS[type]?.colors; return p ? (p[ci] || p[0])[1] : '#888888'; };
+function decoMesh(type, i, pos, ci = 0) {
   const g = new THREE.Group(); const x = pos ? pos[0] : -1.1 + (i % 5) * 0.55, z = pos ? pos[1] : -0.35 + (i % 2) * 0.3; g.position.set(x, 0.12, z);
-  if (type === 'planta') { g.userData.sway = []; for (let k = 0; k < 9; k++) { const pv = new THREE.Group(); const a = k / 9 * Math.PI * 2; pv.position.set(Math.cos(a) * 0.05, 0, Math.sin(a) * 0.04); const l = new THREE.Mesh(leafGeo(0.5 + (k % 4) * 0.12, k), mat(k % 3 ? '#3a9a5a' : '#5ab86a', { side: THREE.DoubleSide })); l.rotation.y = a; pv.add(l); pv.rotation.z = Math.cos(a) * 0.18; pv.rotation.x = Math.sin(a) * 0.18; pv.userData.base = pv.rotation.z; g.add(pv); g.userData.sway.push(pv); } }
-  if (type === 'roca') for (let k = 0; k < 3; k++) { const r = Look.rock(0.09 + k * 0.035, k === 1 ? '#7d7a76' : '#96918a', k + 3); r.position.x = k * 0.13 - 0.13; r.position.z = (k % 2) * 0.08; r.rotation.y = k * 1.7; g.add(r); }
-  if (type === 'castillo') { const b = box(0.35, 0.35, 0.3, '#d8c8a8'); b.position.y = 0.17; g.add(b); for (const sx of [-0.15, 0.15]) { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), mat('#d0c0a0')); tw.position.set(sx, 0.25, 0); g.add(tw); const c = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.15, 8), mat('#c05a4a')); c.position.set(sx, 0.57, 0); g.add(c); } }
-  if (type === 'cofre') { const b = box(0.3, 0.16, 0.2, '#8a5a2a', 0.02); b.position.y = 0.08; g.add(b); const lid = box(0.3, 0.06, 0.2, '#a06a32'); lid.position.set(0, 0.2, -0.05); lid.rotation.x = -0.6; g.add(lid); const gold = box(0.24, 0.05, 0.14, '#f5c842'); gold.position.y = 0.17; g.add(gold); }
-  if (type === 'burbujas') { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.12, 8), mat('#555')); b.position.y = 0.06; g.add(b); g.userData.bubbles = true; }
-  if (type === 'coral') { const col = mat(['#f07a6a', '#f59ab8', '#f5b860'][i % 3]); const branch = (parent, len, r, depth, rz, ry) => { const b = new THREE.Group(); b.rotation.set(0, ry, rz); parent.add(b); const c = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, len, 6), col); c.position.y = len / 2; b.add(c); const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.75, 6, 5), col); tip.position.y = len; b.add(tip); if (depth > 0) { const nb = new THREE.Group(); nb.position.y = len * 0.85; b.add(nb); for (let k = 0; k < 2; k++) branch(nb, len * 0.72, r * 0.72, depth - 1, (k ? 1 : -1) * (0.45 + Math.random() * 0.3), Math.random() * 3); } }; for (let k = 0; k < 3; k++) branch(g, 0.14, 0.03, 2, (k - 1) * 0.35, k * 2); }
+  const C = decoColor(type, ci);
+  if (type === 'planta') { g.userData.sway = []; for (let k = 0; k < 9; k++) { const pv = new THREE.Group(); const a = k / 9 * Math.PI * 2; pv.position.set(Math.cos(a) * 0.05, 0, Math.sin(a) * 0.04); const l = new THREE.Mesh(leafGeo(0.5 + (k % 4) * 0.12, k), mat(k % 3 ? C : lighten(C, 0.25), { side: THREE.DoubleSide })); l.rotation.y = a; pv.add(l); pv.rotation.z = Math.cos(a) * 0.18; pv.rotation.x = Math.sin(a) * 0.18; pv.userData.base = pv.rotation.z; g.add(pv); g.userData.sway.push(pv); } }
+  if (type === 'roca') for (let k = 0; k < 3; k++) { const r = Look.rock(0.09 + k * 0.035, k === 1 ? tone(C, 0.85) : C, k + 3); r.position.x = k * 0.13 - 0.13; r.position.z = (k % 2) * 0.08; r.rotation.y = k * 1.7; g.add(r); }
+  if (type === 'castillo') { const b = box(0.35, 0.35, 0.3, C); b.position.y = 0.17; g.add(b); const door = box(0.1, 0.14, 0.02, '#2a2a34'); door.position.set(0, 0.07, 0.15); g.add(door); for (const sx of [-0.15, 0.15]) { const tw = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), mat(tone(C, 0.94))); tw.position.set(sx, 0.25, 0); g.add(tw); const c = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.15, 8), mat(ci === 3 ? '#3a5a9a' : ci === 1 ? '#a04a7a' : '#c05a4a')); c.position.set(sx, 0.57, 0); g.add(c); } }
+  if (type === 'cofre') { const b = box(0.3, 0.16, 0.2, C, 0.02); b.position.y = 0.08; g.add(b); const band = box(0.31, 0.03, 0.21, '#c9a24a'); band.position.y = 0.12; g.add(band); const lid = box(0.3, 0.06, 0.2, lighten(C, 0.12)); lid.position.set(0, 0.2, -0.05); lid.rotation.x = -0.6; g.add(lid); const gold = box(0.24, 0.05, 0.14, '#f5c842'); gold.position.y = 0.17; g.add(gold); }
+  if (type === 'burbujas') { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.12, 8), mat(C, { emissive: ci === 1 ? '#3a2a00' : undefined })); b.position.y = 0.06; g.add(b); const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.03, 8), mat(lighten(C, 0.3))); lid.position.y = 0.135; g.add(lid); g.userData.bubbles = true; }
+  if (type === 'coral') { const col = mat(C); const seed = Look.seeded(i * 7 + 3); const branch = (parent, len, r, depth, rz, ry) => { const b = new THREE.Group(); b.rotation.set(0, ry, rz); parent.add(b); const c = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, len, 6), col); c.position.y = len / 2; b.add(c); const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.75, 6, 5), col); tip.position.y = len; b.add(tip); if (depth > 0) { const nb = new THREE.Group(); nb.position.y = len * 0.85; b.add(nb); for (let k = 0; k < 2; k++) branch(nb, len * 0.72, r * 0.72, depth - 1, (k ? 1 : -1) * (0.45 + seed() * 0.3), seed() * 3); } }; for (let k = 0; k < 3; k++) branch(g, 0.14, 0.03, 2, (k - 1) * 0.35, k * 2); }
+  if (type === 'barco') { const hull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(C, { side: THREE.DoubleSide })); hull.scale.set(1, 0.45, 0.42); hull.position.y = 0.13; hull.rotation.set(0, 0.25, 0.18); g.add(hull); const deck = box(0.6, 0.02, 0.28, tone(C, 1.15)); deck.position.y = 0.12; deck.rotation.set(0, 0.25, 0.18); g.add(deck); const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.015, 0.5, 6), mat(tone(C, 0.8))); mast.position.set(0.04, 0.34, 0); mast.rotation.z = -0.5; g.add(mast); const sail = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.22), mat('#d8d0bc', { side: THREE.DoubleSide, opacity: 0.85 })); sail.position.set(0.14, 0.38, 0.01); sail.rotation.z = -0.5; g.add(sail); for (let k = 0; k < 4; k++) { const weed = new THREE.Mesh(leafGeo(0.18 + k * 0.04, k), mat('#4a8a4a', { side: THREE.DoubleSide })); weed.position.set(-0.2 + k * 0.12, 0.12, 0.1); g.add(weed); } }
+  if (type === 'anfora') { const amp = new THREE.Group(); const pts = [[0, 0], [0.05, 0.01], [0.09, 0.06], [0.1, 0.14], [0.07, 0.24], [0.035, 0.29], [0.04, 0.33], [0.045, 0.34]].map(([a, b]) => new THREE.Vector2(a, b)); amp.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 14), mat(C, { side: THREE.DoubleSide }))); for (const sd of [-1, 1]) { const h = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 4, 10, Math.PI), mat(tone(C, 0.9))); h.position.set(sd * 0.05, 0.26, 0); h.rotation.z = sd * -Math.PI / 2; amp.add(h); } amp.rotation.z = 1.3; amp.position.set(0.14, 0.09, 0); g.add(amp); }
+  if (type === 'concha') { const sh = mat(C, { side: THREE.DoubleSide }); for (const [rx, y] of [[-0.25, 0.02], [-0.95, 0.04]]) { const half = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), sh); half.scale.set(1, 0.35, 0.85); half.rotation.x = rx === -0.25 ? Math.PI : rx; half.position.set(0, rx === -0.25 ? 0.05 : 0.07, rx === -0.25 ? 0 : -0.06); g.add(half); } const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), mat('#fbf6ee', { emissive: '#3a3630' })); pearl.position.set(0, 0.07, 0.02); g.add(pearl); }
+  if (type === 'estrella') { const sh = new THREE.Shape(); for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2, r = k % 2 ? 0.05 : 0.14; const px = Math.cos(a) * r, py = Math.sin(a) * r; k ? sh.lineTo(px, py) : sh.moveTo(px, py); } const st2 = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.03, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 1 }), mat(C)); st2.rotation.x = -Math.PI / 2; st2.position.y = 0.02; g.add(st2); for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; const d = new THREE.Mesh(new THREE.SphereGeometry(0.012, 5, 4), mat(lighten(C, 0.5))); d.position.set(Math.cos(a) * 0.07, 0.07, -Math.sin(a) * 0.07); g.add(d); } }
   return g;
 }
 function buildTank(t, i) {
@@ -335,10 +345,10 @@ function syncTanks(t0) {
   st.tanks.forEach((t, i) => {
     seen.add(t.id); let rec = tankGroups.get(t.id) || buildTank(t, i);
     if (!(tmv && tmv.kind === 'tank' && tmv.t === t)) { const p = tankPos(t); rec.g.position.set(p.x, 0, p.z); rec.g.rotation.y = tankYaw(t); }
-    const dsig = t.deco.join(',') + JSON.stringify(t.dp || []);
+    const dsig = t.deco.join(',') + JSON.stringify(t.dp || []) + JSON.stringify(t.dc || []);
     if (dsig !== rec.sig) {
       rec.sig = dsig; rec.deco.clear(); rec.bubbles = [];
-      t.deco.forEach((d, k) => { const m = decoMesh(d, k, t.dp && t.dp[k]); m.userData.deco = t.id + ':' + k; rec.deco.add(m); if (m.userData.bubbles) for (let b = 0; b < 6; b++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 4), mat('#e8f6ff', { opacity: 0.7 })); s.userData.o = b / 6; s.userData.x = m.position.x; s.userData.z = m.position.z; rec.deco.add(s); rec.bubbles.push(s); } });
+      t.deco.forEach((d, k) => { const m = decoMesh(d, k, t.dp && t.dp[k], (t.dc && t.dc[k]) || 0); m.userData.deco = t.id + ':' + k; rec.deco.add(m); if (m.userData.bubbles) for (let b = 0; b < 6; b++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 4), mat('#e8f6ff', { opacity: 0.7 })); s.userData.o = b / 6; s.userData.x = m.position.x; s.userData.z = m.position.z; rec.deco.add(s); rec.bubbles.push(s); } });
     }
     // huevos (cuando hay puesta): un racimo junto a la primera planta o en un rincón
     if (t.breeding && !rec.eggs) {
@@ -479,6 +489,7 @@ function renderPanel() {
   const b = sheet.body; const name = sheet.name;
   if (name === 'tank') {
     const t = tankOf(focusTank); if (!t) return sheet.close(); const fs = fishIn(t);
+    const dth = thumbs('reef-deco', Object.keys(DECOS), (k) => decoMesh(k, 0, [0, 0], 0), { size: 96 });
     b.innerHTML = `<button class="btn coral" id="seeclose" style="width:100%;margin-bottom:8px">${icon('eye')} Ver de cerca${t.breeding ? ' (hay huevos)' : ''}</button><div class="row" style="margin-bottom:10px"><button class="btn alt sm" style="flex:1" id="tmove">${icon('move')} Mover acuario</button><button class="btn alt sm" style="flex:1" id="trot">${icon('rotate')} Girar</button><button class="btn alt sm" id="tdel" aria-label="Quitar acuario">${icon('trash')}</button></div>${stat('food', '#f08a3c', 'Comida', t.food)}${stat('drop', '#2fa8e0', 'Agua limpia', t.clean)}${stat('thermo', idealTemp(t) ? '#25c48f' : '#e5484d', 'Temperatura', clamp((t.temp - 18) * 7), `${t.temp.toFixed(1)}°`)}${stat('heart', '#e0559a', 'Ánimo', tankHappy(t))}
       <div class="row" style="margin:8px 0"><button class="btn coral" id="feed">${icon('food')} Comida · 2 €</button><button class="btn alt" id="clean">${icon('drop')} Limpiar · 20 €</button></div>
       ${!has('calefactor') ? `<div class="row"><button class="btn alt sm" id="tdown">− Enfriar</button><span class="hint" style="flex:1;text-align:center;align-self:center">Ideal: 24–27 °C</span><button class="btn alt sm" id="tup">+ Calentar</button></div>` : '<p class="hint">El calefactor mantiene la temperatura perfecta.</p>'}
@@ -488,8 +499,9 @@ function renderPanel() {
       <p class="hint">Marca un macho y una hembra adultos para criar. Las crías mezclan los rasgos de los padres y a veces sale algo nuevo.</p>
       <div class="list">${fs.map((f) => `<div class="li"><input type="checkbox" data-sel="${f.id}" ${selected.has(f.id) ? 'checked' : ''} ${f.adult ? '' : 'disabled'} style="width:20px;height:20px"><div style="flex:1;min-width:0"><b>${esc(f.name)}</b> <span class="hint">${f.sex === 'm' ? '♂' : '♀'} · ${f.adult ? 'adulto' : 'alevín'}${f.health < 40 ? ' · enfermo' : ''}</span> <span class="trait">${fishTrait(f)}</span><div class="chips" style="margin-top:4px">${geneChips(f.g)}</div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn sm mint" data-sell="${f.id}">${eur(price(f))}</button><button class="btn sm alt" data-move="${f.id}">Mover</button></div></div>`).join('') || '<p class="hint">Este acuario está vacío. Compra peces en Comprar.</p>'}</div>
       <button class="btn" id="breed" style="width:100%;margin-top:6px" ${selected.size === 2 && !t.breeding ? '' : 'disabled'}>${icon('egg')} Criar con los dos marcados</button>
-      <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}">${icon('move')} ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
-      <div class="grid" style="margin-top:8px">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox">${icon(d.ic)}</span>${d.label}<span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
+      <div class="sec">${icon('sparkle')} Decoración</div><div class="chips">${t.deco.map((d, k) => `<button class="chip" data-dk="${k}"><span class="dot" style="background:${decoColor(d, t.dc?.[k])}"></span> ${DECOS[d].label}</button>`).join('') || '<span class="hint">Sin decoración</span>'}</div>
+      <p class="hint" style="margin-top:8px">Toca una para verla de cerca y elegir el color antes de comprarla.${t.deco.length >= 8 ? ' <b>Este acuario ya tiene 8 decoraciones.</b>' : ''}</p>
+      <div class="grid">${Object.entries(DECOS).map(([k, d]) => `<button class="item" data-deco="${k}" ${t.deco.length >= 8 ? 'disabled' : ''}><span class="tilebox" style="background:#2a6a8e;overflow:hidden">${dth[k] ? `<img src="${dth[k]}" alt="" style="width:100%;height:100%;object-fit:cover">` : icon(d.ic)}</span>${d.label}<span class="d">${d.colors.map((c) => `<span class="dot" style="background:${c[1]}"></span>`).join('')}</span><span class="p">${eur(d.price)}</span></button>`).join('')}</div>`;
     b.querySelector('#seeclose').onclick = () => enterClose(t.id);
     const medB = b.querySelector('#med'); if (medB) medB.onclick = () => { medicine(t); renderPanel(); };
     b.querySelector('#tmove').onclick = () => armTank(t);
@@ -509,7 +521,7 @@ function renderPanel() {
     };
     b.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const f = st.fish.find((q) => q.id === x.dataset.sell); const p = price(f); confirm(`¿Vender a ${f.name} por ${eur(p)}?`, () => { st.money += p; st.fish = st.fish.filter((q) => q !== f); st.sold++; renderPanel(); hud(); save(); }); }));
     b.querySelectorAll('[data-move]').forEach((x) => (x.onclick = () => moveFish(x.dataset.move)));
-    b.querySelectorAll('[data-deco]').forEach((x) => (x.onclick = () => { const d = DECOS[x.dataset.deco]; if (st.money < d.price) return toast('No hay dinero suficiente', 'warn'); st.money -= d.price; t.deco.push(x.dataset.deco); renderPanel(); hud(); save(); }));
+    b.querySelectorAll('[data-deco]').forEach((x) => (x.onclick = () => decoShop(t, x.dataset.deco)));
   }
   if (name === 'buy') {
     const n = st.tanks.length;
@@ -567,7 +579,7 @@ function moveFish(fid) {
 // Mantén pulsado un acuario (o, viéndolo de cerca, una decoración) y arrástralo. También desde su panel.
 let tmv = null, armed = null;
 const tankList = () => [...tankGroups.values()].map((r) => r.g);
-function removeDeco(t, k) { const d = DECOS[t.deco[k]]; t.deco.splice(k, 1); if (t.dp) t.dp.splice(k, 1); st.money += Math.round(d.price / 2); toast(`${d.label} quitada · recuperas ${eur(d.price / 2)}`, 'info', 'trash'); if (sheet.name === 'tank') renderPanel(); hud(); save(); }
+function removeDeco(t, k) { const d = DECOS[t.deco[k]]; t.deco.splice(k, 1); if (t.dp) t.dp.splice(k, 1); if (t.dc) t.dc.splice(k, 1); st.money += Math.round(d.price / 2); toast(`${d.label} quitada · recuperas ${eur(d.price / 2)}`, 'info', 'trash'); if (sheet.name === 'tank') renderPanel(); hud(); save(); }
 function removeTank(t) {
   if (st.tanks.length <= 1) return toast('Necesitas al menos un acuario', 'warn');
   if (fishIn(t).length) return toast('Saca antes los peces (véndelos o muévelos a otro acuario)', 'warn');
@@ -607,10 +619,32 @@ function endTankMove(cancel) {
 function armTank(t) { sheet.close(); armed = { kind: 'tank', t }; showArmed(`${icon('move')} Arrastra el dedo para mover el acuario`); }
 function armDeco(t, k) { closeModal(); enterClose(t.id); armed = { kind: 'deco', t, k }; showArmed(`${icon('move')} Arrastra el dedo para colocar ${DECOS[t.deco[k]].label.toLowerCase()}`); }
 function showArmed(html) { const el = $('#toolinfo'); el.hidden = false; el.innerHTML = `${html}<button class="x" id="ti_x" aria-label="Cancelar">${icon('x')}</button>`; $('#ti_x').onclick = () => { armed = null; el.hidden = true; }; }
+// Fila de colores para elegir
+const swatches = (type, cur) => `<div class="swatches">${DECOS[type].colors.map(([n, c], i) => `<button class="sw ${i === cur ? 'on' : ''}" data-ci="${i}" style="background:${c}" aria-label="${n}" title="${n}"></button>`).join('')}</div>`;
+// Tienda de decoración: la ves en 3D, eliges color y la compras
+function decoShop(t, type) {
+  const d = DECOS[type]; let ci = 0;
+  const bx = modal(`<h2>${d.label}</h2><div id="pv" style="background:linear-gradient(#5ab4e8,#1f5f86);border-radius:16px"></div>
+    <div class="sec" style="margin-top:10px">Color: <b id="cn">${d.colors[0][0]}</b></div>${swatches(type, 0)}
+    <p class="hint">Alegra a los peces (+${d.happy} de ánimo). Gírala con el dedo. Después podrás moverla por la arena.</p>
+    <div class="actions"><button class="btn alt" id="px">Cerrar</button><button class="btn coral" id="pok">${icon('coin')} Comprar · ${eur(d.price)}</button></div>`);
+  const pv = preview(bx.querySelector('#pv'), { height: 190 }); const show = () => pv.set(decoMesh(type, 0, [0, 0], ci)); show();
+  bx.querySelectorAll('[data-ci]').forEach((x) => (x.onclick = () => { ci = +x.dataset.ci; bx.querySelectorAll('.sw').forEach((q) => q.classList.toggle('on', q === x)); bx.querySelector('#cn').textContent = d.colors[ci][0]; Sound.play('tap'); show(); }));
+  const done = () => { pv.stop(); closeModal(); };
+  bx.querySelector('#px').onclick = done;
+  bx.querySelector('#pok').onclick = () => {
+    if (t.deco.length >= 8) return toast('Este acuario ya tiene 8 decoraciones', 'warn');
+    if (st.money < d.price) return toast('No hay dinero suficiente', 'warn');
+    st.money -= d.price; t.dc = t.deco.map((_, k) => (t.dc && t.dc[k]) || 0); t.deco.push(type); t.dc.push(ci);
+    done(); toast(`${d.label} ${d.colors[ci][0].toLowerCase()} en el acuario`, 'good', 'sparkle'); renderPanel(); hud(); save();
+  };
+}
 function decoCard(t, k) {
-  const d = DECOS[t.deco[k]];
+  const d = DECOS[t.deco[k]]; const cur = (t.dc && t.dc[k]) || 0;
   const bx = modal(`<h2>${d.label}</h2><p class="hint">Alegra a los peces del acuario. Puedes ponerla donde quieras sobre la arena.</p>
+    <div class="sec">Cambiar color (gratis)</div>${swatches(t.deco[k], cur)}
     <div class="actions" style="flex-direction:column"><button class="btn" id="dmv">${icon('move')} Mover</button><button class="btn alt" id="ddel">${icon('trash')} Quitar (recuperas ${eur(d.price / 2)})</button><button class="btn alt" id="dx">Cerrar</button></div>`);
+  bx.querySelectorAll('[data-ci]').forEach((x) => (x.onclick = () => { t.dc = t.deco.map((_, q) => (t.dc && t.dc[q]) || 0); t.dc[k] = +x.dataset.ci; bx.querySelectorAll('.sw').forEach((q) => q.classList.toggle('on', q === x)); Sound.play('tap'); if (sheet.name === 'tank') renderPanel(); save(); }));
   bx.querySelector('#dx').onclick = closeModal;
   bx.querySelector('#dmv').onclick = () => armDeco(t, k);
   bx.querySelector('#ddel').onclick = () => { closeModal(); removeDeco(t, k); };

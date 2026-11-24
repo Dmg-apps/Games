@@ -37,13 +37,39 @@ export const SPECIES = {
 };
 
 // Objetos dentro de los recintos (enriquecimiento)
+// biome: solo para ese hábitat (si no, vale para todos). hide: sirve de escondite. play: para jugar. water: para beber.
 export const ENRICH = {
-  arbol: { label: 'Árbol', price: 120, ic: 'tree' },
-  roca: { label: 'Rocas', price: 90, ic: 'box' },
-  charca: { label: 'Charca', price: 200, ic: 'drop' },
-  juguete: { label: 'Pelota gigante', price: 80, ic: 'ball' },
-  bambu: { label: 'Bambú', price: 100, ic: 'leaf' },
+  arbol: { label: 'Árbol', price: 120, ic: 'tree', hide: true },
+  roca: { label: 'Rocas', price: 90, ic: 'box', hide: true },
+  charca: { label: 'Charca', price: 200, ic: 'drop', water: true },
+  juguete: { label: 'Pelota gigante', price: 80, ic: 'ball', play: true },
+  // Granja
+  pajar: { label: 'Pacas de paja', price: 70, ic: 'box', biome: 'granja', hide: true },
+  comedero: { label: 'Comedero de madera', price: 90, ic: 'food', biome: 'granja' },
+  establo: { label: 'Establo', price: 260, ic: 'home', biome: 'granja', hide: true },
+  // Sabana
+  acacia: { label: 'Acacia', price: 150, ic: 'tree', biome: 'sabana', hide: true },
+  termitero: { label: 'Termitero', price: 110, ic: 'box', biome: 'sabana', play: true },
+  tronco: { label: 'Tronco para rascar', price: 90, ic: 'tree', biome: 'sabana', play: true },
+  // Selva
+  bambu: { label: 'Bambú', price: 100, ic: 'leaf', biome: 'selva', hide: true },
+  trepador: { label: 'Plataforma con cuerdas', price: 240, ic: 'home', biome: 'selva', play: true },
+  helechos: { label: 'Helechos', price: 70, ic: 'leaf', biome: 'selva', hide: true },
+  // Ártico
+  hielo: { label: 'Bloques de hielo', price: 120, ic: 'sparkle', biome: 'artico', play: true },
+  tobogan: { label: 'Tobogán de nieve', price: 220, ic: 'sparkle', biome: 'artico', play: true },
+  cueva: { label: 'Cueva de hielo', price: 260, ic: 'home', biome: 'artico', hide: true },
+  // Humedal
+  nenufares: { label: 'Nenúfares', price: 90, ic: 'leaf', biome: 'humedal', water: true },
+  juncos: { label: 'Juncos', price: 60, ic: 'leaf', biome: 'humedal', hide: true },
+  islote: { label: 'Islote con nido', price: 180, ic: 'egg', biome: 'humedal', water: true },
+  // Bosque
+  troncocaido: { label: 'Tronco caído', price: 100, ic: 'tree', biome: 'bosque', play: true },
+  colmena: { label: 'Panal de miel', price: 150, ic: 'food', biome: 'bosque', play: true },
+  cuevaroca: { label: 'Cueva de piedra', price: 280, ic: 'home', biome: 'bosque', hide: true },
 };
+// Objetos que se pueden poner en un recinto de cierto hábitat
+export const enrichFor = (biome) => Object.entries(ENRICH).filter(([, v]) => !v.biome || v.biome === biome);
 // Edificios y decoración del parque (junto a un camino)
 export const BUILDINGS = {
   helados: { label: 'Helados', price: 300, cat: 'Tiendas', sells: 4, need: 'hambre', amount: 25, color: '#f49ac0', ic: 'shop' },

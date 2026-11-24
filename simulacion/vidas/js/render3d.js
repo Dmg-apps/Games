@@ -3,7 +3,7 @@
 // addHearts(), addMarker(), insetRight
 import * as THREE from '../../shared/vendor/three.module.min.js';
 import { RoundedBoxGeometry } from '../../shared/vendor/RoundedBoxGeometry.js';
-import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES, SEASONS } from './data.js';
+import { OBJECTS, AGES, NEEDS, NEED_IC, NEED_COLOR, FLOOR_STYLES, SEASONS, FURN_STYLES, styledColor } from './data.js';
 import { GRID, HOUSE, EXIT, footprint, visibleSims, hourOf, seasonOf, weatherOf } from './sim.js';
 import { iconImage } from './icons.js';
 import * as Look from '../../shared/look.js';
@@ -157,20 +157,24 @@ function buildObject(o) {
     return g;
   }
   const boxes = def.boxes.map((b) => rotateBox(b, o.rot, def.w, def.h));
+  const SY = FURN_STYLES[o.style] || {}; let top = null;
   for (const b of boxes) {
-    let col = b[6];
-    if (o.tint && def.tint) { const ti = def.tint.indexOf(col); if (ti === 0) col = o.tint; else if (ti > 0) col = shadeHex(o.tint, 0.12 * ti); }
+    const raw = b[6]; const col = styledColor(def, o, raw);
     const [x, y, w, d, z, hh] = b;
     const H = Math.max(0.01, hh * PX);
-    const r = Math.min(0.04, w / 3, d / 3, H / 3);
+    const r = Math.min(SY.radius ?? 0.04, w / 3, d / 3, H / 3);
     const geo = r > 0.006 ? new RoundedBoxGeometry(w, H, d, 2, r) : new THREE.BoxGeometry(w, H, d);
-    const screen = col === '#1a1a22' || col === '#1e1e26';
+    const screen = raw === '#1a1a22' || raw === '#1e1e26';
+    const shiny = raw === '#e9eef2' || raw === '#f4f6f8' || raw === '#e6eaee';
     const m = screen ? std({ color: 0x15161c, roughness: 0.25, emissive: 0x000000 })
-      : mat(col, { rough: col === '#e9eef2' || col === '#f4f6f8' || col === '#e6eaee' ? 0.3 : col.startsWith('rgba') ? 0.1 : 0.75 });
+      : mat(col, { rough: shiny ? (SY.metal ? 0.35 : 0.3) : raw.startsWith('rgba') ? 0.1 : SY.metal && col === SY.wood ? 0.45 : (SY.rough ?? 0.75), metal: SY.metal && (shiny || col === SY.wood) ? 0.55 : 0 });
     const mesh = add(new THREE.Mesh(geo, m));
     mesh.position.set(x + w / 2, z * PX + H / 2, y + d / 2);
     if (screen) (g.userData.screens ||= []).push(mesh);
+    if (!def.walkable && w * d > 0.2 && (!top || z + hh > top.z + top.hh)) top = { x, y, w, d, z, hh };
   }
+  // remate dorado (clásico) sobre el borde superior de la pieza principal
+  if (SY.trim && top) { const H = top.hh * PX; const tm = mat(SY.trim, { rough: 0.35, metal: 0.7 }); for (const [w, d, px, pz] of [[top.w, 0.025, top.x + top.w / 2, top.y], [top.w, 0.025, top.x + top.w / 2, top.y + top.d], [0.025, top.d, top.x, top.y + top.d / 2], [0.025, top.d, top.x + top.w, top.y + top.d / 2]]) add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, d), tm)).position.set(px, top.z * PX + H, pz); }
   if (o.type === 'cocina') {
     const fl = add(new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.12, 12), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85 })));
     const p = rotateBox([0.2, 0.2, 0.25, 0.25, 36, 2], o.rot, 1, 1); fl.position.set(p[0] + p[2] / 2, 38 * PX + 0.06, p[1] + p[3] / 2); fl.visible = false; fl.castShadow = false; g.userData.flame = fl;
@@ -608,7 +612,7 @@ export class Renderer3D {
     const seen = new Set();
     for (const o of state.objects) {
       seen.add(o.id);
-      const key = `${o.type}|${o.x}|${o.y}|${o.rot}|${o.tint || ''}|${o.type === 'arbol' ? CUR_LEAVES : ''}`;
+      const key = `${o.type}|${o.x}|${o.y}|${o.rot}|${o.tint || ''}|${o.style || ''}|${o.type === 'arbol' ? CUR_LEAVES : ''}`;
       let rec = this.objMeshes.get(o.id);
       if (!rec || rec.key !== key) {
         if (rec) this.objGroup.remove(rec.g);
@@ -911,9 +915,9 @@ function heartPath(ctx, x, y, s) {
 
 // Miniaturas del catálogo: cada mueble renderizado en 3D en un lienzo aparte
 let thumbCache = null;
-export function catalogThumbs() {
-  if (thumbCache) return thumbCache;
-  thumbCache = {};
+export function catalogThumbs(style = 'moderno') {
+  thumbCache ||= {}; if (thumbCache[style]) return thumbCache[style];
+  const out = thumbCache[style] = {};
   try {
     const cv = document.createElement('canvas'); cv.width = cv.height = 192;
     const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -922,16 +926,16 @@ export function catalogThumbs() {
     const d = new THREE.DirectionalLight(0xffffff, 1.8); d.position.set(3, 5, 4); sc.add(d);
     const cam = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
     for (const type of Object.keys(OBJECTS)) {
-      const g = buildObject({ type, x: 0, y: 0, rot: 0, id: 'thumb', users: [] }); sc.add(g);
+      const g = buildObject({ type, x: 0, y: 0, rot: 0, id: 'thumb', users: [], style }); sc.add(g);
       const box = new THREE.Box3().setFromObject(g); const c = box.getCenter(new THREE.Vector3()); const size = box.getSize(new THREE.Vector3()).length();
       const dist = size / (2 * Math.tan(THREE.MathUtils.degToRad(15))) * 0.95;
       cam.position.set(c.x + dist * 0.62, c.y + dist * 0.55, c.z + dist * 0.62); cam.lookAt(c);
-      r.render(sc, cam); thumbCache[type] = cv.toDataURL('image/png');
+      r.render(sc, cam); out[type] = cv.toDataURL('image/png');
       sc.remove(g); g.traverse((o) => o.geometry?.dispose());
     }
     r.dispose(); r.forceContextLoss();
   } catch (e) { console.warn('Sin miniaturas', e); }
-  return thumbCache;
+  return out;
 }
 
 export function webglAvailable() {

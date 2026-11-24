@@ -1,7 +1,7 @@
 // Interfaz DOM: HUD, paneles, menús contextuales, modales y creador de personajes.
 import {
   NEEDS, BABY_NEEDS, NEED_INFO, NEED_IC, NEED_COLOR, TRAITS, AGES, OBJECTS, OBJ_IC, CATEGORIES, CAREERS, SCHOOL, MOODLETS, WORRIES,
-  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, WEATHER, WINDOW_PRICE,
+  DAYS, SKINS, HAIR_COLORS, CLOTHES, HAIR_STYLES, GENDERS, BODY_STYLES, inflect, FLOOR_STYLES, WALL_COLORS, WALL_PATTERNS, EYE_STYLES, EYE_COLORS, SKILLS, ASPIRATIONS, REWARDS, OUTINGS, PETS, PET_NEEDS, PET_NAMES, WEATHER, WINDOW_PRICE, FURN_STYLES,
 } from './data.js';
 import * as Sim from './sim.js';
 import { drawPortrait } from './render.js';
@@ -394,12 +394,17 @@ export class UI {
     const grid = body.querySelector('.grid');
     if (cat === 'Estilo') return this.renderStyle(body, grid);
     if (cat === 'Paredes') return this.renderWallTools(body, grid);
-    const thumbs = webglAvailable() ? catalogThumbs() : {};
+    const sty = this.buyStyle || 'moderno';
+    const sb = document.createElement('div'); sb.style.gridColumn = '1 / -1';
+    sb.innerHTML = `<div class="sec" style="margin-top:0">${icon('sparkle')} Estilo de los muebles</div><div class="chips">${Object.entries(FURN_STYLES).map(([k, v]) => `<button class="chip ${k === sty ? 'on' : ''}" data-sty="${k}" style="${k === sty ? 'box-shadow:0 0 0 2px var(--ink)' : ''}">${v.label}</button>`).join('')}</div><p class="hint" style="margin:4px 0 2px">${FURN_STYLES[sty].desc}</p>`;
+    sb.onclick = (e) => { const c = e.target.closest('[data-sty]'); if (c) { this.buyStyle = c.dataset.sty; this.renderBuild(cat); } };
+    grid.appendChild(sb);
+    const thumbs = webglAvailable() ? catalogThumbs(sty) : {};
     for (const [id, d] of Object.entries(OBJECTS)) {
       if (d.cat !== cat) continue;
       const b = document.createElement('button'); b.className = 'item'; b.disabled = st.money < d.price;
       b.innerHTML = `${thumbs[id] ? `<img class="thumb" src="${thumbs[id]}" alt="">` : `<span class="tilebox">${icon(OBJ_IC[id] || 'box')}</span>`}${d.name}<span class="p">${d.price} €</span>${d.decor ? `<span class="d">Decoración +${d.decor}</span>` : ''}`;
-      b.onclick = () => { this.hideSheetOnly(); this.g.startPlacing(id); };
+      b.onclick = () => { this.hideSheetOnly(); this.g.startPlacing(id, sty); };
       grid.appendChild(b);
     }
   }
@@ -449,6 +454,8 @@ export class UI {
       const d = OBJECTS[o.type];
       info = `${icon(OBJ_IC[o.type] || 'box')} <b>${d.name}</b>`;
       acts = [btn('move', 'Mover', () => this.g.moveSelected())];
+      info += ` <span class="hint">· ${FURN_STYLES[o.style || 'moderno'].label}</span>`;
+      if (!d.fixed && !['arbol', 'planta', 'lampara'].includes(o.type)) acts.push(btn('brush', 'Estilo', () => { const n = Sim.restyleObject(this.state, o); this.toast(`Estilo ${FURN_STYLES[n].label.toLowerCase()}`, 'info'); this.renderBuildBar(); }));
       if (d.tint) acts.push(btn('sparkle', 'Color', () => { Sim.recolorObject(this.state, o); }));
       if (!d.fixed) acts.push(btn('coin', `Vender · ${Math.round(d.price * 0.7)} €`, () => this.g.sellSelected(), 'red'));
       acts.push(btn('x', '', () => { v.selected = null; this.renderBuildBar(); }));

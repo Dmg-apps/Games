@@ -197,11 +197,11 @@ class Game {
     if (this.state) this.state.speed = this.prevSpeed || 1;
     this.ui.renderBuildBar(); this.ui.update();
   }
-  startPlacing(type) {
+  startPlacing(type, style = 'moderno') {
     const c = this.renderer.screenToTile(window.innerWidth / 2, window.innerHeight / 2);
     const x = Math.max(0, Math.min(Sim.GRID - 1, c.x)), y = Math.max(0, Math.min(Sim.GRID - 1, c.y));
     this.view.selected = null;
-    this.view.ghost = { type, x, y, rot: 0, mode: 'new' };
+    this.view.ghost = { type, x, y, rot: 0, mode: 'new', style };
     this.validateGhost(); this.ui.renderBuildBar();
   }
   validateGhost() { const g = this.view.ghost; if (g) g.ok = Sim.canPlace(this.state, g.type, g.x, g.y, g.rot, g.objId); }
@@ -211,7 +211,7 @@ class Game {
     if (!g.ok) return this.ui.toast('No cabe ahí', 'warn');
     if (g.mode === 'new') {
       if (this.state.money < OBJECTS[g.type].price) return this.ui.toast('No hay dinero suficiente', 'warn');
-      Sim.placeObject(this.state, g.type, g.x, g.y, g.rot);
+      Sim.placeObject(this.state, g.type, g.x, g.y, g.rot, false, g.style);
       this.ui.toast(`${OBJECTS[g.type].name} colocado/a`, 'good');
       if (this.state.money < OBJECTS[g.type].price) this.view.ghost = null;
     } else {
@@ -222,7 +222,7 @@ class Game {
   cancelGhost() { this.view.ghost = null; this.ui.renderBuildBar(); }
   moveSelected() {
     const o = Sim.objById(this.state, this.view.selected); if (!o) return;
-    this.view.ghost = { type: o.type, x: o.x, y: o.y, rot: o.rot, mode: 'move', objId: o.id };
+    this.view.ghost = { type: o.type, x: o.x, y: o.y, rot: o.rot, mode: 'move', objId: o.id, style: o.style, tint: o.tint };
     this.view.selected = null; this.validateGhost(); this.ui.renderBuildBar();
   }
   sellSelected() {
