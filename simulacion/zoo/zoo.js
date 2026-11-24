@@ -1,14 +1,14 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-import { buildingMesh as propMesh, People, GlbPeople } from './props3d.js';
+Look.setStyle('cubito'); // vegetación y rocas en estilo cubito (diseño propio)
+import { buildingMesh as propMesh, People } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
 import { cubeModel } from './cube3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { loadModel, peek, instance as modelInstance, preload as preloadModels, staticModel } from '../shared/assets.js';
 import { N, ENTRANCE, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT } from './data.js';
 
 const KEY = 'parque_save_v1';
@@ -359,11 +359,8 @@ const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico:
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
 function enrichMesh(type, biome = 'sabana', seed = 1) {
   const g = new THREE.Group();
-  // árboles y rocas con modelos de verdad (Kenney, CC0) cuando ya están cargados
-  const GTREE = { granja: 'tree_oak', sabana: 'tree_fat', selva: 'tree_palm', artico: 'tree_pine_tall', humedal: 'tree_oak', bosque: 'tree_pine' };
-  if (type === 'arbol') { const t = staticModel(`nature/${GTREE[biome] || 'tree_oak'}.glb`, { height: biome === 'selva' ? 2.6 : 2.3 }); if (t) { t.rotation.y = seed % 6; g.add(t, blob(1.1, 1.1, 0.3)); } else g.add(tree(1.25, BIOME_TREE[biome], seed)); }
-  if (type === 'roca' && peek('nature/rock_large.glb')) { const a = staticModel('nature/rock_large.glb', { length: 0.75 }), b = staticModel('nature/rock_small.glb', { length: 0.35 }), c = staticModel('nature/rock_tall.glb', { length: 0.4 }); a.position.set(-0.15, 0, 0.05); b.position.set(0.3, 0, 0.25); c.position.set(0.15, 0, -0.25); a.rotation.y = seed; c.rotation.y = seed * 2; g.add(a, b, c); }
-  else if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
+  if (type === 'arbol') g.add(tree(1.25, BIOME_TREE[biome], seed));
+  if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
   if (type === 'charca') {
     const bank = new THREE.Mesh(new THREE.CircleGeometry(0.88, 24), mat('#8a7a52')); bank.rotation.x = -Math.PI / 2; bank.position.y = 0.03; bank.receiveShadow = true; g.add(bank);
     const w = new THREE.Mesh(new THREE.CircleGeometry(0.74, 24), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.92 })); w.rotation.x = -Math.PI / 2; w.position.y = 0.045; g.add(w); g.userData.water = w;
@@ -437,8 +434,6 @@ function faceToPath(b) { const P = pathSet(); for (const [dx, dz, r] of [[0, 1, 
 // Animales orgánicos (ver animals3d.js)
 const animalMeshes = new Map();
 let glbReady = false; const GLB = {};
-// naturaleza: al cargar, se rehacen recintos y decoración con los modelos nuevos
-preloadModels(['tree_oak', 'tree_fat', 'tree_palm', 'tree_pine', 'tree_pine_tall', 'tree_autumn', 'rock_large', 'rock_small', 'rock_tall'].map((n) => `nature/${n}.glb`)).then(() => { rebuildEnclosures(); rebuildBuildings(); });
 // Animales "cubito": diseño original del juego (cube3d.js)
 function animalModel(sp) {
   const m = cubeModel(sp); const [L, , W] = SPECIES[sp].body; m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m;
@@ -483,8 +478,7 @@ function syncAnimals(t) {
 }
 const peopleMeshes = new Map();
 let people = null;
-let glbPeople = null;
-function syncPeople(t) { const rest = (glbPeople ||= new GlbPeople(groups.people, eng.hq ? 40 : 24)).sync(visitors, t); (people ||= new People(groups.people, 90)).sync(rest, t); }
+function syncPeople(t) { (people ||= new People(groups.people, 90)).sync(visitors, t); }
 function rebuildLitter() { const g = groups.litter; g.clear(); for (const l of st.litter) { const b = box(0.12, 0.04, 0.08, l.c); b.position.set(l.x + 0.3 + Math.random() * 0.4, 0.08, l.z + 0.3 + Math.random() * 0.4); b.rotation.y = Math.random() * 3; g.add(b); } }
 
 groups.extra = new THREE.Group(); S3.add(groups.extra);

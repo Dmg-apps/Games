@@ -3,7 +3,7 @@
 // - Sombras reales: en "Ahorro" solo las proyectan los objetos fijos y el mapa se recalcula únicamente cuando algo cambia
 //   (no en cada imagen); en "Alta" también los animales y se actualiza siempre.
 // - Vegetación instanciada (una sola llamada de dibujo para cientos de árboles o matas).
-import { THREE, mat, canvasTexture } from './engine3d.js';
+import { THREE, mat, canvasTexture, RoundedBoxGeometry } from './engine3d.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 // Generador pseudoaleatorio con semilla (para que el paisaje no cambie al recargar)
@@ -81,8 +81,36 @@ const merge = (geos) => { // une geometrías sencillas (mismo tipo de atributos)
   const m = new THREE.BufferGeometry(); m.setAttribute('position', new THREE.BufferAttribute(pos, 3)); m.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); m.setAttribute('color', new THREE.BufferAttribute(col, 3)); return m;
 };
 
+// ---------- estilo "cubito" (diseño propio) ----------
+// Cada juego puede elegir el estilo de la vegetación: 'organico' (por defecto) o 'cubito'
+let STYLE = 'organico';
+export function setStyle(st) { STYLE = st; }
+// bloque redondeado ya colocado y girado (para unir en una sola geometría)
+function rbox(w, h, d, x, y, z, ry = 0, r = 0.25) { const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(w, h, d) * r); g.rotateY(ry); g.translate(x, y, z); return g; }
+function cubeTreeGeometry(kind, seed) {
+  const R = seeded(seed * 53 + 7), parts = [];
+  if (kind === 'pino') {
+    parts.push(shade(rbox(0.16, 0.5, 0.16, 0, 0.25, 0), '#4a2e1a', '#6a4426', 0, 0.5));
+    for (let i = 0; i < 4; i++) { const w = 0.72 - i * 0.15; parts.push(shade(rbox(w, 0.36, w, 0, 0.62 + i * 0.32, 0, (i % 2) * 0.78 + R() * 0.2, 0.2), '#235e36', '#4a9a56', 0.45 + i * 0.32, 0.8 + i * 0.32)); }
+  } else if (kind === 'palmera') {
+    for (let i = 0; i < 6; i++) parts.push(shade(rbox(0.14 - i * 0.008, 0.28, 0.14 - i * 0.008, Math.pow(i / 6, 2) * 0.25, 0.14 + i * 0.27, 0, i * 0.3, 0.2), '#7a5a36', '#a07a4a', 0, 1.7));
+    for (let i = 0; i < 7; i++) { const g = new RoundedBoxGeometry(0.85, 0.05, 0.2, 1, 0.02); g.translate(0.42, 0, 0); g.rotateZ(-0.35 - R() * 0.2); g.rotateY(i / 7 * Math.PI * 2 + R() * 0.3); g.translate(0.25, 1.68, 0); parts.push(shade(g, '#3e7a32', '#6aae4a', 1.4, 1.75)); }
+    parts.push(shade(rbox(0.2, 0.14, 0.2, 0.25, 1.66, 0), '#5a4026', '#7a5a36', 1.6, 1.75));
+  } else {
+    const birch = kind === 'abedul';
+    parts.push(shade(rbox(0.17, 0.85, 0.17, 0, 0.42, 0), birch ? '#cfc8b8' : '#4a2e1a', birch ? '#eeeae0' : '#6e4a2c', 0, 0.85));
+    const c1 = birch ? '#5a9a3a' : '#2f6e30', c2 = birch ? '#9ccc5a' : '#6aae48';
+    parts.push(shade(rbox(0.95, 0.68, 0.95, 0, 1.12, 0, R() * 0.6, 0.3), c1, c2, 0.8, 1.5));
+    parts.push(shade(rbox(0.62, 0.46, 0.62, (R() - 0.5) * 0.2, 1.6, (R() - 0.5) * 0.2, R() * 1.5, 0.3), c1, c2, 1.35, 1.85));
+    parts.push(shade(rbox(0.42, 0.36, 0.42, 0.34, 1.02, 0.18, R(), 0.3), c1, c2, 0.85, 1.25));
+  }
+  return merge(parts);
+}
+function cubeBushGeometry(size, seed, c1, c2) { const R = seeded(seed); const parts = []; for (let i = 0; i < 2; i++) { const w = size * (1.1 - i * 0.35); parts.push(shade(rbox(w, w * 0.8, w, (R() - 0.5) * size * 0.6, w * 0.4 + i * size * 0.35, (R() - 0.5) * size * 0.6, R() * 1.5, 0.32), c1, c2, 0, size * 1.3)); } return merge(parts); }
+
 // Árbol con copa de varias masas, tronco que se estrecha y colores con volumen. kind: 'roble' | 'pino' | 'palmera' | 'abedul'
 export function treeGeometry(kind = 'roble', seed = 1) {
+  if (STYLE === 'cubito') return cubeTreeGeometry(kind, seed);
   const R = seeded(seed * 97 + 13), parts = [];
   if (kind === 'pino') {
     const tr = new THREE.CylinderGeometry(0.05, 0.09, 0.6, 6); tr.translate(0, 0.3, 0); parts.push(shade(tr, '#4a2e1a', '#6a4426', 0, 0.6));
@@ -100,14 +128,17 @@ export function treeGeometry(kind = 'roble', seed = 1) {
 }
 const treeGeoCache = new Map();
 export function tree(kind = 'roble', scale = 1, seed = 1) {
-  const k = kind + (seed % 4); if (!treeGeoCache.has(k)) treeGeoCache.set(k, treeGeometry(kind, seed % 4 + 1));
+  const k = STYLE + kind + (seed % 4); if (!treeGeoCache.has(k)) treeGeoCache.set(k, treeGeometry(kind, seed % 4 + 1));
   const m = new THREE.Mesh(treeGeoCache.get(k), vmat()); m.scale.setScalar(scale); m.castShadow = true; return m;
 }
 export function rock(size = 0.3, color = '#8d8a84', seed = 1) {
+  if (STYLE === 'cubito') { const R = seeded(seed * 11 + 3); const parts = [shade(rbox(size * 1.5, size * 0.9, size * 1.2, 0, 0, 0, R() * 1.5, 0.3), new THREE.Color(color).multiplyScalar(0.7).getStyle(), color, -size * 0.45, size * 0.45), shade(rbox(size * 0.8, size * 0.6, size * 0.7, size * 0.45, size * 0.3, size * 0.2, R() * 2, 0.3), new THREE.Color(color).multiplyScalar(0.8).getStyle(), new THREE.Color(color).multiplyScalar(1.1).getStyle(), 0, size * 0.6)];
+    const m = new THREE.Mesh(merge(parts), vmat()); m.position.y = size * 0.42; m.castShadow = true; m.receiveShadow = true; return m; }
   const g = new THREE.DodecahedronGeometry(size, 1); jitter(g, 0.18, seed); g.scale(1, 0.65, 0.9); shade(g, new THREE.Color(color).multiplyScalar(0.7).getStyle(), color, -size * 0.6, size * 0.6);
   const m = new THREE.Mesh(g, vmat()); m.position.y = size * 0.3; m.castShadow = true; m.receiveShadow = true; return m;
 }
 export function bush(size = 0.35, seed = 1, c1 = '#2f6a2a', c2 = '#6aa848') {
+  if (STYLE === 'cubito') { const m = new THREE.Mesh(cubeBushGeometry(size, seed, c1, c2), vmat()); m.castShadow = true; return m; }
   const parts = []; const R = seeded(seed);
   for (let i = 0; i < 3; i++) { const s = new THREE.IcosahedronGeometry(size * (0.6 + R() * 0.4), 1); jitter(s, 0.1, seed + i); s.translate((R() - 0.5) * size, size * 0.5, (R() - 0.5) * size); parts.push(shade(s, c1, c2, 0, size * 1.2)); }
   const m = new THREE.Mesh(merge(parts), vmat()); m.castShadow = true; return m;
@@ -118,8 +149,8 @@ export function hedge(points, c1 = '#2c5e2a', c2 = '#5f9a44', size = 0.42) {
   for (let v = 0; v < 3; v++) {
     const sub = points.filter((_, i) => i % 3 === v); if (!sub.length) continue;
     const parts = []; const R = seeded(v + 3);
-    for (let i = 0; i < 3; i++) { const s = new THREE.IcosahedronGeometry(size * (0.6 + R() * 0.4), 1); jitter(s, 0.1, v * 5 + i); s.translate((R() - 0.5) * size, size * 0.5, (R() - 0.5) * size); parts.push(shade(s, c1, c2, 0, size * 1.2)); }
-    const inst = new THREE.InstancedMesh(merge(parts), vmat(), sub.length); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    if (STYLE !== 'cubito') for (let i = 0; i < 3; i++) { const s = new THREE.IcosahedronGeometry(size * (0.6 + R() * 0.4), 1); jitter(s, 0.1, v * 5 + i); s.translate((R() - 0.5) * size, size * 0.5, (R() - 0.5) * size); parts.push(shade(s, c1, c2, 0, size * 1.2)); }
+    const inst = new THREE.InstancedMesh(STYLE === 'cubito' ? cubeBushGeometry(size * 1.2, v + 3, c1, c2) : merge(parts), vmat(), sub.length); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
     sub.forEach(([x, z], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (x * 7 + z * 3) % 6.28); m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 1, 1)); inst.setMatrixAt(i, m4); });
     inst.castShadow = true; g.add(inst);
   }
@@ -127,7 +158,7 @@ export function hedge(points, c1 = '#2c5e2a', c2 = '#5f9a44', size = 0.42) {
 }
 // Hierba: matas instanciadas (una sola llamada de dibujo)
 export function grassTufts(points, { color1 = '#4e8a36', color2 = '#8cc462', size = 0.16 } = {}) {
-  const blades = []; for (let i = 0; i < 5; i++) { const b = new THREE.ConeGeometry(0.025, size * (0.8 + Math.random() * 0.6), 3); b.translate(0, size * 0.45, 0); b.rotateZ((Math.random() - 0.5) * 0.7); b.rotateY(i * 1.3); b.translate((Math.random() - 0.5) * 0.08, 0, (Math.random() - 0.5) * 0.08); blades.push(shade(b, color1, color2, 0, size)); }
+  const blades = []; for (let i = 0; i < 5; i++) { const b = STYLE === 'cubito' ? new THREE.BoxGeometry(0.03, size * (0.8 + Math.random() * 0.6), 0.03) : new THREE.ConeGeometry(0.025, size * (0.8 + Math.random() * 0.6), 3); b.translate(0, size * 0.45, 0); b.rotateZ((Math.random() - 0.5) * 0.7); b.rotateY(i * 1.3); b.translate((Math.random() - 0.5) * 0.08, 0, (Math.random() - 0.5) * 0.08); blades.push(shade(b, color1, color2, 0, size)); }
   const geo = merge(blades); const inst = new THREE.InstancedMesh(geo, vmat(), Math.max(1, points.length)); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
   points.forEach(([x, z], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6.28); sc.setScalar(0.7 + Math.random() * 0.7); m4.compose(new THREE.Vector3(x, 0, z), q, sc); inst.setMatrixAt(i, m4); });
   inst.count = points.length; return inst;

@@ -1,7 +1,6 @@
 // Tiendas, decoración y visitantes del parque, con más detalle.
 // Cada quiosco tiene su forma, toldo, mostrador, cartel y un reclamo en el tejado.
 // Los visitantes se dibujan "instanciados": todos juntos en pocas llamadas de dibujo, con piernas y brazos que se mueven.
-import { peek, instance as modelInstance, preload as preloadModels, staticModel } from '../shared/assets.js';
 import { THREE, mat, blob, canvasTexture } from '../shared/engine3d.js';
 import { RoundedBoxGeometry } from '../shared/vendor/RoundedBoxGeometry.js';
 import * as Look from '../shared/look.js';
@@ -104,7 +103,7 @@ export function buildingMesh(b, BUILDINGS) {
       g.add(at(sph(0.012, '#f5c842', 6, 4), fx, 0.115 + h, fz)); }
     const bush = Look.bush(0.12, b.x + b.z, '#2f6e34', '#6aae52'); g.add(at(bush, 0, 0.1, 0));
   } else if (b.type === 'arbolp') {
-    g = new THREE.Group(); const t = staticModel(['nature/tree_oak.glb', 'nature/tree_fat.glb', 'nature/tree_pine.glb'][(b.x * 3 + b.z) % 3], { height: 2.1 }) || Look.tree((b.x + b.z) % 3 ? 'roble' : 'abedul', 1.1, b.x * 3 + b.z); t.rotation.y = (b.x * 7 + b.z) % 6; g.add(t);
+    g = new THREE.Group(); const t = Look.tree(['roble', 'abedul', 'pino'][(b.x * 3 + b.z) % 3], 1.1, b.x * 3 + b.z); t.rotation.y = (b.x * 7 + b.z) % 6; g.add(t);
     g.add(at(cyl(0.3, 0.32, 0.08, '#bdb2a0', 16), 0, 0.04, 0)); g.add(at(cyl(0.27, 0.27, 0.02, '#5a3e28', 16), 0, 0.08, 0)); g.add(blob(1.0, 1.0, 0.3));
   } else if (b.type === 'fuente') {
     g = new THREE.Group(); const stone = mat('#d8d0c2'), stone2 = mat('#c4baa8');
@@ -121,39 +120,33 @@ export function buildingMesh(b, BUILDINGS) {
   return g;
 }
 
-// ---------- visitores con modelos animados (Kenney Mini Characters, CC0) ----------
-// Los primeros "max" visitantes se dibujan con personajes de verdad; el resto, con las figuras sencillas.
-const PEOPLE_FILES = ['a', 'b', 'c', 'd', 'e', 'f'].flatMap((k) => [`people/mini_male_${k}.glb`, `people/mini_female_${k}.glb`]).filter((f) => !f.endsWith('female_a.glb')); // (esa lleva algo parecido a un arma)
-export class GlbPeople {
-  constructor(scene, max = 30) { this.scene = scene; this.max = max; this.map = new Map(); this.ready = false; this.lastT = 0; preloadModels(PEOPLE_FILES).then((r) => { this.ready = r.every(Boolean); }); }
-  // Devuelve los visitantes que no ha dibujado (para las figuras sencillas)
-  sync(list, t) {
-    if (!this.ready) return list;
-    const dt = this.lastT ? Math.min(0.1, t - this.lastT) : 0; this.lastT = t;
-    const shown = list.slice(0, this.max); const seen = new Set();
-    for (const p of shown) {
-      seen.add(p.id); let r = this.map.get(p.id);
-      if (!r) { const gl = peek(PEOPLE_FILES[Math.floor(Math.abs(p.id) * 1e6) % PEOPLE_FILES.length]); r = modelInstance(gl, { height: p.kid ? 0.48 : 0.66 }); r.g.add(blob(0.36, 0.36, 0.3)); r.g.traverse((o) => { o.castShadow = false; }); this.scene.add(r.g); this.map.set(p.id, r); }
-      const walk = p.path && p.path.length; r.play(walk ? 'walk' : 'idle', { speed: walk ? 1.1 : 1 }); r.update(dt);
-      r.g.position.set(p.x + 0.5, 0.05, p.z + 0.5); r.g.rotation.y = p.dir || 0;
-    }
-    for (const [id, r] of this.map) if (!seen.has(id)) { this.scene.remove(r.g); this.map.delete(id); }
-    return list.slice(this.max);
-  }
-}
-
 // ---------- visitores ----------
 const PANTS = ['#2f3b5a', '#3a3a44', '#6a5a48', '#2a5a8a', '#8a8a92', '#1f2a3a'];
 const HAIR = ['#2a1a10', '#5a3a20', '#8a5a30', '#d8b060', '#1a1a1a', '#a03a20', '#d8d8d8'];
+// Cara de los visitantes (blanca: se tiñe con el color de piel de cada uno)
+let faceT = null;
+function personFace() {
+  if (faceT) return faceT; const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, 64, 64);
+  for (const sd of [-1, 1]) { x.fillStyle = '#26222c'; x.beginPath(); x.ellipse(32 + sd * 13, 30, 5, 6.5, 0, 0, 7); x.fill(); x.fillStyle = '#ffffff'; x.beginPath(); x.arc(32 + sd * 13 - 1.5, 28, 1.8, 0, 7); x.fill(); x.fillStyle = 'rgba(240,120,130,0.45)'; x.beginPath(); x.ellipse(32 + sd * 18, 41, 5, 3, 0, 0, 7); x.fill(); }
+  x.strokeStyle = '#5a3430'; x.lineWidth = 3; x.lineCap = 'round'; x.beginPath(); x.arc(32, 41, 5, 0.3, Math.PI - 0.3); x.stroke();
+  faceT = new THREE.CanvasTexture(c); faceT.colorSpace = THREE.SRGBColorSpace; return faceT;
+}
 export class People {
   constructor(scene, max = 90) {
     this.max = max; const m = new THREE.MeshLambertMaterial();
     const mk = (geo, n) => { const im = new THREE.InstancedMesh(geo, m, n); im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.setColorAt(0, new THREE.Color()); scene.add(im); return im; };
-    const torso = new THREE.CapsuleGeometry(0.085, 0.18, 4, 10); const head = new THREE.SphereGeometry(0.075, 12, 10);
-    const hair = new THREE.SphereGeometry(0.08, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    const leg = new THREE.CapsuleGeometry(0.035, 0.22, 3, 8); leg.translate(0, -0.145, 0);
-    const arm = new THREE.CapsuleGeometry(0.026, 0.19, 3, 8); arm.translate(0, -0.12, 0);
-    this.torso = mk(torso, max); this.head = mk(head, max); this.hair = mk(hair, max); this.legs = mk(leg, max * 2); this.arms = mk(arm, max * 2);
+    // figuras "cubito" (diseño propio): cabeza grande de bloque con cara, pelo, camiseta, piernas y brazos
+    const torso = new RoundedBoxGeometry(0.2, 0.24, 0.13, 2, 0.04);
+    const head = new RoundedBoxGeometry(0.19, 0.18, 0.17, 2, 0.045);
+    const hair = new RoundedBoxGeometry(0.205, 0.07, 0.185, 2, 0.03); hair.translate(0, 0.055, -0.005);
+    const leg = new RoundedBoxGeometry(0.075, 0.24, 0.08, 2, 0.025); leg.translate(0, -0.12, 0);
+    const arm = new RoundedBoxGeometry(0.06, 0.2, 0.06, 2, 0.02); arm.translate(0, -0.1, 0);
+    const faceM = new THREE.MeshLambertMaterial({ map: personFace() });
+    const mkHead = (geo, n) => { const im = new THREE.InstancedMesh(geo, m, n); im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.setColorAt(0, new THREE.Color()); scene.add(im); return im; };
+    this.torso = mk(torso, max); this.head = mkHead(head, max); this.hair = mk(hair, max); this.legs = mk(leg, max * 2); this.arms = mk(arm, max * 2);
+    // cara: un plano delante de cada cabeza (mismo dibujo, color de piel por persona)
+    this.face = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.17, 0.16), faceM, max); this.face.count = 0; this.face.frustumCulled = false; this.face.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.face.setColorAt(0, new THREE.Color()); scene.add(this.face);
     this.shadow = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.34, 0.34), blob(0.34, 0.34, 0.3).material, max); this.shadow.count = 0; this.shadow.frustumCulled = false; scene.add(this.shadow);
     this.M = new THREE.Matrix4(); this.L = new THREE.Matrix4(); this.T = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.c = new THREE.Color(); this.v = new THREE.Vector3(); this.s = new THREE.Vector3();
   }
@@ -164,17 +157,18 @@ export class People {
       const p = list[i]; const k = p.kid ? 0.72 : 1; const walk = p.path && p.path.length; const ph = t * 8 + p.id * 40; const sw = walk ? Math.sin(ph) * 0.55 : 0; const bob = walk ? Math.abs(Math.cos(ph)) * 0.02 : 0;
       e.set(0, p.dir || 0, 0); q.setFromEuler(e); M.compose(v.set(p.x + 0.5, 0.05 + bob, p.z + 0.5), q, s.set(k, k, k));
       const h = (Math.floor(p.id * 1e6) % 97);
-      put(this.torso, i, M, 0, 0.48, 0); this.torso.setColorAt(i, c.set(p.color));
-      put(this.head, i, M, 0, 0.71, 0.01); this.head.setColorAt(i, c.set(p.skin));
-      put(this.hair, i, M, 0, 0.725, -0.004, -0.15); this.hair.setColorAt(i, c.set(HAIR[h % HAIR.length]));
+      put(this.torso, i, M, 0, 0.5, 0); this.torso.setColorAt(i, c.set(p.color));
+      put(this.head, i, M, 0, 0.72, 0); this.head.setColorAt(i, c.set(p.skin));
+      put(this.face, i, M, 0, 0.71, 0.087); this.face.setColorAt(i, c.set(p.skin));
+      put(this.hair, i, M, 0, 0.73, 0); this.hair.setColorAt(i, c.set(HAIR[h % HAIR.length]));
       for (const sd of [-1, 1]) {
         const j = i * 2 + (sd > 0 ? 1 : 0);
-        put(this.legs, j, M, sd * 0.045, 0.33, 0, sd * sw); this.legs.setColorAt(j, c.set(PANTS[h % PANTS.length]));
-        put(this.arms, j, M, sd * 0.11, 0.6, 0, -sd * sw * 0.8, sd * 0.12); this.arms.setColorAt(j, c.set(p.color));
+        put(this.legs, j, M, sd * 0.05, 0.36, 0, sd * sw); this.legs.setColorAt(j, c.set(PANTS[h % PANTS.length]));
+        put(this.arms, j, M, sd * 0.135, 0.59, 0, -sd * sw * 0.8, sd * 0.08); this.arms.setColorAt(j, c.set(p.color));
       }
       e.set(-Math.PI / 2, 0, 0); q.setFromEuler(e); T.compose(v.set(p.x + 0.5, 0.06, p.z + 0.5), q, s.set(k, k, k)); this.shadow.setMatrixAt(i, T);
     }
-    for (const im of [this.torso, this.head, this.hair, this.shadow]) { im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
+    for (const im of [this.torso, this.head, this.face, this.hair, this.shadow]) { im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
     for (const im of [this.legs, this.arms]) { im.count = n * 2; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; }
   }
 }

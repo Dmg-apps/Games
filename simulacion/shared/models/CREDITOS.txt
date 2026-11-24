@@ -1,8 +1,0 @@
-Modelos 3D de libre uso (personas, árboles, rocas y comida; los animales son diseño propio del juego) (CC0 1.0, dominio público). No es obligatorio citar, pero lo hacemos:
-
-- people/: "Mini Characters" de Kenney (https://www.kenney.nl), CC0.
-- nature/: "Nature Kit" de Kenney y modelos de Quaternius, CC0.
-- food/: "Food Kit" de Kenney, CC0.
-
-Copias optimizadas obtenidas del paquete @netforge/asset-library-files y del espejo de jgengine.
-Licencia completa en CC0-1.0.txt.
