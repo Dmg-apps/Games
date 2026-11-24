@@ -127,3 +127,13 @@ export function say(id, title, text, btn = 'Vale', cb, extra = '') {
 }
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 export { pickOne };
+
+// iPhone con la app instalada: a veces deja una franja abajo (bajo la barra de inicio) que no cuenta como zona segura.
+// La medimos (alto de pantalla - alto de la app) para que la barra y el juego lleguen hasta el borde real.
+function measureBand() {
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone;
+  const portrait = innerHeight > innerWidth;
+  const b = standalone && portrait ? Math.max(0, Math.min(60, Math.round(screen.height - innerHeight))) : 0;
+  document.documentElement.style.setProperty('--band', b + 'px');
+}
+measureBand(); addEventListener('resize', measureBand); addEventListener('orientationchange', () => setTimeout(measureBand, 300));

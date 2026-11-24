@@ -16,7 +16,7 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--ink); }
 [hidden] { display: none !important; }
 .ic { width: 1em; height: 1em; display: block; flex: none; }
 /* el lienzo llega hasta abajo del todo, también bajo la barra de inicio del iPhone */
-canvas.stage { position: fixed; top: 0; left: 0; width: 100%; height: calc(100% + env(safe-area-inset-bottom, 0px)); touch-action: none; display: block; }
+canvas.stage { position: fixed; top: 0; left: 0; width: 100%; height: calc(100% + env(safe-area-inset-bottom, 0px) + var(--band, 0px)); touch-action: none; display: block; }
 .glass { background: var(--card); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4); box-shadow: var(--shadow); border: 1px solid rgba(255, 255, 255, 0.6); }
 
 /* HUD */
@@ -178,8 +178,8 @@ body.sheet-open .goalpill { display: none; }
 #tools .dot { position: absolute; top: 4px; right: 18%; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 2px #fff; }
 /* Barra de herramientas pegada al borde de abajo (como las apps): en el iPhone no queda franja debajo */
 @media (orientation: portrait), (min-height: 561px) {
-  .toolbar { padding-left: 0; padding-right: 0; padding-bottom: 0; }
-  .toolbar .tools { border-radius: 24px 24px 0 0; padding: 6px calc(var(--safe-r) + 8px) calc(var(--safe-b) * 0.3 + 4px) calc(var(--safe-l) + 8px); background: var(--card-solid); border-bottom: 0; }
+  .toolbar { padding-left: 0; padding-right: 0; padding-bottom: 0; bottom: calc(-1 * var(--band, 0px)); }
+  .toolbar .tools { border-radius: 24px 24px 0 0; padding: 6px calc(var(--safe-r) + 8px) calc(var(--safe-b) * 0.3 + var(--band, 0px) * 0.45 + 4px) calc(var(--safe-l) + 8px); background: var(--card-solid); border-bottom: 0; }
 }
 /* Reloj: texto corto que no se corta */
 #clock .t span { white-space: nowrap; font-size: 11.5px; }
