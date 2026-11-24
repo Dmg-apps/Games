@@ -1,0 +1,18 @@
+<!doctype html><html><body style="margin:0;background:#bfe3f5"><canvas id="c" style="width:100vw;height:100vh;display:block"></canvas>
+<script type="module">
+import { THREE } from './shared/engine3d.js';
+import { cubeModel } from './zoo/cube3d.js';
+import { People } from './zoo/props3d.js';
+const r = new THREE.WebGLRenderer({ canvas: c, antialias: true }); r.setSize(innerWidth, innerHeight); r.outputColorSpace = THREE.SRGBColorSpace;
+const sc = new THREE.Scene(); sc.background = new THREE.Color('#bfe3f5'); sc.add(new THREE.HemisphereLight(0xeaf4ff, 0x7a6a50, 1.3)); const d = new THREE.DirectionalLight(0xfff2dd, 1.6); d.position.set(4, 8, 6); sc.add(d);
+const gr = new THREE.Mesh(new THREE.PlaneGeometry(60, 20), new THREE.MeshLambertMaterial({ color: '#9ccc6a' })); gr.rotation.x = -Math.PI / 2; sc.add(gr);
+sc.add(new THREE.GridHelper(60, 60, 0x557733, 0x557733));
+const sps = (new URLSearchParams(location.search).get('s') || 'cabra,caballo,cebra,jirafa,elefante,leon,pinguino,flamenco').split(',');
+const side = new URLSearchParams(location.search).get('side');
+let x = 0; sps.forEach((sp) => { const m = cubeModel(sp); m.g.position.set(x, 0, 0); m.g.rotation.y = side ? Math.PI / 2 : 0.6; sc.add(m.g); x += 1.6; });
+// visitante y valla de referencia
+const ppl = new People(sc, 4); ppl.sync([{ id: 0.11, x: -1.7, z: -0.5, dir: 0.6, color: '#3b82f6', skin: '#f0c8a0' }], 0);
+const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.84, 0.1), new THREE.MeshLambertMaterial({ color: '#6a4a2a' })); post.position.set(-0.9, 0.42, -0.6); sc.add(post);
+const W = (sps.length - 1) * 1.6; const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
+cam.position.set(W / 2 - 0.5, side ? 1.2 : 3.2, side ? 13 : 12); cam.lookAt(W / 2 - 0.5, 0.7, 0); r.render(sc, cam); window.done = true;
+</script></body></html>

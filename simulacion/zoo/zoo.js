@@ -1,5 +1,5 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
-import { Engine, THREE, mat, blob, box, canvasTexture } from '../shared/engine3d.js';
+import { Engine, THREE, mat, blob, box, canvasTexture, RoundedBoxGeometry } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
 Look.setStyle('cubito'); // vegetación y rocas en estilo cubito (diseño propio)
 import { buildingMesh as propMesh, People } from './props3d.js';
@@ -207,9 +207,19 @@ function callVet(a) {
   st.money -= VET_VISIT; cure(a); toast(`El veterinario ha curado a ${a.name} (${eur(VET_VISIT)})`, 'good', 'heart'); hud(); save(); animalCardTick(true);
 }
 // Qué hace un animal ahora: dormir de noche, comer si hay comida, beber, pastar, jugar, seguir a su madre...
+// Lo que ocupa sitio dentro de un recinto (radio en casillas): los animales se ponen al lado, no dentro
+const SOLID = { establo: 0.78, arbol: 0.32, acacia: 0.3, roca: 0.5, cueva: 0.62, cuevaroca: 0.66, trepador: 0.5, pajar: 0.45, comedero: 0.42, termitero: 0.3, tronco: 0.25, hielo: 0.42, tobogan: 0.5, troncocaido: 0.5, colmena: 0.2, juguete: 0.22, bambu: 0.3, helechos: 0.25, juncos: 0.2, islote: 0.4 };
+function freeSpot(a, e, x, z) {
+  const me = Math.max(0.2, SPECIES[a.sp].body[0] * 0.45 * (a.baby ? 0.55 : 1));
+  for (let k = 0; k < 3; k++) {
+    for (const it of e.items) { const r = SOLID[it.type]; if (!r) continue; const cx = it.x + 0.5, cz = it.z + 0.5, dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz), need = r + me; if (d < need) { const ux = d > 0.01 ? dx / d : Math.cos(a.x * 7), uz = d > 0.01 ? dz / d : Math.sin(a.z * 7); x = cx + ux * need; z = cz + uz * need; } }
+    for (const o of st.animals) { if (o === a || o.enc !== a.enc) continue; const ox = o.tx ?? o.x, oz = o.tz ?? o.z, dx = x - ox, dz = z - oz, d = Math.hypot(dx, dz), need = me + Math.max(0.2, SPECIES[o.sp].body[0] * 0.4); if (d < need && !(a.baby && o.id === a.mother)) { const ux = d > 0.01 ? dx / d : 1, uz = d > 0.01 ? dz / d : 0; x = ox + ux * need; z = oz + uz * need; } }
+  }
+  return { x, z };
+}
 function decide(a, e) {
   const S = SPECIES[a.sp], h = hourOf(st.time), inside = (x, z) => ({ x: Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, x)), z: Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, z)) });
-  const go = (x, z, state, mins) => { const p = inside(x, z); a.tx = p.x; a.tz = p.z; a.state = state; a.restUntil = st.time + mins; };
+  const go = (x, z, state, mins) => { const p = inside(x, z); const q = freeSpot(a, e, p.x, p.z); const r = inside(q.x, q.z); a.tx = r.x; a.tz = r.z; a.state = state; a.restUntil = st.time + mins; };
   if (a.sick && Math.random() < 0.7) return go(a.x, a.z, 'sick', rnd(20, 40));
   if (h >= 21 || h < 6) { if (a.state !== 'sleep') { const mom = a.mother && st.animals.find((m) => m.id === a.mother); go(mom ? mom.x + 0.2 : a.x + rnd(-1, 1), mom ? mom.z + 0.15 : a.z + rnd(-1, 1), 'sleep', 60); } else a.restUntil = st.time + 30; return; }
   if (e.food && st.time < e.food.until && a.hunger < 90) return go(e.food.x + rnd(-0.35, 0.35), e.food.z + rnd(-0.35, 0.35), 'eat', 25);
@@ -367,7 +377,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
     for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2 + rnd(-0.2, 0.2); const r = Look.rock(0.07 + Math.random() * 0.05, '#8d877a', seed + i); r.position.set(Math.cos(a) * 0.8, 0.02, Math.sin(a) * 0.8); g.add(r); }
     if (biome !== 'artico') for (let i = 0; i < 6; i++) { const rd = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.012, 0.35 + Math.random() * 0.2, 3), mat('#5a8a3a')); const a = 2 + i * 0.25; rd.position.set(Math.cos(a) * 0.68, 0.2, Math.sin(a) * 0.68); rd.rotation.z = rnd(-0.2, 0.2); g.add(rd); }
   }
-  if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ map: ballTex() })); b.position.y = 0.22; b.rotation.z = 0.4; g.add(b, blob(0.5, 0.5)); }
+  if (type === 'juguete') { const b = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshLambertMaterial({ map: ballTex() })); b.position.y = 0.17; b.rotation.z = 0.4; g.add(b, blob(0.5, 0.5)); }
   if (type === 'bambu') for (let i = 0; i < 7; i++) { const h = 1.0 + Math.random() * 0.6; const c = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, h, 6, 4), mat(i % 2 ? '#7ab84a' : '#5e9e3c')); c.position.set(Math.cos(i * 1.7) * 0.22, h / 2, Math.sin(i * 2.3) * 0.22); c.rotation.z = rnd(-0.08, 0.08); g.add(c);
     for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 3), mat('#4e8e34')); l.scale.z = 0.2; l.position.set(c.position.x + 0.08, h * (0.55 + k * 0.15), c.position.z); l.rotation.z = -1.1; l.rotation.y = k * 2; g.add(l); } }
   const M = (c) => mat(c), cyl = (rt, rb, h, c, seg = 8) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), typeof c === 'string' ? M(c) : c);
@@ -375,7 +385,16 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   // ---- granja
   if (type === 'pajar') { const straw = new THREE.MeshLambertMaterial({ map: strawTex() }); for (const [x, y, z, r] of [[-0.2, 0.14, 0, 0.1], [0.2, 0.14, 0.05, -0.1], [0, 0.42, 0.02, 0.3]]) at(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 0.3), straw), x, y, z, r); for (let i = 0; i < 6; i++) { const w = box(0.02, 0.005, 0.12, '#e8c860'); at(w, rnd(-0.45, 0.45), 0.01, rnd(-0.35, 0.35), rnd(0, 3)); } }
   if (type === 'comedero') { at(box(0.8, 0.06, 0.32, '#8a5a32', 0.01), 0, 0.3, 0); for (const sz of [-1, 1]) { const sd = box(0.8, 0.14, 0.03, '#7a4e2a'); at(sd, 0, 0.38, sz * 0.15); } for (const [x, z] of [[-0.35, -0.12], [0.35, -0.12], [-0.35, 0.12], [0.35, 0.12]]) at(box(0.05, 0.3, 0.05, '#6a4222'), x, 0.15, z); const hay = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.08, 0.24), new THREE.MeshLambertMaterial({ map: strawTex() })); at(hay, 0, 0.38, 0); }
-  if (type === 'establo') { const wall = box(0.9, 0.55, 0.7, '#b8452e'); at(wall, 0, 0.275, 0); for (const sx of [-1, 1]) { const roof = box(0.56, 0.04, 0.82, '#5a4a40'); roof.rotation.z = sx * 0.6; at(roof, sx * 0.22, 0.7, 0); } const gable = new THREE.Mesh(new THREE.CylinderGeometry(0.001, 0.45, 0.32, 3, 1), M('#b8452e')); gable.rotation.set(Math.PI / 2, 0, 0); gable.scale.set(1.05, 1, 0.66); at(gable, 0, 0.66, 0); const door = box(0.34, 0.4, 0.02, '#f2ece0'); at(door, 0, 0.2, 0.36); const x1 = box(0.42, 0.03, 0.025, '#f2ece0'); x1.rotation.z = 0.85; at(x1, 0, 0.2, 0.375); const x2 = box(0.42, 0.03, 0.025, '#f2ece0'); x2.rotation.z = -0.85; at(x2, 0, 0.2, 0.375); }
+  if (type === 'establo') { // granero de bloques: paredes, tejado a dos aguas bien encajado y puerta
+    g.scale.setScalar(1.45); const red = M('#b8452e');
+    const wall = new THREE.Mesh(new RoundedBoxGeometry(0.9, 0.6, 0.75, 2, 0.03), red); at(wall, 0, 0.3, 0);
+    const tri = new THREE.Shape(); tri.moveTo(-0.45, 0); tri.lineTo(0.45, 0); tri.lineTo(0, 0.3); tri.closePath();
+    const gable = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.75, bevelEnabled: false }), red); at(gable, 0, 0.6, -0.375);
+    const ang = Math.atan2(0.3, 0.45), len = Math.hypot(0.45, 0.3) + 0.08;
+    for (const sx of [-1, 1]) { const roof = box(len, 0.05, 0.86, '#4a3a32'); roof.rotation.z = -sx * ang; at(roof, sx * 0.225, 0.6 + 0.15 + 0.03, 0); }
+    const door = box(0.32, 0.42, 0.02, '#f2ece0'); at(door, 0, 0.21, 0.38);
+    for (const r of [0.9, -0.9]) { const x1 = box(0.4, 0.03, 0.025, '#f2ece0'); x1.rotation.z = r; at(x1, 0, 0.21, 0.395); }
+    const win = box(0.14, 0.12, 0.02, '#f2ece0'); at(win, 0, 0.72, 0.385); }
   // ---- sabana
   if (type === 'acacia') { const trunk = cyl(0.04, 0.07, 0.95, '#6a4a2e'); trunk.rotation.z = 0.12; at(trunk, 0, 0.47, 0); for (const [x, y, z, sc] of [[0.05, 1.0, 0, 1], [-0.25, 0.92, 0.1, 0.7], [0.3, 0.95, -0.12, 0.65]]) { const c = new THREE.Mesh(new THREE.SphereGeometry(0.38 * sc, 10, 6), M(sc === 1 ? '#6e8a3a' : '#7e9a44')); c.scale.y = 0.28; at(c, x, y, z); } }
   if (type === 'termitero') { for (const [x, h, r] of [[0, 0.9, 0.2], [0.18, 0.55, 0.12], [-0.14, 0.42, 0.1]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 9, 3), M('#b07a4a')); const p = c.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + Math.sin(p.getY(i) * 14 + i) * 0.08)); c.geometry.computeVertexNormals(); at(c, x, h / 2, x * 0.4); } }
@@ -386,7 +405,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   // ---- ártico
   if (type === 'hielo') { const ice = new THREE.MeshLambertMaterial({ color: 0xbfe6f5, transparent: true, opacity: 0.85 }); for (const [x, y, z, sz] of [[-0.2, 0.15, 0, 0.3], [0.18, 0.12, 0.1, 0.24], [0, 0.4, 0.02, 0.22], [0.25, 0.1, -0.22, 0.18]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), ice); b.rotation.set(rnd(-0.2, 0.2), rnd(0, 3), rnd(-0.2, 0.2)); at(b, x, y, z, b.rotation.y); } }
   if (type === 'tobogan') { const snow = M('#f4f8fb'); const hill = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), snow); hill.scale.set(1, 0.9, 0.8); at(hill, -0.15, 0, 0); const slide = box(0.26, 0.03, 0.85, '#bfe3f2'); slide.rotation.x = 0.55; at(slide, 0.15, 0.24, 0.2, 0.9); }
-  if (type === 'cueva') { const ice = M('#e2f2fa'); const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), ice); at(dome, 0, 0, 0); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.17, 12, 0, Math.PI), M('#3a5a6a')); at(hole, 0, 0.0, 0.44); for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.45 * Math.cos(i * 0.45 + 0.2), 0.006, 3, 24), M('#c4dce8')); ring.rotation.x = Math.PI / 2; at(ring, 0, 0.45 * Math.sin(i * 0.45 + 0.2), 0); } }
+  if (type === 'cueva') { g.scale.set(1.15, 1.5, 1.15); const ice = M('#e2f2fa'); const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), ice); at(dome, 0, 0, 0); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.17, 12, 0, Math.PI), M('#3a5a6a')); at(hole, 0, 0.0, 0.44); for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.45 * Math.cos(i * 0.45 + 0.2), 0.006, 3, 24), M('#c4dce8')); ring.rotation.x = Math.PI / 2; at(ring, 0, 0.45 * Math.sin(i * 0.45 + 0.2), 0); } }
   // ---- humedal
   if (type === 'nenufares') { const w = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20), new THREE.MeshLambertMaterial({ map: Look.waterTex(), transparent: true, opacity: 0.9 })); w.rotation.x = -Math.PI / 2; at(w, 0, 0.04, 0); g.userData.water = w; for (let i = 0; i < 6; i++) { const pad = new THREE.Mesh(new THREE.CircleGeometry(0.1, 10, 0.3, Math.PI * 1.8), M('#4a9a4a')); pad.rotation.x = -Math.PI / 2; at(pad, rnd(-0.38, 0.38), 0.05, rnd(-0.38, 0.38)); if (i % 2 === 0) { const fl = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.05, 6), M(i % 4 ? '#f6f0f4' : '#f08ab4')); at(fl, pad.position.x, 0.08, pad.position.z); } } }
   if (type === 'juncos') for (let i = 0; i < 16; i++) { const h = 0.45 + Math.random() * 0.4; const r = cyl(0.008, 0.014, h, i % 3 ? '#6a9a3a' : '#7aa848', 3); r.rotation.z = rnd(-0.18, 0.18); at(r, rnd(-0.35, 0.35), h / 2, rnd(-0.35, 0.35)); if (i % 3 === 0) at(cyl(0.022, 0.022, 0.09, '#6a4a2a', 6), r.position.x, h - 0.04, r.position.z); }
@@ -394,7 +413,7 @@ function enrichMesh(type, biome = 'sabana', seed = 1) {
   // ---- bosque
   if (type === 'troncocaido') { const t = cyl(0.13, 0.15, 1.1, '#6a4a2e', 10); t.rotation.z = Math.PI / 2; at(t, 0, 0.14, 0, 0.5); for (const sx of [-1, 1]) { const end = cyl(0.13, 0.13, 0.01, '#c8a06a', 10); end.rotation.z = Math.PI / 2; end.position.set(sx * 0.55, 0, 0); t.add(end); end.rotation.set(0, 0, 0); end.position.set(0, sx * 0.555, 0); } for (let i = 0; i < 4; i++) at(new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), M('#4e7a3a')), rnd(-0.3, 0.3), 0.27, rnd(-0.12, 0.12)); for (let i = 0; i < 3; i++) { const m2 = cyl(0.03, 0.01, 0.04, '#d8c8a0', 6); at(m2, 0.3 + i * 0.05, 0.03, 0.15); const cap = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), M('#c0432a')); at(cap, 0.3 + i * 0.05, 0.05, 0.15); } }
   if (type === 'colmena') { const post = cyl(0.05, 0.06, 0.8, '#6a4a2e'); at(post, 0, 0.4, 0); const hive = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), M('#e0a830')); hive.scale.set(1, 1.25, 1); at(hive, 0.12, 0.66, 0); for (let i = 0; i < 4; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15 * Math.sin((i + 1) / 5 * Math.PI), 0.012, 4, 14), M('#c88a20')); ring.rotation.x = Math.PI / 2; at(ring, 0.12, 0.66 + (i - 1.5) * 0.08, 0); } const hole = new THREE.Mesh(new THREE.CircleGeometry(0.03, 8), M('#3a2a10')); at(hole, 0.12, 0.6, 0.155); const arm = box(0.16, 0.03, 0.03, '#6a4a2e'); at(arm, 0.06, 0.82, 0); }
-  if (type === 'cuevaroca') { for (const [x, y, z, sz, c] of [[-0.3, 0.2, 0, 0.32, '#8a8378'], [0.3, 0.2, 0, 0.32, '#7d776d'], [0, 0.5, -0.05, 0.36, '#958e82'], [0, 0.18, -0.3, 0.28, '#8a8378']]) at(Look.rock(sz, c, seed + x * 10 + z * 7 + 1), x, y, z); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.2, 12, 0, Math.PI), M('#2a2620')); at(hole, 0, 0.02, 0.18); }
+  if (type === 'cuevaroca') { g.scale.setScalar(1.35); for (const [x, y, z, sz, c] of [[-0.3, 0.2, 0, 0.32, '#8a8378'], [0.3, 0.2, 0, 0.32, '#7d776d'], [0, 0.5, -0.05, 0.36, '#958e82'], [0, 0.18, -0.3, 0.28, '#8a8378']]) at(Look.rock(sz, c, seed + x * 10 + z * 7 + 1), x, y, z); const hole = new THREE.Mesh(new THREE.CircleGeometry(0.2, 12, 0, Math.PI), M('#2a2620')); at(hole, 0, 0.02, 0.18); }
   Look.shadows(g, true, false);
   return g;
 }

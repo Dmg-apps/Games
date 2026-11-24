@@ -94,17 +94,20 @@ export function cubeModel(sp) {
   if (arch === 'flamingo') return flamingo(sp, S);
   if (arch === 'turtle') return turtle(sp, S);
   const roo = arch === 'roo';
-  const [BL, BH, BW] = S.body; const Lb = BL * 0.82, Hb = BH * 0.95, Wb = BW * 1.1;
-  const legH = Math.max(0.1, S.legs * (roo ? 0.6 : 0.82)), legW = Math.max(0.07, Math.min(0.22, BW * 0.36));
-  const hs = Math.min(0.62, Math.max(0.18, Math.max(S.head * 2.3, BH * 0.72)));
+  const [BL, BH, BW] = S.body; const Lb = BL * 1.0, Hb = BH * 0.95, Wb = BW * 1.05;
+  const heavy = L.bear || L.trunk || sp === 'vaca';
+  const legH = Math.max(0.12, S.legs * (roo ? 0.55 : 0.72)), legW = Math.max(0.08, Math.min(0.26, BW * (heavy ? 0.46 : 0.38)));
+  const hs = Math.min(0.56, Math.max(0.18, Math.max(S.head * 2.0, BH * 0.66)));
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
   const furKind = L.fur === 'panda' ? 'plain' : L.fur; const furC = L.fur === 'panda' ? '#f6f4ee' : c0;
   const fur = lam(furTex(sp, furKind, furC, furKind === 'spots' ? c1 : furKind === 'patches' ? '#ffffff' : c1, c2));
   // tronco
-  const torso = block(Lb, Hb, Wb, fur, L.fluffy ? 0.42 : 0.3); at(torso, 0, legH + Hb / 2, 0); body.add(torso);
-  if (roo) { torso.rotation.x = -0.5; torso.position.y += Hb * 0.15; }
+  // tronco (el canguro, casi de pie e inclinado hacia delante)
+  const torso = roo ? block(Wb, BL * 1.0, BH * 0.72, fur, 0.28) : block(Lb, Hb, Wb, fur, L.fluffy ? 0.38 : 0.22);
+  if (roo) { at(torso, 0, legH + BL * 0.42, 0); torso.rotation.x = 0.32; } else at(torso, 0, legH + Hb / 2, 0);
+  body.add(torso);
   // barriga clara
-  if (!['stripes', 'tiger', 'patches', 'spots'].includes(L.fur) && L.fur !== 'panda') { const belly = block(Lb * 0.7, Hb * 0.25, Wb * 1.02, mix(c0, c1, 0.7), 0.4); at(belly, 0, legH + Hb * 0.16, 0); body.add(belly); }
+  if (!roo && !['stripes', 'tiger', 'patches', 'spots'].includes(L.fur) && L.fur !== 'panda') { const belly = block(Lb * 0.7, Hb * 0.25, Wb * 1.02, mix(c0, c1, 0.7), 0.4); at(belly, 0, legH + Hb * 0.16, 0); body.add(belly); }
   if (L.fur === 'panda') { const band = block(Lb * 0.34, Hb * 1.04, Wb * 1.04, '#1c1c1c', 0.3); at(band, 0, legH + Hb / 2, Lb * 0.22); body.add(band); }
   // patas
   const legs = []; const legColor = L.fur === 'panda' ? '#1c1c1c' : L.legStripes ? null : shade(c0, 0.92); const hoof = L.cat || L.bear || L.fur === 'panda' || sp === 'lobo' || sp === 'zorro' || sp === 'mono' ? null : c2;
@@ -112,18 +115,19 @@ export function cubeModel(sp) {
   const nLegs = roo ? 2 : 4;
   for (let i = 0; i < nLegs; i++) {
     const front = roo ? false : i < 2, sd = i % 2 ? 1 : -1; const pv = new THREE.Group();
-    const lx = sd * (Wb / 2 - legW / 2 - 0.005), lz = roo ? -Lb * 0.05 : (front ? 1 : -1) * (Lb / 2 - legW / 2 - 0.03);
+    const lx = sd * (Wb / 2 - legW * 0.6), lz = roo ? -BH * 0.12 : (front ? 1 : -1) * (Lb / 2 - legW * 0.85);
     pv.position.set(lx, legH, lz); g.add(pv);
-    const w = roo ? legW * 1.3 : legW; const leg = block(w, legH, w, legMat, 0.3); at(leg, 0, -legH / 2, 0); pv.add(leg);
+    // la pata entra dentro del cuerpo: así nunca queda un hueco entre pata y tronco
+    const w = roo ? legW * 1.3 : legW; const into = roo ? 0.08 : Hb * 0.45; const leg = block(w, legH + into, w, legMat, 0.25); at(leg, 0, (into - legH) / 2, 0); pv.add(leg);
     if (roo) { const foot = block(w * 1.1, w * 0.5, w * 3, legColor || c0, 0.3); at(foot, 0, -legH + w * 0.25, w * 0.9); pv.add(foot); }
     else if (hoof) { const h = block(w * 1.06, Math.min(0.06, legH * 0.18), w * 1.06, hoof, 0.25); at(h, 0, -legH + Math.min(0.03, legH * 0.09), 0); pv.add(h); }
     pv.userData.back = !front; legs.push(pv);
   }
-  if (roo) for (const sd of [-1, 1]) { const arm = block(legW * 0.6, BH * 0.35, legW * 0.6, shade(c0, 0.92), 0.3); arm.rotation.x = 0.6; at(arm, sd * Wb * 0.32, legH + Hb * 0.55, Lb * 0.35); body.add(arm); }
+  if (roo) for (const sd of [-1, 1]) { const arm = block(legW * 0.6, BH * 0.4, legW * 0.6, shade(c0, 0.92), 0.3); arm.rotation.x = 0.7; at(arm, sd * Wb * 0.34, legH + BL * 0.55, BH * 0.42); body.add(arm); }
   // cuello y cabeza
   const longNeck = S.neck > 0.3; const nlen = Math.max(0.04, S.neck * (longNeck ? 0.9 : 0.6)); const nw = Math.max(0.08, Math.min(hs * 0.62, Wb * 0.6));
   const lean = longNeck ? 0.22 : roo ? -0.1 : 0.6;
-  const neck = new THREE.Group(); neck.position.set(0, legH + Hb * (roo ? 0.95 : longNeck ? 0.7 : 0.62), longNeck ? Lb / 2 - nw * 0.5 : Lb / 2 + hs * 0.16); neck.rotation.x = lean; body.add(neck);
+  const neck = new THREE.Group(); if (roo) neck.position.set(0, legH + BL * 0.86, BH * 0.3); else neck.position.set(0, legH + Hb * (longNeck ? 0.7 : 0.62), longNeck ? Lb / 2 - nw * 0.5 : Lb / 2 + hs * 0.16); neck.rotation.x = lean; body.add(neck);
   if (longNeck) { const nm = block(nw, nlen, nw * 0.95, fur, 0.3); at(nm, 0, nlen / 2, 0); neck.add(nm); }
   if (L.mane === 'strip') { const mn = block(nw * 0.35, nlen + hs * 0.3, nw * 0.3, c2, 0.3); at(mn, 0, (nlen + hs * 0.3) / 2, -nw * 0.5); neck.add(mn); if (!longNeck) { mn.scale.y = 0.6; } }
   const head = new THREE.Group(); head.position.y = longNeck ? nlen : nlen * 0.4; neck.add(head);
@@ -164,12 +168,12 @@ export function cubeModel(sp) {
   if (L.trunk) { let p = hi; let y = headY - hy * 0.22, z = fz; const segs = []; for (let k = 0; k < 4; k++) { const tw = hx * (0.3 - k * 0.04); const sg = block(tw, hy * 0.26, tw, shade(c0, 0.97), 0.4); at(sg, 0, y - k * hy * 0.22, z + hz * 0.06 - k * 0.01); sg.rotation.x = -0.15 * k; hi.add(sg); segs.push(sg); } }
   if (L.tusks) for (const sd of [-1, 1]) { const t = block(hx * 0.07, hx * 0.07, hz * 0.4, '#f6f0e2', 0.45); at(t, sd * hx * 0.2, headY - hy * 0.42, fz + hz * 0.08); t.rotation.x = -0.4; hi.add(t); }
   // cola
-  const tail = new THREE.Group(); tail.position.set(0, legH + Hb * (roo ? 0.25 : 0.72), -Lb / 2 + 0.02); body.add(tail);
+  const tail = new THREE.Group(); if (roo) tail.position.set(0, legH + 0.12, -BH * 0.32); else tail.position.set(0, legH + Hb * 0.72, -Lb / 2 + 0.02); body.add(tail);
   const tc = shade(c0, 0.9);
   if (L.tail === 'long' || L.tail === 'tuft') { const tl = block(legW * 0.35, BL * 0.42, legW * 0.35, L.tail === 'long' && L.mane === 'strip' ? c2 : tc, 0.4); at(tl, 0, -BL * 0.17, -0.06); tl.rotation.x = -0.35; tail.add(tl); if (L.tail === 'tuft') { const tt = block(legW * 0.6, legW * 0.8, legW * 0.6, c2, 0.45); at(tt, 0, -BL * 0.36, -0.13); tail.add(tt); } }
   else if (L.tail === 'bushy') { const tl = block(legW * 0.9, legW * 0.9, BL * 0.5, tc, 0.45); at(tl, 0, -0.04, -BL * 0.22); tl.rotation.x = 0.45; tail.add(tl); if (L.whiteTip) { const tp = block(legW * 0.92, legW * 0.92, BL * 0.14, '#f4f0e6', 0.45); at(tp, 0, 0, -BL * 0.21); tl.add(tp); } }
   else if (L.tail === 'curl') { const tl = new THREE.Mesh(new THREE.TorusGeometry(BL * 0.22, legW * 0.18, 6, 14, Math.PI * 1.5), lam(tc)); at(tl, 0, BL * 0.15, -BL * 0.15); tl.rotation.y = Math.PI / 2; tail.add(tl); }
-  else if (L.tail === 'roo') { const tl = block(legW * 0.9, legW * 0.8, BL * 0.9, tc, 0.4); at(tl, 0, -legH * 0.55, -BL * 0.38); tl.rotation.x = 0.55; tail.add(tl); }
+  else if (L.tail === 'roo') { const tl = block(legW * 0.9, legW * 0.8, BL * 0.9, tc, 0.4); at(tl, 0, -0.03, -BL * 0.4); tl.rotation.x = 0.18; tail.add(tl); }
   else { const tl = block(legW * 0.5, legW * 0.5, legW * 0.5, L.whiteTail ? '#f4f0e6' : tc, 0.45); at(tl, 0, 0, -0.02); tail.add(tl); }
   return { g, body, legs, head, tail, neck, torso, neckRx: lean, legH, headDown: longNeck ? 0.55 : 0.9 };
 }
