@@ -92,6 +92,8 @@ export const PATH_PRICE = 10;
 export const WAGES = { keeper: 120, cleaner: 90, vet: 160 };
 export const VET_VISIT = 80; // llamar al veterinario una vez
 export const FOOD_COST = 15;
+export const SPONSOR = 25; // al día por cada animal rescatado que ya confía (padrinos)
+export const CARE = { treat: { label: "Darle un premio", short: "Premio", ic: "heart", price: 10, gain: 6, cd: 180, desc: "Fruta, pescado o pienso especial, según la especie" }, keeper: { label: "Rato con su cuidador", short: "Cuidador", ic: "paw", price: 0, gain: 10, cd: 480, keeper: true, desc: "El cuidador se sienta cerca, sin prisa, y le habla bajito" }, toy: { label: "Juego de enriquecimiento", short: "Juego", ic: "sparkle", price: 25, gain: 8, cd: 720, happy: 12, desc: "Comida escondida en cajas y cuerdas para que la busque" } };
 
 export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara', 'Bimba', 'Canela', 'Trufa', 'Pelusa', 'Golfo', 'Jazmín', 'Lirio', 'Menta', 'Ocre', 'Pimienta', 'Ramón', 'Sombra', 'Tango', 'Uva', 'Vainilla', 'Yuca', 'Zafiro', 'Arena', 'Bombón', 'Cacao', 'Dátil', 'Eco', 'Fresa', 'Gofio', 'Higo', 'Indi', 'Jara', 'Kala', 'Lima', 'Mango', 'Nuez', 'Olivo', 'Pan', 'Queso', 'Roble', 'Salvia', 'Tomillo', 'Ulises', 'Vega', 'Wanda', 'Xoco', 'Yago', 'Zarza', 'Ámbar', 'Brisa', 'Cometa', 'Dino', 'Estrella', 'Faro', 'Gema', 'Hada', 'Iris', 'Jade', 'Kumo', 'Loto', 'Merlín', 'Niebla', 'Ópalo', 'Pompón', 'Quimera', 'Rizos', 'Saltarín', 'Trueno', 'Umbra', 'Volcán'];
 export const CARNIVORES = ['leon', 'osopolar', 'tigre', 'osopardo', 'ligre', 'tigon', 'pizzly', 'lobo', 'zorro'];

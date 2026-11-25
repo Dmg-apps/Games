@@ -9,7 +9,7 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES } from './data.js';
+import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, SPONSOR, CARE, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -35,6 +35,11 @@ if (st.size) { N = st.size; ENTRANCE = { x: Math.floor(N / 2), z: N - 1 }; }
 st.rescues ||= []; st.rescued ||= 0; st.chapter ||= 0; st.births ||= 0;
 st.staff.vet ??= 0;
 for (const a of st.animals) a.trait ||= pick(Object.keys(TRAITS));
+// ---------- cuentas: todo el dinero que entra y sale, por categorías ----------
+const INC = { entradas: 'Entradas', tiendas: 'Tiendas', donativos: 'Donativos de visitantes', padrinos: 'Padrinos de animales', premios: 'Premios de capítulos', ventas: 'Devoluciones (quitar cosas)', fuera: 'Mientras no estabas' };
+const EXP = { sueldos: 'Sueldos del personal', comida: 'Comida diaria de animales', extra: 'Comida extra', cuidados: 'Premios y juguetes (confianza)', vet: 'Veterinario', obras: 'Obras: recintos, caminos y objetos', adopciones: 'Adopciones', terreno: 'Terreno' };
+function earn(cat, n) { n = Math.round(n); if (!n) return; st.money += n; st.today.income += n; (st.today.inc ||= {})[cat] = (st.today.inc[cat] || 0) + n; }
+function spend(cat, n) { n = Math.round(n); if (!n) return; st.money -= n; st.today.spent += n; (st.today.exp ||= {})[cat] = (st.today.exp[cat] || 0) + n; }
 const traitLabel = (a) => TRAITS[a.trait]?.[a.sex] || '';
 const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
 // Copia en la nube (cuenta común a toda la app)
@@ -87,7 +92,7 @@ function attractions() {
 function spawnVisitor() {
   if (!pathSet().has(pk(ENTRANCE.x, ENTRANCE.z - 1)) && !pathSet().has(pk(ENTRANCE.x, ENTRANCE.z))) return;
   const v = { id: Math.random(), x: ENTRANCE.x, z: ENTRANCE.z, path: [], happy: 55, hambre: rnd(0, 40), sed: rnd(0, 40), vejiga: rnd(0, 30), seen: new Set(), leaveAt: st.time + rnd(150, 300), color: pick(['#e05a5a', '#4a9ae0', '#5ab06a', '#e8c04a', '#c45ab0', '#f2f2f2', '#3a3a44', '#e8964a']), skin: pick(['#f6d7c3', '#d29b74', '#a8704a', '#7a4b2c']), kid: Math.random() < 0.3 };
-  st.money += st.ticket; st.today.income += st.ticket; st.today.visitors++;
+  earn('entradas', st.ticket); st.today.visitors++;
   visitors.push(v);
 }
 function visitorThink(v) {
@@ -120,7 +125,7 @@ function visitorArrive(v) {
   const t = v.target; v.target = null; if (!t) return;
   if (t.enc && !v.seen.has(t.enc)) {
     const e = st.enclosures.find((q) => q.id === t.enc); if (e) {
-      v.seen.add(t.enc); const as = animalsIn(e); comment(v, e, as);
+      v.seen.add(t.enc); const as = animalsIn(e).filter((a) => !(a.den && a.state === 'hide')); comment(v, e, as); if (!as.length && Math.random() < 0.4) speak(v, pick(['¿Dónde están? Se habrán escondido', 'No se ve a nadie…', 'Shh, están dentro del refugio']));
       const appeal = as.reduce((s, a) => s + SPECIES[a.sp].appeal * (a.baby ? 1.5 : 1) * (0.5 + (a.trust ?? 100) / 200), 0);
       v.happy = clamp(v.happy + Math.min(30, appeal * 1.6) * (encHappy(e) / 100) + (encHappy(e) < 35 ? -6 : 0) + as.filter((a) => a.trait === 'presumido' || a.trait === 'curioso').length * 3);
     }
@@ -128,16 +133,19 @@ function visitorArrive(v) {
   if (t.b) {
     const b = st.buildings.find((q) => q.id === t.b); const B = b && BUILDINGS[b.type];
     if (B && B.need) {
-      if (B.need === 'recuerdo') { if (Math.random() < 0.5) { st.money += B.sells; st.today.income += B.sells; v.happy = clamp(v.happy + 4); } }
-      else { v[B.need] = clamp(v[B.need] - B.amount); st.money += B.sells; st.today.income += B.sells; v.happy = clamp(v.happy + 3);
+      if (B.need === 'recuerdo') { if (Math.random() < 0.5) { earn('tiendas', B.sells); v.happy = clamp(v.happy + 4); } }
+      else { v[B.need] = clamp(v[B.need] - B.amount); earn('tiendas', B.sells); v.happy = clamp(v.happy + 3);
         if (B.sells && Math.random() < 0.3 && !st.buildings.some((q) => BUILDINGS[q.type].bin && Math.abs(q.x - v.x) + Math.abs(q.z - v.z) <= 4) && st.litter.length < 60) st.litter.push({ x: v.x, z: v.z, c: pick(['#e05a5a', '#f2f2f2', '#e8c04a']) }); }
     }
   }
 }
+// Cuántos visitantes caben a la vez: crece con el parque (y con cuidado de no calentar el móvil)
+const maxVisitors = () => Math.min(eng.hq ? 70 : 50, 24 + st.enclosures.filter((e) => animalsIn(e).length).length * 6);
+let wfCache = 50;
 function visitorsTick(dt) {
   if (Math.random() < 0.02 * dt && visitors.length) { const v = pick(visitors); if (v.hambre > 75) speak(v, pick(['¡Qué hambre tengo!', '¿Dónde se come aquí?'])); else if (v.sed > 75) speak(v, pick(['Necesito beber algo…', '¡Qué sed!'])); else if (st.litter.length > 12) speak(v, pick(['Qué sucio está esto…', 'Faltan papeleras'])); else if (v.happy > 85) speak(v, pick(['¡Volveré seguro!', '¡Qué día tan bonito!'])); }
   const h = hourOf(st.time);
-  if (h >= 9 && h < 19 && visitors.length < 30 && st.enclosures.some((e) => animalsIn(e).length)) {
+  if (h >= 9 && h < 19 && visitors.length < maxVisitors() && st.enclosures.some((e) => animalsIn(e).length)) {
     const rate = 0.08 * (0.4 + st.fame / 2.5) * Math.max(0.25, Math.min(1.3, 1.45 - st.ticket / 40)) * Math.min(3, 0.5 + st.enclosures.length * 0.4);
     if (Math.random() < rate * dt) spawnVisitor();
   }
@@ -152,7 +160,7 @@ function visitorsTick(dt) {
       if (!v.path.length) { if (v.leaving) v.gone = true; else visitorArrive(v); }
     } else if (!v.wait || st.time > v.wait) { v.wait = st.time + rnd(4, 12); visitorThink(v); }
   }
-  for (const v of visitors.filter((q) => q.gone)) st.fame = clamp(st.fame + (v.happy / 20 - st.fame) * 0.02, 0, 5);
+  for (const v of visitors.filter((q) => q.gone)) { st.fame = clamp(st.fame + (v.happy / 20 - st.fame) * 0.02, 0, 5); if (v.happy > 45) earn('donativos', (v.happy - 45) / 55 * 6 * (0.5 + wfCache / 100)); }
   visitors = visitors.filter((v) => !v.gone);
 }
 
@@ -210,7 +218,7 @@ function health() {
 }
 function callVet(a) {
   if (!a?.sick) return; if (st.money < VET_VISIT) return toast('No hay dinero suficiente para el veterinario', 'warn');
-  st.money -= VET_VISIT; cure(a); toast(`El veterinario ha curado a ${a.name} (${eur(VET_VISIT)})`, 'good', 'heart'); hud(); save(); animalCardTick(true);
+  spend('vet', VET_VISIT); cure(a); toast(`El veterinario ha curado a ${a.name} (${eur(VET_VISIT)})`, 'good', 'heart'); hud(); save(); animalCardTick(true);
 }
 // Qué hace un animal ahora: dormir de noche, comer si hay comida, beber, pastar, jugar, seguir a su madre...
 // Lo que ocupa sitio dentro de un recinto (radio en casillas): los animales se ponen al lado, no dentro
@@ -223,7 +231,23 @@ function freeSpot(a, e, x, z) {
   }
   return { x, z };
 }
+// Dónde se esconde: dentro de un refugio cerrado (establo, cueva) desaparece de la vista;
+// detrás de un árbol o unas rocas se agacha en el lado contrario al camino; sin nada, se encoge en la esquina más lejana.
+const DENS = { establo: 1, cueva: 1, cuevaroca: 1 };
+function awayFromPath(e, x, z) {
+  const P = pathSet(); let sx = 0, sz = 0, n = 0;
+  for (let i = -1; i <= e.n; i++) for (const [px, pz] of [[e.x + i, e.z - 1], [e.x + i, e.z + e.n], [e.x - 1, e.z + i], [e.x + e.n, e.z + i]]) if (P.has(pk(px, pz))) { sx += px + 0.5; sz += pz + 0.5; n++; }
+  if (!n) return { x: 0, z: -1 }; const dx = x - sx / n, dz = z - sz / n, d = Math.hypot(dx, dz) || 1; return { x: dx / d, z: dz / d };
+}
+function hideSpot(a, e) {
+  const covers = e.items.filter((i) => ENRICH[i.type]?.hide);
+  const den = covers.filter((i) => DENS[i.type]).filter((i) => st.animals.filter((o) => o.den === i.x + ',' + i.z).length < 3)[0];
+  if (den) return { x: den.x + 0.5, z: den.z + 0.5, den: den.x + ',' + den.z };
+  if (covers.length) { const c = pick(covers); const u = awayFromPath(e, c.x + 0.5, c.z + 0.5); const r = (SOLID[c.type] || 0.3) + 0.3; return { x: c.x + 0.5 + u.x * r + rnd(-0.15, 0.15), z: c.z + 0.5 + u.z * r + rnd(-0.15, 0.15), crouch: true }; }
+  const u = awayFromPath(e, e.x + e.n / 2, e.z + e.n / 2); return { x: e.x + e.n / 2 + u.x * e.n, z: e.z + e.n / 2 + u.z * e.n, crouch: true };
+}
 function decide(a, e) {
+  a.den = null; a.crouch = false;
   const S = SPECIES[a.sp], h = hourOf(st.time), mg = Math.max(0.45, Math.min(e.n / 2 - 0.05, S.body[0] * 0.5 * cubeScale(a.sp) * (a.baby ? 0.55 : 1) + 0.28));
   const inside = (x, z) => ({ x: Math.min(e.x + e.n - mg, Math.max(e.x + mg, x)), z: Math.min(e.z + e.n - mg, Math.max(e.z + mg, z)) });
   const blocked = (x, z) => e.items.some((it) => SOLID[it.type] && Math.hypot(x - it.x - 0.5, z - it.z - 0.5) < SOLID[it.type] + 0.2);
@@ -234,7 +258,10 @@ function decide(a, e) {
     for (let k = 0; k < 12 && blocked(p.x, p.z); k++) p = inside(e.x + rnd(mg, e.n - mg), e.z + rnd(mg, e.n - mg));
     a.tx = p.x; a.tz = p.z; a.state = state; a.restUntil = st.time + mins; };
   if (a.sick && Math.random() < 0.7) return go(a.x, a.z, 'sick', rnd(20, 40));
-  if ((a.trust ?? 100) < 40 && Math.random() < 0.55) { const hide = e.items.find((i) => ENRICH[i.type]?.hide); return hide ? go(hide.x + 0.5 + rnd(-0.6, 0.6), hide.z + 0.5 + rnd(-0.6, 0.6), 'hide', rnd(20, 40)) : go(e.x + (a.x - e.x < e.n / 2 ? 0.6 : e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'hide', rnd(20, 40)); }
+  const hideNow = (mins) => { const h = hideSpot(a, e); if (h.den) { a.tx = h.x; a.tz = h.z; a.state = 'hide'; a.den = h.den; a.restUntil = st.time + mins; } else { go(h.x, h.z, 'hide', mins); a.crouch = true; } };
+  const tr = a.trust ?? 100;
+  const calm = a.calmUntil > st.time;
+  if (tr < 40 && !calm && Math.random() < 0.75 - tr / 100) return hideNow(rnd(25, 50) * (1 - tr / 80));
   if (h >= 21 || h < 6) { if (a.state !== 'sleep') { const mom = a.mother && st.animals.find((m) => m.id === a.mother); go(mom ? mom.x + 0.2 : a.x + rnd(-1, 1), mom ? mom.z + 0.15 : a.z + rnd(-1, 1), 'sleep', 60); } else a.restUntil = st.time + 30; return; }
   if (e.food && st.time < e.food.until && a.hunger < 90) return go(e.food.x + rnd(-0.35, 0.35), e.food.z + rnd(-0.35, 0.35), 'eat', 25);
   const mom = a.baby && a.mother && st.animals.find((m) => m.id === a.mother && m.enc === a.enc);
@@ -245,7 +272,7 @@ function decide(a, e) {
   if (a.trait === 'dormilon' && r < 0.3) return go(a.x, a.z, 'sleep', rnd(20, 50));
   if (a.trait === 'jugueton' && r < 0.35) return toy ? go(toy.x + 0.5, toy.z + 0.5, 'play', 12) : go(a.x + rnd(-1.5, 1.5), a.z + rnd(-1.5, 1.5), 'play', 4);
   if (a.trait === 'curioso' && r < 0.4) { const P = pathSet(); let best = null; for (let i = 0; i < e.n; i++) for (const [x, z, ox, oz] of [[e.x + i, e.z - 1, 0.5, 0.6], [e.x + i, e.z + e.n, 0.5, -0.6], [e.x - 1, e.z + i, 0.6, 0.5], [e.x + e.n, e.z + i, -0.6, 0.5]]) if (P.has(pk(x, z))) best = [x + ox, z + oz]; if (best) return go(best[0], best[1], 'watch', rnd(10, 25)); }
-  if (a.trait === 'timido' && r < 0.45) { const hide = e.items.find((i) => ENRICH[i.type]?.hide); if (hide) return go(hide.x + 0.5 + rnd(-0.5, 0.5), hide.z + 0.5 + rnd(-0.5, 0.5), 'hide', rnd(15, 35)); }
+  if (a.trait === 'timido' && !calm && r < 0.3) return hideNow(rnd(12, 30));
   if (a.trait === 'presumido' && r < 0.3) return go(a.x, a.z, 'pose', rnd(6, 14));
   if (a.trait === 'grunon' && r < 0.4) { const near = animalsIn(e).find((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 1.2); if (near) return go(a.x + (a.x - near.x) * 2, a.z + (a.z - near.z) * 2, 'wander', 0); }
   if (pond && r < 0.12) return go(pond.x + 0.5 + rnd(-0.6, 0.6), pond.z + 0.5 + rnd(-0.6, 0.6), 'drink', 12);
@@ -346,7 +373,7 @@ const CHAPTERS = [
 function checkGoals() {
   const C = CHAPTERS[st.chapter]; if (!C) return;
   if (C.goals.every(([, ok]) => ok())) {
-    st.money += C.reward; st.chapter++; Sound.play('good'); const nx = CHAPTERS[st.chapter];
+    earn('premios', C.reward); st.chapter++; Sound.play('good'); const nx = CHAPTERS[st.chapter];
     say('rufina', `¡Capítulo completado: ${C.title}!`, nx ? `Te has ganado ${eur(C.reward)} para seguir creciendo. Siguiente reto: <b>${nx.title}</b>. ${nx.intro}` : `Te has ganado ${eur(C.reward)}. Has completado la campaña: tu santuario es un ejemplo para todos. Sigue rescatando y cuidando a tu ritmo.`, '¡Vamos!', null, nx ? `<div class="card"><b>${icon('flag')} ${nx.title}</b><ul style="padding-left:18px;margin:6px 0">${nx.goals.map(([t]) => `<li>${t}</li>`).join('')}</ul></div>` : '');
     hud(); save();
   }
@@ -365,7 +392,7 @@ function goalsModal() {
   bx.querySelector('#gx').onclick = closeModal;
 }
 function hourly(h) {
-  rescueTick(); checkGoals();
+  wfCache = welfare(); rescueTick(); checkGoals();
   hatchNests(); health();
   if (h === 9 || h === 17) feedTimes();
   if (h === 6) breeding();
@@ -376,7 +403,8 @@ function hourly(h) {
 function endOfDay() {
   if (st.animals.length) st.fame = clamp(st.fame + (welfare() - 55) / 600, 0, 5);
   const wages = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner + (st.staff.vet || 0) * WAGES.vet, food = st.animals.length * FOOD_COST;
-  st.money -= wages + food; st.today.spent += wages + food;
+  const fans = st.animals.filter((a) => (a.trust ?? 100) >= 80 && a.happy > 55 && !a.sick).length; earn('padrinos', fans * SPONSOR);
+  spend('sueldos', wages); spend('comida', food);
   const d = { day: dayOf(st.time) + 1, ...st.today, profit: st.today.income - st.today.spent, stars: stars() };
   const prevBest = Math.max(0, ...st.history.map((h) => h.visitors));
   st.history.unshift({ ...d, events: undefined }); st.history.length = Math.min(st.history.length, 14);
@@ -394,7 +422,7 @@ function endOfDay() {
   say('rufina', null, `«${quote}»`, 'Siguiente día', null, `<div class="gazette"><div class="mast">La Gaceta Salvaje</div><div class="date">Día ${d.day} · ${'★'.repeat(Math.floor(d.stars))}${d.stars % 1 ? '½' : ''}</div>
     <h3>${esc(head)}</h3><p>${esc(body)}</p>
     <div class="cols"><div>${icon('users')} <b>${d.visitors}</b> visitantes</div><div>${icon('coin')} <b>${eur(d.income)}</b> ingresos</div><div>${icon('briefcase')} <b>${eur(d.spent)}</b> gastos</div><div>${icon('chart')} <b style="color:${d.profit >= 0 ? '#127a52' : '#c2343a'}">${d.profit >= 0 ? '+' : ''}${eur(d.profit)}</b></div></div></div>`);
-  st.today = { visitors: 0, income: 0, spent: 0, events: [] };
+  st.today = { visitors: 0, income: 0, spent: 0, events: [], inc: {}, exp: {} };
   save();
 }
 function tick(dt) {
@@ -414,7 +442,7 @@ function expandLand() {
     st.buildings.forEach(mv); st.litter.forEach(mv);
     st.paths = st.paths.map((k) => { const [x, z] = k.split(',').map(Number); return pk(x + dx, z + dz); });
     // (la entrada antigua cae justo en la nueva: los caminos siguen conectados)
-    st.money -= next.price; st.size = next.size; swapping = false; save(); location.reload();
+    spend('terreno', next.price); st.size = next.size; swapping = false; save(); location.reload();
   });
 }
 function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KEY, st); cloud.saved(); }
@@ -422,7 +450,7 @@ function save() { if (swapping) return; st.lastSaved = Date.now(); store.save(KE
 function offline() {
   const mins = Math.min((Date.now() - st.lastSaved) / 1000 * 0.2, 1440); if (mins < 20) return;
   const last = st.history[0]; const est = last ? Math.max(0, last.profit) * (mins / 1440) * 0.5 : 0;
-  st.time += mins; st.lastHour = Math.floor(st.time / 60); st.money += Math.round(est);
+  st.time += mins; st.lastHour = Math.floor(st.time / 60); earn('fuera', est);
   for (const a of st.animals) a.hunger = st.staff.keeper * 8 >= st.animals.length ? 90 : Math.max(20, a.hunger - mins * 0.05);
   say('rufina', 'Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en el parque.</p>${est ? `<p>Los visitantes han dejado unos <b>${eur(est)}</b>.</p>` : ''}${st.staff.keeper * 8 < st.animals.length ? '<p class="hint">Faltan cuidadores: algunos animales tienen hambre.</p>' : '<p class="hint">Tus cuidadores han atendido a los animales.</p>'}`);
 }
@@ -597,9 +625,12 @@ function syncAnimals(t) {
     // mientras se mueve: el animal cogido va con el dedo; los de un recinto que se mueve, con él
     if (mv && mv.kind === 'animal' && mv.ref === a) m.g.position.set(mv.px, 0.55 + Math.sin(t * 6) * 0.04, mv.pz);
     else if (mv && mv.kind === 'enc' && a.enc === mv.ref.id) m.g.position.set(a.x + mv.x - mv.ref.x, 0.2, a.z + mv.z - mv.ref.z);
-    const k = (a.baby ? 0.55 : 1) * (m.baseScale || 1); m.g.scale.setScalar(k);
+    // dentro del refugio se desvanece (entra y desaparece); al salir vuelve a verse
+    const inDen = a.den && a.state === 'hide' && !moving && !(mv && mv.ref === a); m.fade = (m.fade ?? 1) + ((inDen ? 0 : 1) - (m.fade ?? 1)) * Math.min(1, rdt * 4);
+    m.g.visible = m.fade > 0.04;
+    const k = (a.baby ? 0.55 : 1) * (m.baseScale || 1) * (0.35 + 0.65 * m.fade); m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
-    const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
+    const crouch = a.state === 'hide' && a.crouch && !moving; const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
     if (m.glb) { // modelo animado: elige la animación según lo que hace y a qué velocidad va de verdad
       const L = (GLB[a.sp]?.len || 1) * (a.baby ? 0.55 : 1), v = m.vel || 0;
       m.walking = m.walking ? v > 0.04 : v > 0.12; // con margen, para que no parpadee entre andar y parar
@@ -609,11 +640,11 @@ function syncAnimals(t) {
       m.update(rdt);
       continue;
     }
-    m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -(m.legH ?? S.legs) * 0.85 : 0;
+    m.body.position.y = S.hop && moving ? Math.abs(w) * 0.2 : sleeping ? -(m.legH ?? S.legs) * 0.85 : crouch ? -(m.legH ?? S.legs) * 0.45 + Math.sin(t * 9 + a.x) * 0.006 : 0;
     m.legs.forEach((l, i) => { l.visible = !sleeping; l.rotation.x = S.hop ? 0 : (i % 2 === (i < 2 ? 0 : 1) ? w : -w) * 0.5; const k = l.userData.knee; if (k) k.rotation.x = l.userData.back ? -Math.max(0, l.rotation.x) * 1.1 : Math.max(0, -l.rotation.x) * 1.1; });
-    m.neck.rotation.x = m.neckRx + (headDown ? (m.headDown ?? 0.9) + Math.sin(t * 3 + a.x) * 0.08 : sleeping ? (m.headDown ?? 0.9) * 0.6 : 0);
-    m.head.rotation.x = moving ? 0 : headDown ? 0.4 : sleeping ? 0.3 : Math.sin(t * 0.8 + a.z) * 0.25 + 0.1;
-    m.tail.rotation.z = Math.sin(t * (a.state === 'play' ? 8 : 3) + a.x) * (sleeping ? 0.05 : 0.3);
+    m.neck.rotation.x = m.neckRx + (headDown ? (m.headDown ?? 0.9) + Math.sin(t * 3 + a.x) * 0.08 : sleeping ? (m.headDown ?? 0.9) * 0.6 : crouch ? (m.headDown ?? 0.9) * 0.45 : 0);
+    m.head.rotation.x = moving ? 0 : headDown ? 0.4 : sleeping ? 0.3 : crouch ? 0.25 : Math.sin(t * 0.8 + a.z) * 0.25 + 0.1;
+    m.tail.rotation.z = Math.sin(t * (a.state === 'play' ? 8 : 3) + a.x) * (sleeping || crouch ? 0.05 : 0.3);
     m.torso.scale.x = (a.preg ? 1.3 : 1) * (m.torsoSX ??= m.torso.scale.x);
     if (a.state === 'play' && !moving) m.g.rotation.y += Math.sin(t * 4) * 0.02;
   }
@@ -679,9 +710,9 @@ function overlay() {
   if (close) for (const a of st.animals.filter((q) => q.enc === close)) {
     const m = animalMeshes.get(a.id); if (!m) continue; const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + SPECIES[a.sp].neck * 0.8 + 0.25) * (a.baby ? 0.55 : 1);
     const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1 || q.x < 0 || q.x > eng.w) continue;
-    octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(a.name).width + 14; const sel = a.id === followId;
+    const label = m.g.visible ? a.name : a.name + ' · escondido'; octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(label).width + 14; const sel = a.id === followId;
     octx.fillStyle = sel ? 'rgba(31,37,64,0.92)' : 'rgba(255,255,255,0.88)'; octx.beginPath(); octx.roundRect(q.x - w / 2, q.y - 11, w, 20, 10); octx.fill();
-    octx.fillStyle = sel ? '#fff' : '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(a.name, q.x, q.y);
+    octx.fillStyle = sel ? '#fff' : '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(label, q.x, q.y);
   }
   for (const a of st.animals) {
     if (!a.sick) continue; const m = animalMeshes.get(a.id); if (!m) continue;
@@ -714,9 +745,9 @@ function tileAt(sx, sy) { const p = eng.ground(sx, sy); return p ? { x: Math.flo
 function paintPath(t) {
   if (!t || !inGrid(t.x, t.z)) return;
   const key = pk(t.x, t.z);
-  if (view.erase) { if (st.paths.includes(key) && !(t.x === ENTRANCE.x && t.z >= ENTRANCE.z - 1)) { st.paths = st.paths.filter((p) => p !== key); st.money += PATH_PRICE / 2; } return; }
+  if (view.erase) { if (st.paths.includes(key) && !(t.x === ENTRANCE.x && t.z >= ENTRANCE.z - 1)) { st.paths = st.paths.filter((p) => p !== key); earn('ventas', PATH_PRICE / 2); } return; }
   if (occupied(t.x, t.z) || st.money < PATH_PRICE) return;
-  st.paths.push(key); st.money -= PATH_PRICE;
+  st.paths.push(key); spend('obras', PATH_PRICE);
 }
 eng.onDoubleTap = (sx, sy) => {
   if (view.tool) return;
@@ -794,10 +825,10 @@ function endMove(cancel) {
 // Quitar algo (desde la papelera o su ficha)
 function removeThing(m) {
   const r = m.ref;
-  if (m.kind === 'bld') { st.buildings = st.buildings.filter((q) => q !== r); st.money += Math.round(BUILDINGS[r.type].price / 2); toast(`${BUILDINGS[r.type].label} quitado · recuperas ${eur(BUILDINGS[r.type].price / 2)}`, 'info', 'trash'); }
-  else if (m.kind === 'item') { m.enc.items = m.enc.items.filter((q) => q !== r); st.money += Math.round(ENRICH[r.type].price / 2); toast(`${ENRICH[r.type].label} quitado`, 'info', 'trash'); }
-  else if (m.kind === 'animal') { const p = Math.round(SPECIES[r.sp].price * (r.baby ? 0.4 : 0.6)); return confirm(`¿Vender a ${r.name} por ${eur(p)}?`, () => { st.money += p; st.animals = st.animals.filter((q) => q !== r); hud(); save(); }); }
-  else if (m.kind === 'enc') { const as = animalsIn(r); return confirm(as.length ? `Se venderán los ${as.length} animales. ¿Derribar el recinto?` : '¿Derribar el recinto?', () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === r.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== r.id); st.enclosures = st.enclosures.filter((q) => q !== r); hud(); save(); }); }
+  if (m.kind === 'bld') { st.buildings = st.buildings.filter((q) => q !== r); earn('ventas', BUILDINGS[r.type].price / 2); toast(`${BUILDINGS[r.type].label} quitado · recuperas ${eur(BUILDINGS[r.type].price / 2)}`, 'info', 'trash'); }
+  else if (m.kind === 'item') { m.enc.items = m.enc.items.filter((q) => q !== r); earn('ventas', ENRICH[r.type].price / 2); toast(`${ENRICH[r.type].label} quitado`, 'info', 'trash'); }
+  else if (m.kind === 'animal') { const p = Math.round(SPECIES[r.sp].price * (r.baby ? 0.4 : 0.6)); return confirm(`¿Vender a ${r.name} por ${eur(p)}?`, () => { earn('ventas', p); st.animals = st.animals.filter((q) => q !== r); hud(); save(); }); }
+  else if (m.kind === 'enc') { const as = animalsIn(r); return confirm(as.length ? `Se venderán los ${as.length} animales. ¿Derribar el recinto?` : '¿Derribar el recinto?', () => { earn('ventas', as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === r.n)].price * 0.4); st.animals = st.animals.filter((a) => a.enc !== r.id); st.enclosures = st.enclosures.filter((q) => q !== r); hud(); save(); }); }
   hud(); save();
 }
 // Desde una ficha: el siguiente arrastre mueve ese objeto
@@ -821,21 +852,21 @@ eng.onTap = (sx, sy) => {
   if (view.tool === 'animal') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
     const S = SPECIES[view.opt]; const fee = Math.round(S.price * 0.5); if (st.money < fee) return toast('No hay dinero suficiente', 'warn');
-    st.money -= fee; const a = addAnimal(view.opt, e); a.trust = 55; a.rescued = 'adopcion'; a.story = 'Nació en otro santuario y ha venido en adopción. Se adapta rápido.'; a.arrived = dayOf(st.time) + 1; logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
+    spend('adopciones', fee); const a = addAnimal(view.opt, e); a.trust = 55; a.rescued = 'adopcion'; a.story = 'Nació en otro santuario y ha venido en adopción. Se adapta rápido.'; a.arrived = dayOf(st.time) + 1; logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
     toast(e.biome !== S.biome ? `${a.name} (${S.label.toLowerCase()}) ha llegado, pero prefiere el hábitat de ${BIOMES[S.biome].label.toLowerCase()}` : `${a.name} (${S.label.toLowerCase()}, ${a.sex === 'm' ? 'macho' : 'hembra'}) llega al parque. Puedes cambiarle el nombre en su ficha`, e.biome !== S.biome ? 'warn' : 'good', 'paw');
     hud(); save(); return;
   }
   if (view.tool === 'enrich') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
     if (e.items.some((i) => i.x === t.x && i.z === t.z)) return; const E = ENRICH[view.opt]; if (E.biome && E.biome !== e.biome) return toast(`${E.label} es para recintos de ${BIOMES[E.biome].label.toLowerCase()}`, 'warn'); if (st.money < E.price) return toast('No hay dinero suficiente', 'warn');
-    st.money -= E.price; e.items.push({ type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
+    spend('obras', E.price); e.items.push({ type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
   }
   if (view.tool === 'build') {
     if (!t || !inGrid(t.x, t.z) || occupied(t.x, t.z)) return toast('Ese sitio está ocupado', 'warn');
     const B = BUILDINGS[view.opt];
     if (B.cat === 'Tiendas' && !nextToPath(t.x, t.z)) return toast('Las tiendas deben estar junto a un camino', 'warn');
     if (st.money < B.price) return toast('No hay dinero suficiente', 'warn');
-    st.money -= B.price; st.buildings.push({ id: id(), type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
+    spend('obras', B.price); st.buildings.push({ id: id(), type: view.opt, x: t.x, z: t.z }); hud(); save(); return;
   }
   // sin herramienta: información
   const aId = eng.pick(sx, sy, groups.animals.children, 'animal');
@@ -885,8 +916,97 @@ function animalCardTick(force = false) {
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
     <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>
     ${a.trust != null ? `<div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#8b5cf6">${icon('smile')}</span><span>Confianza</span><div class="bar"><i style="transform:scaleX(${a.trust / 100});background:${a.trust < 40 ? '#f5a524' : '#8b5cf6'}"></i></div></div>` : ''}
-    ${a.story ? `<div class="hint" style="margin-top:6px">${icon('book')} ${a.story}${a.trust != null ? (a.trust < 40 ? ' Aún desconfía: se esconde y no criará.' : a.trust < 80 ? ' Va cogiendo confianza.' : ' Ya se siente en casa.') : ''}</div>` : ''}`;
+    ${a.story ? `<div class="hint" style="margin-top:6px">${icon('book')} ${a.story}${a.trust != null ? (a.trust < 40 ? ' Aún desconfía: se esconde y no criará.' : a.trust < 80 ? ' Va cogiendo confianza.' : ' Ya se siente en casa.') : ''}</div>` : ''}
+    <div class="carerow" style="margin-top:6px">${careButtons(a, true)}</div>`;
   el.hidden = false;
+}
+// ---------- cuidados para ganar confianza ----------
+function careLeft(a, k) { const t = (a.care || {})[k]; return t == null ? 0 : Math.max(0, t + CARE[k].cd - st.time); }
+function careAnimal(a, k) {
+  const C = CARE[k]; if (!a || !C) return; const left = careLeft(a, k);
+  if (left > 0) return toast(`${a.name} necesita un rato tranquilo. Prueba otra vez en ${Math.ceil(left / 60)} h`, 'info');
+  if (C.keeper && !st.staff.keeper) return toast('Necesitas un cuidador (en Personal)', 'warn');
+  if (a.sick && k !== 'keeper') return toast(`${a.name} se encuentra mal: primero, el veterinario`, 'warn');
+  if (st.money < C.price) return toast('No hay dinero suficiente', 'warn');
+  spend('cuidados', C.price); (a.care ||= {})[k] = st.time;
+  const tr0 = a.trust ?? 100, gain = Math.round(C.gain * (a.trait === 'timido' ? 0.75 : 1));
+  if (a.trust != null) a.trust = clamp(a.trust + gain);
+  a.happy = clamp(a.happy + (C.happy || 5)); if (k === 'treat') a.hunger = clamp(a.hunger + 12);
+  a.calmUntil = st.time + 90; a.restUntil = 0; // sale del escondite un rato
+  const o = a.sex === 'f' ? 'a' : 'o';
+  const msg = tr0 < 25 ? pick([`${a.name} no se acerca, pero lo coge en cuanto te alejas`, `${a.name} te mira desde lejos, ya con menos miedo`]) : tr0 < 60 ? pick([`${a.name} se acerca despacio`, `${a.name} ya no sale corriendo`]) : pick([`${a.name} viene directo hacia ti`, `¡${a.name} está encantad${o}!`]);
+  toast(a.trust != null && tr0 < 100 ? `${msg} · confianza +${gain}` : msg, 'good', C.ic); Sound.play('good'); hud(); save();
+}
+function careButtons(a, short = false) {
+  return Object.entries(CARE).map(([k, C]) => { const left = careLeft(a, k), off = left > 0 || (C.keeper && !st.staff.keeper);
+    return `<button class="btn sm ${off ? 'alt' : 'mint'}" data-care="${a.id}|${k}" ${off ? 'disabled' : ''} title="${C.desc}">${icon(C.ic)} ${short ? C.short : C.label}${left > 0 ? ` · ${Math.ceil(left / 60)} h` : C.price ? ' · ' + eur(C.price) : C.keeper && !st.staff.keeper ? ' · sin cuidador' : ''}</button>`; }).join('');
+}
+function animalStatus(a) {
+  const o = a.sex === 'f' ? 'a' : 'o';
+  if (a.sick) return [`Enferm${o}: ${ILLNESS[a.sick.kind].toLowerCase()}`, '#e5484d'];
+  if (a.state === 'hide') return [a.den ? `Escondid${o} dentro del refugio` : `Escondid${o} y agachad${o}`, '#8b5cf6'];
+  if (a.hunger < 30) return ['Tiene hambre', '#f08a3c'];
+  if (a.happy < 35) return [`Triste`, '#f5a524'];
+  const t = STATE_TXT[a.state] || 'tranquilo'; return [t[0].toUpperCase() + t.slice(1), '#25c48f'];
+}
+const needScore = (a) => (a.sick ? 300 : 0) + (a.hunger < 30 ? 150 : 0) + (100 - (a.trust ?? 100)) + (a.happy < 35 ? 60 : 0) + (a.state === 'hide' ? 20 : 0);
+const minibar = (v, col) => `<span class="mbar"><i style="width:${Math.round(v)}%;background:${col}"></i></span>`;
+function animalsOverview() {
+  const flt = view.aflt || 'need'; const ph = zooPhotos(st.animals.map((a) => a.sp));
+  let as = [...st.animals].sort((x, y) => needScore(y) - needScore(x));
+  const hid = st.animals.filter((a) => a.state === 'hide').length, sick = st.animals.filter((a) => a.sick).length, shy = st.animals.filter((a) => (a.trust ?? 100) < 40).length, hungry = st.animals.filter((a) => a.hunger < 30).length;
+  if (flt === 'need') as = as.filter((a) => needScore(a) >= 20); if (flt === 'hide') as = as.filter((a) => a.state === 'hide');
+  return `<div class="chips" id="aflt"><button class="chip ${flt === 'need' ? 'on' : ''}" data-f="need">Necesitan algo</button><button class="chip ${flt === 'hide' ? 'on' : ''}" data-f="hide">Escondidos · ${hid}</button><button class="chip ${flt === 'all' ? 'on' : ''}" data-f="all">Todos · ${st.animals.length}</button></div>
+    <p class="hint">${sick ? `${sick} enfermo${sick > 1 ? 's' : ''} · ` : ''}${hungry ? `${hungry} con hambre · ` : ''}${shy} desconfiado${shy === 1 ? '' : 's'} (se esconden mucho). Los cuidados suben la confianza; con un 80 % tendrán padrinos que pagan ${eur(SPONSOR)} al día.</p>
+    <div class="list">${as.map((a) => { const [txt, col] = animalStatus(a); const e = st.enclosures.find((q) => q.id === a.enc); const tr = a.trust ?? 100;
+      return `<div class="li aov">${zimg(ph[a.sp], SPECIES[a.sp].biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <span class="hint">${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}${e ? ' · ' + BIOMES[e.biome].label.toLowerCase() : ''}</span>
+        <div class="hint" style="color:${col};font-weight:800">${txt}</div>
+        <div class="mrow"><span>Confianza</span>${minibar(tr, tr < 40 ? '#f5a524' : '#8b5cf6')}<b>${Math.round(tr)}%</b><span>Feliz</span>${minibar(a.happy, a.happy < 35 ? '#e5484d' : '#25c48f')}<b>${Math.round(a.happy)}%</b><span>Comida</span>${minibar(a.hunger, a.hunger < 30 ? '#e5484d' : '#f08a3c')}<b>${Math.round(a.hunger)}%</b></div>
+        <div class="carerow">${a.sick ? `<button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button>` : ''}${careButtons(a, true)}<button class="btn sm alt" data-see="${a.id}" aria-label="Ver">${icon('eye')}</button></div></div></div>`; }).join('') || `<p class="hint">${st.animals.length ? '¡Todos están bien! Nadie necesita nada ahora mismo.' : 'Aún no tienes animales. Acoge un rescate más abajo.'}</p>`}</div>`;
+}
+function bindOverview(b, again) {
+  b.querySelectorAll('#aflt [data-f]').forEach((x) => (x.onclick = () => { view.aflt = x.dataset.f; again(); }));
+  b.querySelectorAll('[data-care]').forEach((x) => (x.onclick = () => { const [aid, k] = x.dataset.care.split('|'); careAnimal(st.animals.find((q) => q.id === aid), k); again(); }));
+  b.querySelectorAll('[data-vet]').forEach((x) => (x.onclick = () => { callVet(st.animals.find((q) => q.id === x.dataset.vet)); again(); }));
+  b.querySelectorAll('[data-see]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.see); const e = a && st.enclosures.find((q) => q.id === a.enc); if (!e) return; enterClose(e); followAnimal(a.id); }));
+}
+// ---------- cuentas ----------
+function sumCats(days, key) { const out = {}; for (const d of days) { const m = d[key] || (key === 'inc' ? { otros: d.income || 0 } : { otros: d.spent || 0 }); for (const [k, v] of Object.entries(m)) out[k] = (out[k] || 0) + v; } return out; }
+function catList(m, LBL, col) {
+  const tot = Object.values(m).reduce((t, v) => t + v, 0); const rows = Object.entries(m).filter(([, v]) => v).sort((x, y) => y[1] - x[1]);
+  if (!rows.length) return '<p class="hint">Nada todavía.</p>';
+  return rows.map(([k, v]) => `<div class="frow"><span>${LBL[k] || 'Otros'}</span><span class="mbar"><i style="width:${Math.max(3, v / tot * 100)}%;background:${col}"></i></span><b>${eur(v)}</b></div>`).join('');
+}
+function financeTips(days) {
+  const n = Math.max(1, days.length), inc = sumCats(days, 'inc'), exp = sumCats(days, 'exp'); const tips = [];
+  const fixed = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner + (st.staff.vet || 0) * WAGES.vet + st.animals.length * FOOD_COST;
+  tips.push(`Gastos fijos de cada día: <b>${eur(fixed)}</b> (sueldos ${eur(fixed - st.animals.length * FOOD_COST)} + comida ${eur(st.animals.length * FOOD_COST)}). Se cobran a las 21:00.`);
+  const obras = (exp.obras || 0) + (exp.terreno || 0) + (exp.adopciones || 0), allExp = Object.values(exp).reduce((t, v) => t + v, 0);
+  if (allExp && obras / allExp > 0.3) tips.push(`El ${Math.round(obras / allExp * 100)} % de lo gastado son obras, terreno y adopciones: es inversión, no se repite cada día.`);
+  if (!st.buildings.some((b) => BUILDINGS[b.type].sells)) tips.push('No tienes tiendas: cada visitante podría gastar 10-25 € más en comida, bebida y regalos.');
+  else if ((inc.tiendas || 0) < (inc.entradas || 0) * 0.3) tips.push('Las tiendas venden poco: ponlas junto a caminos con mucho paso y añade aseos (si no, los visitantes se van antes).');
+  if (st.staff.keeper > Math.ceil(st.animals.length / 8) + 1) tips.push(`Tienes más cuidadores de los necesarios: cada uno cuida 8 animales y cuesta ${eur(WAGES.keeper)} al día.`);
+  const shy = st.animals.filter((a) => (a.trust ?? 100) < 80).length; if (shy) tips.push(`${shy} animal${shy > 1 ? 'es aún no confían' : ' aún no confía'} del todo. Con un 80 % de confianza consiguen padrinos: ${eur(SPONSOR)} al día cada uno.`);
+  if (wfCache < 60) tips.push(`Bienestar del parque ${wfCache} %: los visitantes contentos dejan donativos; animales felices = más donativos y más fama.`);
+  if (st.ticket < 15 && st.fame >= 2) tips.push('Con tu fama puedes subir un poco la entrada sin perder muchos visitantes.');
+  const vis = days.reduce((t, d) => t + (d.visitors || 0), 0) / n; if (vis && vis < 40) tips.push(`Vienen unos ${Math.round(vis)} visitantes al día. Más recintos con animales y más fama atraen a más gente (caben ${maxVisitors()} a la vez).`);
+  return tips;
+}
+function financeModal() {
+  const per = view.fper || 'today'; const days = per === 'today' ? [st.today] : per === 'yest' ? st.history.slice(0, 1) : [st.today, ...st.history.slice(0, 6)];
+  const inc = sumCats(days, 'inc'), exp = sumCats(days, 'exp'); const ti = Object.values(inc).reduce((t, v) => t + v, 0), te = Object.values(exp).reduce((t, v) => t + v, 0), pr = ti - te;
+  const hist = [...st.history.slice(0, 10)].reverse(); const mx = Math.max(1, ...hist.map((h) => Math.abs(h.profit)));
+  const bx = modal(`<h2>${icon('chart')} Cuentas del santuario</h2>
+    <div class="seg" id="fper"><button data-v="today" class="${per === 'today' ? 'on' : ''}">Hoy</button><button data-v="yest" class="${per === 'yest' ? 'on' : ''}" ${st.history.length ? '' : 'disabled'}>Ayer</button><button data-v="week" class="${per === 'week' ? 'on' : ''}">7 días</button></div>
+    <div class="ftot"><div><span>Ingresos</span><b style="color:#127a52">${eur(ti)}</b></div><div><span>Gastos</span><b style="color:#c2343a">${eur(te)}</b></div><div><span>Resultado</span><b style="color:${pr >= 0 ? '#127a52' : '#c2343a'}">${pr >= 0 ? '+' : ''}${eur(pr)}</b></div></div>
+    ${per === 'today' ? '<p class="hint">El día aún no ha terminado: sueldos, comida y padrinos se suman a las 21:00.</p>' : ''}
+    <div class="sec">Entra</div>${catList(inc, { ...INC, otros: 'Ingresos (sin desglose)' }, '#25c48f')}
+    <div class="sec">Sale</div>${catList(exp, { ...EXP, otros: 'Gastos (sin desglose)' }, '#e5484d')}
+    ${hist.length ? `<div class="sec">Beneficio de los últimos días</div><div class="fchart">${hist.map((h) => `<div title="Día ${h.day}: ${eur(h.profit)}"><i style="height:${Math.max(3, Math.abs(h.profit) / mx * 100)}%;background:${h.profit >= 0 ? '#25c48f' : '#e5484d'}"></i><span>${h.day}</span></div>`).join('')}</div>` : ''}
+    <div class="sec">${icon('sparkle')} Consejos de Rufina</div><div class="list">${financeTips(per === 'today' ? [st.today, ...st.history.slice(0, 3)] : days).map((t) => `<div class="li" style="font-size:13.5px"><div>${t}</div></div>`).join('')}</div>
+    <div class="actions"><button class="btn coral" id="fx">Cerrar</button></div>`);
+  bx.querySelector('#fx').onclick = closeModal;
+  bx.querySelectorAll('#fper button').forEach((x) => (x.onclick = () => { view.fper = x.dataset.v; closeModal(); financeModal(); }));
 }
 function hud() {
   $('#money b').textContent = eur(st.money);
@@ -913,7 +1033,7 @@ function renderToolInfo() {
   const ok = $('#ti_ok'); if (ok) ok.onclick = () => {
     const p = view.pending; const price = SIZES[view.opt.size].price; if (st.money < price) return toast('No hay dinero suficiente', 'warn');
     if (!canPlaceEnclosure(p.x, p.z, p.n)) return;
-    st.money -= price; const e = { id: id(), x: p.x, z: p.z, n: p.n, biome: view.opt.biome, items: [] }; st.enclosures.push(e);
+    spend('obras', price); const e = { id: id(), x: p.x, z: p.z, n: p.n, biome: view.opt.biome, items: [] }; st.enclosures.push(e);
     if (!encTouchesPath(e)) toast('Haz un camino hasta el recinto para que los visitantes lo vean', 'warn', 'path');
     view.pending = null; showGhost(null); setTool(null); hud(); save();
   };
@@ -921,7 +1041,7 @@ function renderToolInfo() {
 function openPanel(name) {
   if (sheet.name === name) return sheet.close();
   setTool(null);
-  const titles = { enc: 'Recintos', animal: 'Rescates y adopciones', build: 'Tiendas y decoración', staff: 'Personal', info: 'Parque' };
+  const titles = { enc: 'Recintos', animal: 'Animales', build: 'Tiendas y decoración', staff: 'Personal', info: 'Parque' };
   sheet.open(name, titles[name]); renderPanel(); hud();
 }
 const soundRow = () => { const p = Sound.prefs(); return `<div class="sec">${icon('music')} Sonido</div><div class="row"><button class="btn sm ${p.music ? '' : 'alt'}" id="snd_m" style="flex:1">${icon('music')} Música ${p.music ? 'sí' : 'no'}</button><button class="btn sm ${p.sfx ? '' : 'alt'}" id="snd_s" style="flex:1">${icon('bell')} Efectos ${p.sfx ? 'sí' : 'no'}</button></div>`; };
@@ -944,9 +1064,10 @@ function renderPanel() {
   if (name === 'animal') {
     const zph = zooPhotos(Object.keys(SPECIES).filter((k) => !SPECIES[k].hybrid));
     const adopt = (v) => Math.round(v.price * 0.5);
-    b.innerHTML = `<div class="sec">${icon('heart')} Animales que necesitan hogar</div><p class="hint">Avisos de rescate: acógelos gratis si tienes un recinto preparado. Si tardas, los acogerá otro centro.</p>
+    b.innerHTML = `<div class="sec">${icon('paw')} Tus animales</div>${animalsOverview()}<div class="sec">${icon('heart')} Animales que necesitan hogar</div><p class="hint">Avisos de rescate: acógelos gratis si tienes un recinto preparado. Si tardas, los acogerá otro centro.</p>
       ${st.rescues.length ? `<div class="list">${st.rescues.map((r) => { const S = SPECIES[r.sp], K = RESCUES[r.kind]; const fit = st.enclosures.some((e) => { const f = encFits(e, r.sp, r.n); return f.room && !f.danger; }); return `<div class="li rescue">${zimg(zph[r.sp], S.biome, 64)}<div style="flex:1;min-width:0"><b>${K.title}</b><div class="hint"><b>${r.n > 1 ? `${r.n} × ` : ''}${S.label}${r.baby ? ' (cría)' : ''}</b> · ${BIOMES[S.biome].label}</div><div class="hint" style="font-style:italic">${K.story}</div><div class="hint">${r.until > st.time + 99000 ? '' : `Espera hogar ${Math.max(1, Math.round((r.until - st.time) / 60))} h más · `}${fit ? '<b style="color:#1a9a6a">Tienes sitio</b>' : 'Necesita recinto'}</div></div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn sm coral" data-res="${r.id}">Acoger</button><button class="btn sm alt" data-skip="${r.id}">No puedo</button></div></div>`; }).join('')}</div>` : '<p class="hint">Ahora mismo no hay avisos. Llegan cada pocas horas.</p>'}
       <div class="sec">${icon('users')} Adoptar de otros centros</div><p class="hint">Animales nacidos en otros santuarios que buscan familia. Pagas una pequeña cuota de adopción y el transporte. Más fama desbloquea especies.</p><div class="grid">${Object.entries(SPECIES).filter(([, v]) => !v.hybrid).map(([k, v]) => { const lock = st.fame < v.fame; return `<button class="item" data-a="${k}" ${lock ? 'disabled' : ''}>${zimg(zph[k], v.biome, 64)}${v.label}<span class="d">${BIOMES[v.biome].label}</span>${lock ? `<span class="lock">Fama ${v.fame}★</span>` : `<span class="p">${eur(adopt(v))}</span>`}</button>`; }).join('')}</div>`;
+    bindOverview(b, renderPanel);
     b.querySelectorAll('[data-res]').forEach((x) => (x.onclick = () => acceptRescue(st.rescues.find((r) => r.id === x.dataset.res))));
     b.querySelectorAll('[data-skip]').forEach((x) => (x.onclick = () => { st.rescues = st.rescues.filter((r) => r.id !== x.dataset.skip); toast('Otro centro se encargará de él', 'info'); renderPanel(); save(); }));
     b.insertAdjacentHTML('beforeend', `<div class="sec">${icon('sparkle')} Cruces · ${(st.hybrids || []).length}/${Object.keys(HYBRIDS).length} descubiertos</div><p class="hint">No se compran: nacen al cruzar especies emparentadas en un mismo recinto (toca el recinto → Cruces). Son muy raros y atraen muchos visitantes.</p><div class="grid">${CROSSES.map((c) => { const H = HYBRIDS[c.child], got = (st.hybrids || []).includes(c.child); return `<div class="item ${got ? '' : 'locked'}" style="cursor:default"><span class="tilebox" style="background:${got ? BIOMES[H.biome].color : '#e8e4f0'}">${icon(got ? 'paw' : 'sparkle')}</span>${got ? H.label : '¿?'}<span class="d">${SPECIES[c.a || c.m].label}${c.m ? ' ♂' : ''} × ${SPECIES[c.b || c.f].label}${c.f ? ' ♀' : ''}</span>${got ? `<span class="d">${H.desc}</span>` : ''}</div>`; }).join('')}</div>`);
@@ -967,6 +1088,7 @@ function renderPanel() {
     const last = st.history[0];
     b.innerHTML = `<div class="card"><div class="stat"><span class="tile" style="background:#f5a524">${icon('star')}</span><span>Fama</span><div class="bar"><i style="transform:scaleX(${st.fame / 5});background:#f5a524"></i></div></div>
       <div class="stat"><span class="tile" style="background:#25c48f">${icon('users')}</span><span>Hoy</span><b>${st.today.visitors} visitantes · ${eur(st.today.income)}</b></div>
+      <button class="btn mint" id="fin" style="width:100%;margin-top:6px">${icon('chart')} Ver cuentas: ingresos y gastos</button>
       ${last ? `<div class="stat"><span class="tile" style="background:#2fa8e0">${icon('chart')}</span><span>Ayer</span><b>${eur(last.profit)} de beneficio</b></div>` : ''}
       <div class="stat"><span class="tile" style="background:#8b5cf6">${icon('paw')}</span><span>Animales</span><b>${st.animals.length} en ${st.enclosures.length} recintos</b></div></div>
       <div class="sec">Precio de la entrada</div><div class="row" style="align-items:center"><button class="btn sm alt" id="tm">−</button><b style="flex:1;text-align:center;font-size:20px">${st.ticket} €</b><button class="btn sm alt" id="tp">+</button></div>
@@ -977,6 +1099,7 @@ function renderPanel() {
       ${soundRow()}
       <div class="row" style="margin-top:16px"><a class="btn alt" href="../">${icon('home')} Menú de juegos</a><button class="btn red" id="reset">${icon('trash')} Empezar de nuevo</button></div>`;
     bindSound(b);
+    b.querySelector('#fin').onclick = financeModal;
     const landB = b.querySelector('#land'); if (landB) landB.onclick = expandLand;
     b.querySelector('#tm').onclick = () => { st.ticket = Math.max(0, st.ticket - 5); renderPanel(); };
     b.querySelector('#tp').onclick = () => { st.ticket = Math.min(60, st.ticket + 5); renderPanel(); };
@@ -1001,9 +1124,9 @@ function encCard(e) {
   box2.querySelector('#mvenc').onclick = () => armMove({ kind: 'enc', ref: e });
   box2.querySelectorAll('[data-mvi]').forEach((x) => (x.onclick = () => armMove({ kind: 'item', ref: e.items[+x.dataset.mvi], enc: e })));
   box2.querySelectorAll('[data-mva]').forEach((x) => (x.onclick = () => armMove({ kind: 'animal', ref: st.animals.find((a) => a.id === x.dataset.mva) })));
-  box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); st.money -= as.length * 5; putFood(e); closeModal(); toast('Has dejado comida en el recinto', 'good', 'food'); hud(); };
-  box2.querySelector('#demo').onclick = () => { closeModal(); confirm(`Se venderán los ${as.length} animales. ¿Derribar?`, () => { st.money += as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === e.n)].price * 0.4; st.animals = st.animals.filter((a) => a.enc !== e.id); st.enclosures = st.enclosures.filter((q) => q !== e); hud(); save(); }); };
-  box2.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.sell); st.money += Math.round(SPECIES[a.sp].price * (a.baby ? 0.4 : 0.6)); st.animals = st.animals.filter((q) => q !== a); closeModal(); encCard(e); hud(); save(); }));
+  box2.querySelector('#feed').onclick = () => { if (st.money < as.length * 5) return toast('No hay dinero suficiente', 'warn'); spend('extra', as.length * 5); putFood(e); closeModal(); toast('Has dejado comida en el recinto', 'good', 'food'); hud(); };
+  box2.querySelector('#demo').onclick = () => { closeModal(); confirm(`Se venderán los ${as.length} animales. ¿Derribar?`, () => { earn('ventas', as.reduce((t, a) => t + SPECIES[a.sp].price * 0.6, 0) + SIZES[Object.keys(SIZES).find((k) => SIZES[k].n === e.n)].price * 0.4); st.animals = st.animals.filter((a) => a.enc !== e.id); st.enclosures = st.enclosures.filter((q) => q !== e); hud(); save(); }); };
+  box2.querySelectorAll('[data-sell]').forEach((x) => (x.onclick = () => { const a = st.animals.find((q) => q.id === x.dataset.sell); earn('ventas', SPECIES[a.sp].price * (a.baby ? 0.4 : 0.6)); st.animals = st.animals.filter((q) => q !== a); closeModal(); encCard(e); hud(); save(); }));
 }
 // ---------- cruces ----------
 function crossPairs(e) {
@@ -1046,7 +1169,7 @@ function bldCard(b) {
     <div class="actions" style="flex-direction:column"><button class="btn" id="bmv">${icon('move')} Mover</button><button class="btn alt" id="bdel">${icon('trash')} Quitar (recuperas ${eur(B.price / 2)})</button><button class="btn alt" id="bx">Cerrar</button></div>`);
   bx.querySelector('#bx').onclick = closeModal;
   bx.querySelector('#bmv').onclick = () => armMove({ kind: 'bld', ref: b });
-  bx.querySelector('#bdel').onclick = () => { closeModal(); st.buildings = st.buildings.filter((q) => q !== b); st.money += Math.round(B.price / 2); hud(); save(); };
+  bx.querySelector('#bdel').onclick = () => { closeModal(); st.buildings = st.buildings.filter((q) => q !== b); earn('ventas', B.price / 2); hud(); save(); };
 }
 // Ver un objeto en 3D antes de comprarlo
 function enrichPreview(k, biome) {
@@ -1064,13 +1187,13 @@ function itemCard(key) {
     <div class="actions" style="flex-direction:column"><button class="btn" id="imv">${icon('move')} Mover</button><button class="btn alt" id="idel">${icon('trash')} Quitar</button><button class="btn alt" id="ix">Cerrar</button></div>`);
   bx.querySelector('#ix').onclick = closeModal;
   bx.querySelector('#imv').onclick = () => armMove({ kind: 'item', ref: it, enc: e });
-  bx.querySelector('#idel').onclick = () => { closeModal(); e.items.splice(+i, 1); st.money += Math.round(ENRICH[it.type].price / 2); hud(); save(); };
+  bx.querySelector('#idel').onclick = () => { closeModal(); e.items.splice(+i, 1); earn('ventas', ENRICH[it.type].price / 2); hud(); save(); };
 }
 function animalCard(aid) { const a = st.animals.find((q) => q.id === aid); if (!a) return; encCard(st.enclosures.find((e) => e.id === a.enc)); }
 
 document.querySelector('#speeds').innerHTML = [['pause', 0], ['play', 1], ['ff', 2], ['fff', 3]].map(([ic, s]) => `<button data-s="${s}">${icon(ic)}</button>`).join('');
 document.querySelector('#speeds').onclick = (e) => { const b = e.target.closest('button'); if (b) { st.speed = +b.dataset.s; hud(); } };
-document.querySelector('#tools').innerHTML = [['path', 'path', 'Caminos'], ['enc', 'fence', 'Recintos'], ['animal', 'heart', 'Rescates'], ['build', 'shop', 'Tiendas'], ['staff', 'users', 'Personal'], ['info', 'chart', 'Parque']].map(([t, ic, l]) => `<button data-t="${t}" style="position:relative">${icon(ic)}<span>${l}</span>${t === 'animal' ? '<i class="dot" hidden></i>' : ''}</button>`).join('');
+document.querySelector('#tools').innerHTML = [['path', 'path', 'Caminos'], ['enc', 'fence', 'Recintos'], ['animal', 'heart', 'Animales'], ['build', 'shop', 'Tiendas'], ['staff', 'users', 'Personal'], ['info', 'chart', 'Parque']].map(([t, ic, l]) => `<button data-t="${t}" style="position:relative">${icon(ic)}<span>${l}</span>${t === 'animal' ? '<i class="dot" hidden></i>' : ''}</button>`).join('');
 document.querySelector('#tools').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.t === 'path') { sheet.close(); setTool(view.tool === 'path' ? null : 'path'); hud(); } else openPanel(b.dataset.t); };
 $('#money .badge').innerHTML = icon('coin'); $('#clock .badge').innerHTML = icon('sun'); $('#fame .badge').innerHTML = icon('star'); $('#back a').innerHTML = icon('home');
 $('#camctl').innerHTML = `<button class="glass" data-r="1">${icon('rotate')}</button><button class="glass" data-r="-1" style="transform:scaleX(-1)">${icon('rotate')}</button>`;
@@ -1094,9 +1217,9 @@ window.addEventListener('pagehide', save);
 if (store.load(KEY)) offline(); else { newRescue(true); say('rufina', 'Bienvenida a tu santuario', '¡Hola! Soy Rufina. Llevo cuarenta años rescatando animales y ahora este santuario es tuyo. Aquí no se compran animales: se rescatan, se cuidan y se les da una segunda vida.', '¡Empezamos!', null, `<ul style="padding-left:18px;line-height:1.6"><li><b>Rescates</b>: llegan avisos de animales que necesitan hogar. Acógelos si tienes un recinto preparado.</li><li><b>Recintos</b>: cada especie necesita su hábitat, espacio y compañía.</li><li><b>Confianza</b>: los rescatados llegan asustados. Con buenos cuidados se sienten en casa.</li><li><b>Visitantes</b>: con caminos y tiendas, financian el santuario.</li><li>Sigue los <b>objetivos</b> de arriba para avanzar en la historia.</li></ul><p>Ya tienes tu primer aviso: dos animales de una granja abandonada.</p>`); }
 renderGoal();
 hud();
-$('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); });
+$('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); const c = ev.target.closest('[data-care]'); if (c) { const [aid, k] = c.dataset.care.split('|'); careAnimal(st.animals.find((q) => q.id === aid), k); animalCardTick(true); } });
 Sound.init('zoo');
-window.zoo = { eng, THREE, enterClose, rebuildEnclosures, organicModel, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {
