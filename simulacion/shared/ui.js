@@ -19,14 +19,16 @@ export function toast(msg, kind = 'info', ic = null) {
 let modalEl;
 // Tocar fuera de una ventana (o la tecla Esc) la cierra con su propio botón de cerrar/cancelar, si lo tiene
 const CLOSE_RX = /^(Cerrar|Cancelar|Quedármelo|Vale|Seguir|No)$/;
-function softClose() { if (!modalEl || modalEl.hidden) return; const b = [...modalEl.querySelectorAll('.modal-box button')].find((x) => CLOSE_RX.test(x.textContent.trim())); if (b) b.click(); }
+function softClose() { if (!modalEl || modalEl.hidden) return; const b = [...modalEl.querySelectorAll('.mbody button')].find((x) => CLOSE_RX.test(x.textContent.trim())); if (b) b.click(); }
 export function modal(html) {
   if (!modalEl) {
-    modalEl = document.createElement('div'); modalEl.className = 'modal'; modalEl.innerHTML = '<div class="modal-box"></div>'; document.body.appendChild(modalEl);
+    modalEl = document.createElement('div'); modalEl.className = 'modal'; modalEl.innerHTML = `<div class="modal-box"><button class="mclose" aria-label="Cerrar ventana">${icon('x')}</button><div class="mbody"></div></div>`; document.body.appendChild(modalEl);
+    // la ✕ siempre a la vista: usa el botón de cerrar de la ventana si lo tiene; si no, la cierra sin más
+    modalEl.querySelector('.mclose').onclick = () => { const b = [...modalEl.querySelectorAll('.mbody button')].find((x) => CLOSE_RX.test(x.textContent.trim())); if (b) b.click(); else closeModal(); };
     modalEl.addEventListener('click', (e) => { if (e.target === modalEl) softClose(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') softClose(); });
   }
-  modalEl.hidden = false; const box = modalEl.firstChild; box.innerHTML = html; box.scrollTop = 0; return box;
+  modalEl.hidden = false; const box = modalEl.querySelector('.mbody'); box.innerHTML = html; box.scrollTop = 0; return box;
 }
 export const modalOpen = () => modalEl && !modalEl.hidden;
 export function closeModal() { if (modalEl) modalEl.hidden = true; }

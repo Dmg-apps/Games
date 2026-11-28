@@ -178,8 +178,8 @@ body.sheet-open .goalpill { display: none; }
 #tools .dot { position: absolute; top: 4px; right: 18%; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 2px #fff; }
 /* Barra de herramientas pegada al borde de abajo (como las apps): en el iPhone no queda franja debajo */
 @media (orientation: portrait), (min-height: 561px) {
-  .toolbar { padding-left: 0; padding-right: 0; padding-bottom: 0; bottom: calc(-1 * var(--band, 0px)); }
-  .toolbar .tools { border-radius: 24px 24px 0 0; padding: 6px calc(var(--safe-r) + 8px) calc(var(--safe-b) * 0.3 + var(--band, 0px) * 0.45 + 4px) calc(var(--safe-l) + 8px); background: var(--card-solid); border-bottom: 0; }
+  .toolbar { padding-left: 0; padding-right: 0; padding-bottom: 0; bottom: 0; }
+  .toolbar .tools { border-radius: 24px 24px 0 0; padding: 6px calc(var(--safe-r) + 8px) max(6px, calc(var(--safe-b) * 0.45)) calc(var(--safe-l) + 8px); background: var(--card-solid); border-bottom: 0; }
 }
 /* Reloj: texto corto que no se corta */
 #clock .t span { white-space: nowrap; font-size: 11.5px; }
@@ -201,3 +201,11 @@ body.sheet-open .goalpill { display: none; }
 .fchart i { display: block; width: 100%; border-radius: 6px 6px 2px 2px; }
 .fchart span { font-size: 10px; color: var(--ink-2, #5a5f78); margin-top: 2px; }
 .chip.on { background: var(--ink, #1f2540); color: #fff; }
+
+/* Ventanas: cabecera con ✕ siempre visible y botones de abajo fijos (no hay que bajar para cerrar) */
+.modal-box { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.modal-box .mbody { overflow-y: auto; overscroll-behavior: contain; padding: 22px 20px 20px; min-height: 0; flex: 1 1 auto; }
+.modal-box .mclose { position: absolute; top: 12px; right: 12px; z-index: 3; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; color: var(--ink-2); background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 0 1px var(--line), 0 2px 8px rgba(0, 0, 0, 0.08); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: transform 140ms var(--ease-out); }
+.modal-box .mclose:active { transform: scale(0.9); }
+.mbody > h2:first-child, .mbody > .host:first-child { padding-right: 40px; }
+.mbody > .actions:last-child { position: sticky; bottom: -20px; z-index: 2; margin: 14px -20px -20px; padding: 14px 20px calc(20px + var(--safe-b) * 0); background: linear-gradient(rgba(255, 252, 247, 0), var(--card-solid) 28%); }
