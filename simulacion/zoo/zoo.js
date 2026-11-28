@@ -5,6 +5,7 @@ Look.setStyle('cubito'); // vegetación y rocas en estilo cubito (diseño propio
 import { buildingMesh as propMesh, People } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
 import { cubeModel, cubeScale } from './cube3d.js';
+import * as World from './world3d.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
@@ -464,9 +465,9 @@ const S3 = eng.scene;
 // Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
 setAnimalDetail(eng.hq ? 0.75 : 0.5);
 Look.setupLook(eng, { cx: N / 2, cz: N / 2, size: N * 0.78, height: 30, fog: { color: '#d4eaf4', near: 45, far: 140 } });
-const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: Look.grassTex(N / 3), color: '#e2ecc8' }));
+const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: World.lawnTex(N) }));
 parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); parkGround.receiveShadow = true; S3.add(parkGround);
-S3.add(Look.horizonGround(N / 2, N / 2, '#9bb27a'));
+{ const hg = new THREE.Mesh(new THREE.CircleGeometry(140, 48), new THREE.MeshLambertMaterial({ map: World.meadowTex(140 / 4) })); hg.rotation.x = -Math.PI / 2; hg.position.set(N / 2, -0.02, N / 2); hg.receiveShadow = true; S3.add(hg); }
 {
   // seto alrededor del parque (con hueco en la entrada) y bosque de fondo
   const R = Look.seeded(7); const hedge = [];
@@ -477,12 +478,7 @@ S3.add(Look.horizonGround(N / 2, N / 2, '#9bb27a'));
   const field = []; for (let i = 0; i < 260 * Look.detail(eng); i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
 }
 // entrada
-const gate = new THREE.Group(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5);
-for (const sx of [-0.8, 0.8]) { const p = box(0.24, 2.1, 0.24, '#7a5032', 0.04); p.position.set(sx, 1.05, 0); gate.add(p); const cap = box(0.32, 0.12, 0.32, '#5a3a22', 0.03); cap.position.set(sx, 2.15, 0); gate.add(cap); }
-const arch = box(2.1, 0.42, 0.3, '#2e7d4f', 0.06); arch.position.y = 2.2; gate.add(arch);
-const archSign = box(1.5, 0.26, 0.04, '#f4e6c8', 0.03); archSign.position.set(0, 2.2, 0.16); gate.add(archSign);
-for (const sx of [-1.3, 1.3]) { const b = Look.bush(0.35, sx > 0 ? 2 : 3, '#2c6a2e', '#68a84a'); b.position.set(sx, 0, 0.2); gate.add(b); }
-Look.shadows(gate, true, false); S3.add(gate);
+const gate = World.gate(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5); S3.add(gate);
 const groups = { tufts: new THREE.Group(), paths: new THREE.Group(), enc: new THREE.Group(), bld: new THREE.Group(), animals: new THREE.Group(), people: new THREE.Group(), litter: new THREE.Group(), ghost: new THREE.Group() };
 Object.values(groups).forEach((g) => S3.add(g));
 const ov = document.createElement('canvas'); ov.className = 'overlay2d'; canvas.after(ov); const octx = ov.getContext('2d');
@@ -491,9 +487,7 @@ let sig = {};
 const pathMat = new THREE.MeshLambertMaterial({ map: Look.pavingTex(1) });
 function rebuildPaths() {
   const g = groups.paths; g.clear(); const n = st.paths.length; if (!n) return;
-  const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.05, 1), pathMat, n); inst.receiveShadow = true; const m = new THREE.Matrix4();
-  st.paths.forEach((p, i) => { const [x, z] = p.split(',').map(Number); m.makeTranslation(x + 0.5, 0.03, z + 0.5); inst.setMatrixAt(i, m); });
-  g.add(inst);
+  const P = pathSet(); g.add(World.pathMesh(st.paths.map((p) => p.split(',').map(Number)), (x, z) => P.has(pk(x, z)), (x, z) => x === ENTRANCE.x && z > ENTRANCE.z));
 }
 const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico: 'pino', humedal: 'abedul', bosque: 'pino' };
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
@@ -588,13 +582,7 @@ function rebuildEnclosures() {
   const g = groups.enc; g.clear(); eng.shadowsDirty?.();
   for (const e of st.enclosures) {
     const eg = new THREE.Group(); eg.userData.enc = e.id; g.add(eg);
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(e.n - 0.05, 0.05, e.n - 0.05), [mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), new THREE.MeshLambertMaterial({ map: groundTex(e.biome) }), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color), mat(BIOMES[e.biome].color)]); ground.position.set(e.x + e.n / 2, 0.03, e.z + e.n / 2); ground.receiveShadow = true; eg.add(ground);
-    const rail = mat('#8a6a42');
-    for (const [x, z, w, d] of [[e.x + e.n / 2, e.z, e.n, 0.06], [e.x + e.n / 2, e.z + e.n, e.n, 0.06], [e.x, e.z + e.n / 2, 0.06, e.n], [e.x + e.n, e.z + e.n / 2, 0.06, e.n]]) {
-      for (const y of [0.35, 0.65]) { const r = new THREE.Mesh(new THREE.BoxGeometry(w, 0.06, d), rail); r.position.set(x, y, z); eg.add(r); }
-    }
-    for (let i = 0; i <= e.n; i++) for (const [x, z] of [[e.x + i, e.z], [e.x + i, e.z + e.n], [e.x, e.z + i], [e.x + e.n, e.z + i]]) { const p = new THREE.Mesh(postGeo, postMat); p.position.set(x, 0.42, z); p.castShadow = true; eg.add(p); }
-    eg.children.forEach((c) => { if (c.geometry?.type === 'BoxGeometry' && c !== ground) c.castShadow = true; });
+    eg.add(World.enclosureBase(e));
     e.items.forEach((it, i) => { const m = enrichMesh(it.type, e.biome, it.x * 7 + it.z); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); m.userData.item = e.id + ':' + i; eg.add(m); });
     const pond = pondMesh(e); if (pond) eg.add(pond);
   }
@@ -678,8 +666,9 @@ function syncExtras() {
 const waterT = Look.waterTex();
 function rebuildTufts() {
   const g = groups.tufts; g.clear(); const P = pathSet(), pts = [];
-  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < (eng.hq ? 2 + (k % 3) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); }
-  g.add(Look.grassTufts(pts));
+  const fl = [];
+  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < (eng.hq ? 1 + (k % 2) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); if (k === 3 || (eng.hq && k === 5)) for (let i = 0; i < 3; i++) fl.push([x + 0.2 + ((k * 7 + i * 41) % 61) / 100, z + 0.2 + ((k * 11 + i * 23) % 59) / 100]); }
+  g.add(World.lawnDetail(pts, fl));
 }
 function sync(t) {
   syncExtras();
