@@ -59,6 +59,7 @@ export function instance(gltf, { height = null, length = null, yaw = 0 } = {}) {
       cur = a; curName = key;
     },
     update(dt) { if (mixer) mixer.update(dt); },
+    get anim() { return curName; },
   };
 }
 

@@ -220,9 +220,9 @@ function animalsTick(dt) {
     if (!arrived) {
       // paso natural de cada especie (en casillas por segundo real), igual a cualquier velocidad de juego: no corren como locos al acelerar
       const S = SPECIES[a.sp]; const real = dt / Math.max(1, SPEEDS[st.speed] || 1); const far = Math.hypot(a.tx - a.x, a.tz - a.z) > 3.5 && a.state === 'wander';
-      const sp = Math.min(0.6, Math.max(0.12, 0.55 * (S.len || 0.8))) * (far ? 1.7 : 1) * (a.baby ? 0.85 : 1) * real * 60 / 60;
+      const sp = Math.min(0.6, Math.max(0.2, 0.55 * (S.len || 0.8))) * (far ? 1.6 : 1) * (a.baby ? 0.85 : 1) * real;
       const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
-      if (d <= sp) { a.x = a.tx; a.z = a.tz; } else { a.x += dx / d * sp; a.z += dz / d * sp; a.dir = Math.atan2(dx, dz); }
+      if (d <= sp) { a.x = a.tx; a.z = a.tz; a.restUntil = st.time + (a.restMins ?? 0) * (a.state === 'sleep' || a.state === 'eat' ? 1 : Math.max(1, SPEEDS[st.speed] || 1)); } else { a.x += dx / d * sp; a.z += dz / d * sp; if (d > 0.08) a.dir = Math.atan2(dx, dz); }
     }
   }
 }
@@ -316,9 +316,12 @@ function decide(a, e) {
     for (let k = 0; k < 4; k++) { const q = freeSpot(a, e, p.x, p.z); p = inside(q.x, q.z); if (!blocked(p.x, p.z)) break; }
     // si sigue chocando (p. ej. una roca en una esquina), busca otro sitio libre del recinto
     for (let k = 0; k < 12 && blocked(p.x, p.z); k++) p = inside(e.x + rnd(mg, e.n - mg), e.z + rnd(mg, e.n - mg));
-    a.tx = p.x; a.tz = p.z; a.state = state; a.restUntil = st.time + mins; };
+    // pasos de menos de medio metro no merecen echar a andar: se queda donde está (evita arrancar y parar a tirones)
+    if (Math.hypot(p.x - a.x, p.z - a.z) < 0.3 && !['eat', 'drink', 'hide', 'follow'].includes(state)) { p = { x: a.x, z: a.z }; }
+    // el descanso empieza al llegar (no al decidir): así se paran un rato en vez de encadenar paseos sin fin
+    a.tx = p.x; a.tz = p.z; a.state = state; a.restMins = state === 'wander' ? rnd(4, 12) : mins; a.restUntil = st.time + a.restMins; };
   if (a.sick && Math.random() < 0.7) return go(a.x, a.z, 'sick', rnd(20, 40));
-  const hideNow = (mins) => { const h = hideSpot(a, e); if (h.den) { a.tx = h.x; a.tz = h.z; a.state = 'hide'; a.den = h.den; a.restUntil = st.time + mins; } else { go(h.x, h.z, 'hide', mins); a.crouch = true; } };
+  const hideNow = (mins) => { const h = hideSpot(a, e); if (h.den) { a.tx = h.x; a.tz = h.z; a.state = 'hide'; a.den = h.den; a.restMins = mins; a.restUntil = st.time + mins; } else { go(h.x, h.z, 'hide', mins); a.crouch = true; } };
   const tr = a.trust ?? 100;
   const calm = a.calmUntil > st.time;
   if (tr < 40 && !calm && Math.random() < 0.75 - tr / 100) return hideNow(rnd(25, 50) * (1 - tr / 80));
@@ -337,7 +340,7 @@ function decide(a, e) {
   if (a.trait === 'grunon' && r < 0.4) { const near = animalsIn(e).find((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 1.2); if (near) return go(a.x + (a.x - near.x) * 2, a.z + (a.z - near.z) * 2, 'wander', 0); }
   if (pond && r < 0.12) return go(pond.x + 0.5 + rnd(-0.6, 0.6), pond.z + 0.5 + rnd(-0.6, 0.6), 'drink', 12);
   if (toy && r < 0.2) return go(toy.x + 0.5, toy.z + 0.5, 'play', 10);
-  if (!CARNIVORES.includes(a.sp) && r < 0.45) return go(a.x + rnd(-0.5, 0.5), a.z + rnd(-0.5, 0.5), 'graze', rnd(8, 20));
+  if (!CARNIVORES.includes(a.sp) && r < 0.45) return Math.random() < 0.6 ? go(a.x, a.z, 'graze', rnd(10, 25)) : go(a.x + rnd(-1.4, 1.4), a.z + rnd(-1.4, 1.4), 'graze', rnd(10, 25));
   if (r < 0.65) return go(a.x, a.z, 'rest', rnd(6, 20));
   go(e.x + rnd(0.6, e.n - 0.6), e.z + rnd(0.6, e.n - 0.6), 'wander', 0);
 }
@@ -758,7 +761,7 @@ function syncAnimals(t) {
     if (m.glb && (m.noWalk || m.flier)) { // sin animación de andar (balanceo propio) o águila (vuela al moverse)
       const pv = m.g.children[0]; const v = m.vel || 0; m.walking = m.walking ? v > 0.04 : v > 0.12;
       if (m.flier) { m.play(m.walking ? ['Flying'] : ['Idle'], { speed: m.walking ? 1.2 : 1 }); pv.position.y = m.walking ? 0.35 + Math.sin(t * 3 + a.x) * 0.05 : 0; }
-      else { m.play(['Idle', 'ArmatureAction.002', 'ArmatureAction'], { speed: 1 }); pv.position.y = m.walking ? Math.abs(Math.sin(t * 9 + a.x)) * 0.025 * (S.len || 1) : 0; pv.rotation.z = m.walking ? Math.sin(t * 9 + a.x) * 0.06 : 0; pv.rotation.x = headDown ? 0.08 : 0; }
+      else { m.play(['Idle', 'ArmatureAction.002', 'ArmatureAction'], { speed: 1 }); pv.position.y = m.walking ? Math.abs(Math.sin(t * 5.5 + a.x)) * 0.012 * (S.len || 1) : 0; pv.rotation.z = 0; pv.rotation.x = m.walking ? Math.sin(t * 11 + a.x) * 0.025 : 0; if (!m.walking) pv.rotation.x = headDown ? 0.08 : 0; }
       m.update(rdt); continue;
     }
     if (m.glb) { // modelo animado: elige la animación según lo que hace y a qué velocidad va de verdad
@@ -1441,7 +1444,7 @@ renderGoal();
 hud();
 $('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); const c = ev.target.closest('[data-care]'); if (c) { const [aid, k] = c.dataset.care.split('|'); careAnimal(st.animals.find((q) => q.id === aid), k); animalCardTick(true); } });
 Sound.init('zoo');
-window.zoo = { eng, THREE, parkGround, clashNear, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, parkGround, animalMeshes, clashNear, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {
