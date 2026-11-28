@@ -61,6 +61,7 @@ const INC = { entradas: 'Entradas', tiendas: 'Tiendas', donativos: 'Donativos de
 const EXP = { sueldos: 'Sueldos del personal', comida: 'Comida diaria de animales', extra: 'Comida extra', cuidados: 'Premios y juguetes (confianza)', vet: 'Veterinario', obras: 'Obras: recintos, caminos y objetos', adopciones: 'Adopciones', terreno: 'Terreno' };
 function earn(cat, n) { n = Math.round(n); if (!n) return; st.money += n; st.today.income += n; (st.today.inc ||= {})[cat] = (st.today.inc[cat] || 0) + n; }
 function spend(cat, n) { n = Math.round(n); if (!n) return; st.money -= n; st.today.spent += n; (st.today.exp ||= {})[cat] = (st.today.exp[cat] || 0) + n; }
+const spLabel = (a) => { const S = SPECIES[a.sp] || {}; return (a.sex === 'm' && S.m) || (a.sex === 'f' && S.f) || S.label; };
 const traitLabel = (a) => TRAITS[a.trait]?.[a.sex] || '';
 const LOCAL_SAVED_AT = HAD_LOCAL ? st.lastSaved : 0;
 // Copia en la nube (cuenta común a toda la app)
@@ -853,6 +854,7 @@ function rebuildTufts() {
 }
 const flock = QM.birds(S3, N / 2, N / 2, N * 0.9);
 QM.loaded.then(() => { sig.tufts = null; rebuildEnclosures(); rebuildBuildings(); });
+const NIGHT_SUN = new THREE.Color('#9fb0ff'), NIGHT_SKY = new THREE.Color('#b8c8ff');
 function sync(t) {
   syncExtras(); flock.update(t);
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
@@ -864,9 +866,11 @@ function sync(t) {
   syncAnimals(t); syncPeople(t);
   // luz del día
   const h = hourOf(st.time); const night = h < 6 ? 1 : h < 7.5 ? (7.5 - h) / 1.5 : h > 21 ? 1 : h > 19.5 ? (h - 19.5) / 1.5 : 0;
-  eng.sun.intensity = 1.6 * (1 - night * 0.8); eng.hemi.intensity = 1.1 - night * 0.6;
-  document.body.style.background = night > 0.5 ? 'linear-gradient(#1a2148,#3b3f72)' : 'linear-gradient(#8fcdf0,#d8eef8)';
-  if (S3.fog) S3.fog.color.set(night > 0.5 ? '#3b3f72' : '#d4eaf4');
+  // noche suave, de luna: se nota que es de noche pero todo se sigue viendo bien
+  eng.sun.intensity = 1.6 * (1 - night * 0.3); eng.hemi.intensity = 1.1 + night * 0.05;
+  eng.sun.color.set('#fff2dd').lerp(NIGHT_SUN, night * 0.7); eng.hemi.color.set('#eaf4ff').lerp(NIGHT_SKY, night * 0.6);
+  document.body.style.background = night > 0.5 ? 'linear-gradient(#41508a,#7c8bc0)' : 'linear-gradient(#8fcdf0,#d8eef8)';
+  if (S3.fog) S3.fog.color.set(night > 0.5 ? '#7c8bc0' : '#d4eaf4');
   if (night !== sig.night) { sig.night = night; groups.bld.traverse((o) => { if (o.userData.lamp) o.userData.lamp.material.emissiveIntensity = 0.4 + night * 1.6; }); }
 }
 // capa 2D: avisos sobre los recintos
@@ -1084,7 +1088,7 @@ function animalCardTick(force = false) {
   }
   const a = followId && st.animals.find((q) => q.id === followId); if (!a) { el.hidden = true; return; }
   const S = SPECIES[a.sp]; const kids = st.animals.filter((k) => k.mother === a.id && k.baby).length; const mom = a.mother && st.animals.find((m) => m.id === a.mother);
-  el.innerHTML = `<div class="row" style="align-items:center">${zimg(zooPhotos([a.sp])[a.sp], S.biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'} · ${ageLabel(a)}, ${Math.round(ageOf(a))} días</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
+  el.innerHTML = `<div class="row" style="align-items:center">${zimg(zooPhotos([a.sp])[a.sp], S.biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${spLabel(a)} · ${a.sex === 'm' ? '♂' : '♀'} · ${ageLabel(a)}, ${Math.round(ageOf(a))} días</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
     <div class="hint" style="color:${animalStatus(a)[1]};font-weight:800">${animalStatus(a)[0]}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
     ${a.sick ? `<div class="sickrow">${icon('alert')} <div style="flex:1;min-width:0"><b>Se encuentra mal: ${ILLNESS[a.sick.kind].toLowerCase()}</b><div class="hint">${sickWhy(a).length ? 'Por qué: ' + sickWhy(a).join(', ') + '. ' : ''}${st.staff.vet ? 'El veterinario lo atenderá pronto.' : ''}</div></div><button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
@@ -1133,7 +1137,7 @@ function animalsOverview() {
   return `<div class="chips" id="aflt"><button class="chip ${flt === 'need' ? 'on' : ''}" data-f="need">Necesitan algo</button><button class="chip ${flt === 'hide' ? 'on' : ''}" data-f="hide">Escondidos · ${hid}</button><button class="chip ${flt === 'all' ? 'on' : ''}" data-f="all">Todos · ${st.animals.length}</button></div>
     <p class="hint">${sick ? `${sick} enfermo${sick > 1 ? 's' : ''} · ` : ''}${hungry ? `${hungry} con hambre · ` : ''}${shy} desconfiado${shy === 1 ? '' : 's'} (se esconden mucho). Los cuidados suben la confianza; con un 80 % tendrán padrinos que pagan ${eur(SPONSOR)} al día.</p>
     <div class="list">${as.map((a) => { const [txt, col] = animalStatus(a); const e = st.enclosures.find((q) => q.id === a.enc); const tr = a.trust ?? 100;
-      return `<div class="li aov">${zimg(ph[a.sp], SPECIES[a.sp].biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <span class="hint">${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''}${e ? ' · ' + BIOMES[e.biome].label.toLowerCase() : ''}</span>
+      return `<div class="li aov">${zimg(ph[a.sp], SPECIES[a.sp].biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <span class="hint">${spLabel(a)}${a.baby ? ' (cría)' : ''}${e ? ' · ' + BIOMES[e.biome].label.toLowerCase() : ''}</span>
         <div class="hint" style="color:${col};font-weight:800">${txt}</div>
         <div class="mrow"><span>Confianza</span>${minibar(tr, tr < 40 ? '#f5a524' : '#8b5cf6')}<b>${Math.round(tr)}%</b><span>Feliz</span>${minibar(a.happy, a.happy < 35 ? '#e5484d' : '#25c48f')}<b>${Math.round(a.happy)}%</b><span>Comida</span>${minibar(a.hunger, a.hunger < 30 ? '#e5484d' : '#f08a3c')}<b>${Math.round(a.hunger)}%</b></div>
         <div class="carerow">${a.sick ? `<button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button>` : ''}${careButtons(a, true)}<button class="btn sm alt" data-see="${a.id}" aria-label="Ver">${icon('eye')}</button></div></div></div>`; }).join('') || `<p class="hint">${st.animals.length ? '¡Todos están bien! Nadie necesita nada ahora mismo.' : 'Aún no tienes animales. Acoge un rescate más abajo.'}</p>`}</div>`;
@@ -1322,7 +1326,7 @@ function encCard(e) {
   const eph = zooPhotos(st.animals.filter((a) => a.enc === e.id).map((a) => a.sp));
   const as = animalsIn(e); const happy = Math.round(encHappy(e));
   const box2 = modal(`<h2>Recinto de ${BIOMES[e.biome].label.toLowerCase()}</h2><p class="hint">${e.n}×${e.n} · ${e.items.length} objetos · ánimo medio ${happy}%</p>
-    <div class="list">${as.map((a) => `<div class="li">${zimg(eph[a.sp], SPECIES[a.sp].biome, a.baby ? 46 : 58)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${SPECIES[a.sp].label}${a.baby ? ' (cría)' : ''} · ${a.sex === 'm' ? '♂' : '♀'}</span> <span class="trait">${traitLabel(a)}</span>
+    <div class="list">${as.map((a) => `<div class="li">${zimg(eph[a.sp], SPECIES[a.sp].biome, a.baby ? 46 : 58)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${spLabel(a)}${a.baby ? ' (cría)' : ''} · ${a.sex === 'm' ? '♂' : '♀'}</span> <span class="trait">${traitLabel(a)}</span>
       <div class="hint">Hambre ${Math.round(a.hunger)}% · Feliz ${Math.round(a.happy)}%${e.biome !== SPECIES[a.sp].biome ? ' · hábitat equivocado' : ''}</div>${a.sick ? `<div class="sickrow" style="margin-top:4px">${icon('alert')}<span style="flex:1">${ILLNESS[a.sick.kind]}</span><button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button></div>` : ''}</div><button class="btn sm alt" data-mva="${a.id}" aria-label="Mover">${icon('move')}</button><button class="btn sm alt" data-sell="${a.id}">Vender</button></div>`).join('') || '<p class="hint">Aún no hay animales. Ve a Animales y toca este recinto.</p>'}</div>
     ${crossSection(e)}
     <div class="actions" style="flex-direction:column"><button class="btn" id="seeclose">${icon('eye')} Ver de cerca</button><button class="btn coral" id="feed" ${as.length ? '' : 'disabled'}>${icon('food')} Dar de comer (${as.length * 5} €)</button>${e.items.length ? `<div class="chips" style="justify-content:center">${e.items.map((it, i) => `<button class="chip" data-mvi="${i}">${icon('move')} ${ENRICH[it.type].label}</button>`).join('')}</div>` : ''}<button class="btn alt" id="mvenc">${icon('move')} Mover recinto</button><p class="hint" style="text-align:center;margin:0">También puedes mantener pulsado cualquier recinto, objeto, tienda o animal y arrastrarlo.</p><button class="btn alt" id="demo">${icon('trash')} Derribar recinto</button><button class="btn alt" id="close">Cerrar</button></div>`);

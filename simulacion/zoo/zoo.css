@@ -200,7 +200,7 @@ body.zoo .closecard .carerow .btn .ic { font-size: 15px; }
 @media (orientation: portrait), (min-height: 561px) {
   body.zoo .toolbar .tools { background: #fbfaf4; backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
-body.zoo .mbody > .actions:last-child { background: linear-gradient(rgba(251, 250, 244, 0), #fbfaf4 28%); }
+body.zoo .mbody > .actions:last-child:not([style*="column"]) { background: linear-gradient(rgba(251, 250, 244, 0), #fbfaf4 28%); }
 /* equipo e historial */
 body.zoo .staffcard { padding: 12px; }
 body.zoo .sface { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 900; font-size: 18px; flex: none; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12); }
