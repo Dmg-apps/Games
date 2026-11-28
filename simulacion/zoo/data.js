@@ -150,3 +150,10 @@ export const RESCUES = {
   huerfano: { title: 'Cría huérfana', ic: 'heart', trust: 25, baby: true, fame: 0.15, species: ['jirafa', 'elefante', 'cebra', 'canguro', 'osopolar', 'panda', 'leon', 'lobo', 'ciervo'], story: 'Cría huérfana: su madre no pudo cuidarla. Necesita compañía y alguien pendiente de ella.' },
   centro: { title: 'Otro centro sin sitio', ic: 'users', trust: 50, fame: 0.05, species: ['cebra', 'jirafa', 'canguro', 'pinguino', 'llama', 'alpaca', 'lobo', 'zorro', 'vaca'], story: 'Otro centro de rescate se ha quedado sin sitio y busca un hogar tranquilo para él.' },
 };
+
+// Depredadores: tamaño máximo de presa (espacio que ocupa). Los grandes también cazan carnívoros más pequeños.
+export const PREDATOR = { leon: 6, tigre: 6, ligre: 6, tigon: 6, osopolar: 7, osopardo: 7, pizzly: 7, lobo: 5, zorro: 2 };
+// Clima de cada hábitat: no pueden ir pegados si son muy distintos
+export const CLIMATE = { artico: 0, bosque: 1, granja: 2, humedal: 2, selva: 3, sabana: 3 };
+export const STAFF_NAMES = ['Lucía', 'Mateo', 'Nora', 'Iker', 'Alba', 'Hugo', 'Sara', 'Leo', 'Inés', 'Bruno', 'Vera', 'Marco', 'Ada', 'Pau', 'Noa', 'Teo', 'Lía', 'Gael', 'Irene', 'Dani', 'Olga', 'Rubén', 'Celia', 'Omar'];
+export const ROLES = { keeper: { label: 'Cuidado de animales', short: 'Cuidados', ic: 'paw', color: '#2aa876' }, cleaner: { label: 'Limpieza', short: 'Limpieza', ic: 'broom', color: '#3a9bd6' }, vet: { label: 'Veterinaria', short: 'Veterinaria', ic: 'heart', color: '#ee6f47' } };

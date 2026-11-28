@@ -191,3 +191,28 @@ export function gate() {
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }
+
+// Hierba alta de las zonas salvajes (más alta y algo más amarilla que la del césped)
+export function tallGrass(points) {
+  const R = seeded(points.length * 3 + 1), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  const b = (h, x, z, rz) => new THREE.BoxGeometry(0.04, h, 0.04).translate(0, h / 2, 0).rotateZ(rz).translate(x, 0, z);
+  const geo = mergeBoxes([b(0.32, 0, 0, 0.1), b(0.26, 0.06, 0.03, -0.2), b(0.22, -0.05, 0.04, 0.25), b(0.28, 0.02, -0.06, -0.05), b(0.2, -0.04, -0.03, 0.3)]);
+  const g = new THREE.Group();
+  [['#6c9a3e', 0], ['#94a84a', 1]].forEach(([c, v]) => {
+    const ms = points.filter((_, i) => i % 2 === v).map(([x, z]) => { q.setFromAxisAngle(up, R() * 6.3); const s = 0.8 + R() * 0.5; return m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(s, s, s)).clone(); });
+    if (ms.length) { const t = inst(geo, lam(c), ms); t.castShadow = false; g.add(t); }
+  });
+  return g;
+}
+// Bandada de pájaros que da vueltas sobre el parque (muy barata: 2 cajitas por pájaro)
+export function birds(cx, cz, n = 6) {
+  const g = new THREE.Group(), list = [], body = lam('#3a3a44'), wing = lam('#4a4a56');
+  for (let i = 0; i < n; i++) {
+    const b = new THREE.Group(); const bd = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.22), body); b.add(bd);
+    const wl = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.015, 0.1).translate(-0.13, 0, 0), wing), wr = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.015, 0.1).translate(0.13, 0, 0), wing);
+    b.add(wl, wr); g.add(b); list.push({ b, wl, wr, r: 6 + (i % 3) * 1.4 + Math.random(), h: 6 + Math.random() * 1.5, ph: i * 0.55, sp: 0.16 + Math.random() * 0.03 });
+  }
+  return { group: g, update(t) {
+    for (const o of list) { const a = t * o.sp + o.ph; o.b.position.set(cx + Math.cos(a) * o.r, o.h + Math.sin(t * 0.7 + o.ph) * 0.3, cz + Math.sin(a) * o.r); o.b.rotation.y = -a; const f = Math.sin(t * 9 + o.ph * 3) * 0.6; o.wl.rotation.z = f; o.wr.rotation.z = -f; }
+  } };
+}

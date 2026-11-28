@@ -10,7 +10,7 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, SPONSOR, CARE, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES } from './data.js';
+import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, SPONSOR, CARE, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES, PREDATOR, CLIMATE, STAFF_NAMES, ROLES } from './data.js';
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -35,7 +35,16 @@ let st = store.load(KEY) || newPark();
 if (st.size) { N = st.size; ENTRANCE = { x: Math.floor(N / 2), z: N - 1 }; }
 st.rescues ||= []; st.rescued ||= 0; st.chapter ||= 0; st.births ||= 0;
 st.staff.vet ??= 0;
-for (const a of st.animals) a.trait ||= pick(Object.keys(TRAITS));
+// Equipo con nombre: cada persona tiene ánimo, constancia y sueldo. st.staff guarda solo cuántos hay de cada puesto.
+function newWorker(role) { const used = new Set((st.team || []).map((k) => k.name)); const free = STAFF_NAMES.filter((n) => !used.has(n)); return { id: 'w' + Math.random().toString(36).slice(2, 8), role, name: free.length ? pick(free) : pick(STAFF_NAMES) + ' ' + ((st.team || []).length + 1), mood: Math.round(rnd(62, 78)), skill: Math.round(rnd(55, 90)), wage: WAGES[role], since: dayOf(st.time) + 1, slips: 0, warnedAt: -1e9, praisedDay: -1, today: { ok: 0, miss: 0 } }; }
+function syncStaff() { st.staff = { keeper: 0, cleaner: 0, vet: 0 }; for (const k of st.team) st.staff[k.role]++; }
+if (!st.team) { st.team = []; for (const r of ['keeper', 'cleaner', 'vet']) for (let i = 0; i < (st.staff[r] || 0); i++) st.team.push(newWorker(r)); }
+syncStaff();
+const teamOf = (r) => st.team.filter((k) => k.role === r);
+const moodWord = (m) => (m >= 75 ? 'Feliz' : m >= 55 ? 'A gusto' : m >= 35 ? 'Con poco ánimo' : 'Al límite');
+// ¿Hace bien su trabajo esta vez? Depende de su constancia, su ánimo y si va desbordado
+function slips(k, load = 1) { const warned = st.time - k.warnedAt < 2 * 1440 ? 0.08 : 0; return Math.random() < Math.max(0.01, (100 - k.skill) / 400 + (k.mood < 40 ? 0.22 : k.mood < 55 ? 0.08 : 0) + (load > 1 ? 0.15 : 0) - warned); }
+for (const a of st.animals) { a.trait ||= pick(Object.keys(TRAITS)); if (a.age0 == null) a.age0 = a.baby ? 0 : Math.round(rnd(4, 16)); }
 // ---------- cuentas: todo el dinero que entra y sale, por categorías ----------
 const INC = { entradas: 'Entradas', tiendas: 'Tiendas', donativos: 'Donativos de visitantes', padrinos: 'Padrinos de animales', premios: 'Premios de capítulos', ventas: 'Devoluciones (quitar cosas)', fuera: 'Mientras no estabas' };
 const EXP = { sueldos: 'Sueldos del personal', comida: 'Comida diaria de animales', extra: 'Comida extra', cuidados: 'Premios y juguetes (confianza)', vet: 'Veterinario', obras: 'Obras: recintos, caminos y objetos', adopciones: 'Adopciones', terreno: 'Terreno' };
@@ -58,6 +67,9 @@ function occupied(x, z) { return pathSet().has(pk(x, z)) || encAt(x, z) || build
 const inGrid = (x, z) => x >= 0 && z >= 0 && x < N && z < N;
 function nextToPath(x, z) { const P = pathSet(); return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => P.has(pk(x + dx, z + dz))); }
 function encTouchesPath(e) { const P = pathSet(); for (let i = -1; i <= e.n; i++) for (const [x, z] of [[e.x + i, e.z - 1], [e.x + i, e.z + e.n], [e.x - 1, e.z + i], [e.x + e.n, e.z + i]]) if (P.has(pk(x, z))) return true; return false; }
+// Hábitats incompatibles (frío junto a cálido, seco junto a húmedo) no pueden ir pegados
+function biomeClash(a, b) { if (a === b) return null; if (Math.abs(CLIMATE[a] - CLIMATE[b]) >= 2) return 'uno es frío y el otro cálido'; if ((a === 'sabana' && b === 'humedal') || (a === 'humedal' && b === 'sabana')) return 'uno es seco y el otro húmedo'; return null; }
+function clashNear(x, z, n, biome, skip) { for (const e of st.enclosures) { if (e === skip) continue; const why = biomeClash(biome, e.biome); if (why && x <= e.x + e.n && e.x <= x + n && z <= e.z + e.n && e.z <= z + n) return `${BIOMES[biome].label} y ${BIOMES[e.biome].label.toLowerCase()} no pueden ir pegados: ${why}. Deja al menos una casilla entre ellos.`; } return null; }
 function canPlaceEnclosure(x, z, n) { for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (!inGrid(x + i, z + j) || occupied(x + i, z + j)) return false; return true; }
 const animalsIn = (e) => st.animals.filter((a) => a.enc === e.id);
 function animalHappy(a) {
@@ -67,6 +79,7 @@ function animalHappy(a) {
   const enrich = e.items.reduce((n, i) => n + (ENRICH[i.type]?.biome === e.biome ? 1.5 : ENRICH[i.type]?.biome ? 0.3 : 1), 0);
   let h = a.hunger * 0.35 + (e.biome === S.biome ? 25 : 0) + Math.min(1, space) * 18 + Math.min(1, enrich / 3) * 12 + (S.social ? (same >= 2 ? 10 : 0) : 10);
   if (space < 0.6) h -= 15;
+  if (mates.some((m) => eats(m.sp, a.sp))) h -= 30; // vive con miedo a un depredador
   return clamp(h);
 }
 function encHappy(e) { const as = animalsIn(e); return as.length ? as.reduce((t, a) => t + a.happy, 0) / as.length : 0; }
@@ -107,7 +120,12 @@ function visitorThink(v) {
   const t = pick(cands); v.target = t; v.path = bfsPath(v, t) || [];
 }
 // Lo que dicen los visitantes (bocadillos sobre sus cabezas)
-function logEvent(kind, text, who) { (st.today.events ||= []).push({ kind, text, who }); if (['birth', 'hatch', 'hybrid'].includes(kind)) st.births = (st.births || 0) + 1; }
+// ---------- historial del parque ----------
+const HIST = { feed: ['food', '#f08a3c'], miss: ['alert', '#dc4a46'], clean: ['broom', '#3a9bd6'], vet: ['heart', '#ee6f47'], birth: ['heart', '#2aa876'], death: ['leaf', '#7a7f8c'], eaten: ['alert', '#b0302c'], rescue: ['heart', '#ee6f47'], staff: ['users', '#7c5cd6'], sick: ['alert', '#eda22b'], care: ['smile', '#7c5cd6'], quit: ['logout', '#dc4a46'] };
+function hist(k, txt) { (st.log ||= []).unshift({ t: Math.round(st.time), k, txt }); if (st.log.length > 300) st.log.length = 300; }
+function logEvent(kind, text, who = '') { (st.today.events ||= []).push({ kind, text, who });
+  const H = { birth: `${who} ha tenido una cría (${text.toLowerCase()})`, hatch: `Han nacido crías de ${text.toLowerCase()}`, hybrid: `${who} ha tenido una cría híbrida: ${text.toLowerCase()}`, sick: `${text} se encuentra mal`, rescue: `Rescate: llega${who.includes(' y ') ? 'n' : ''} ${who} (${text.toLowerCase()})`, arrive: `${who} (${text.toLowerCase()}) llega en adopción`, newsp: `${who} (${text.toLowerCase()}) llega en adopción: primera de su especie` }[kind];
+  if (H) hist(['birth', 'hatch', 'hybrid'].includes(kind) ? 'birth' : kind === 'sick' ? 'sick' : 'rescue', H); if (['birth', 'hatch', 'hybrid'].includes(kind)) st.births = (st.births || 0) + 1; }
 function speak(v, text) { if (visitors.filter((q) => q.say && q.say.until > st.time).length >= 4) return; v.say = { text, until: st.time + 9 }; }
 function comment(v, e, as) {
   if (Math.random() > 0.35 || !as.length) return; const a = pick(as); const S = SPECIES[a.sp]; const name = a.name, sp = S.label.toLowerCase(); const un = S.fem ? 'una' : 'un', o = S.fem ? 'a' : 'o', ese = S.fem ? 'Esa' : 'Ese';
@@ -169,11 +187,11 @@ function visitorsTick(dt) {
 function addAnimal(sp, e, baby = false) {
   const used = new Set(st.animals.map((q) => q.name)); const free = ANIMAL_NAMES.filter((n) => !used.has(n));
   const a = { id: id(), sp, enc: e.id, x: e.x + rnd(0.5, e.n - 0.5), z: e.z + rnd(0.5, e.n - 0.5), tx: null, tz: null, hunger: 80, happy: 70, sex: Math.random() < 0.5 ? 'm' : 'f', baby, born: st.time, name: free.length ? pick(free) : pick(ANIMAL_NAMES) + ' ' + (used.size + 1), state: 'wander', trait: pick(Object.keys(TRAITS)) };
-  st.animals.push(a); return a;
+  a.age0 = baby ? 0 : Math.round(rnd(4, 16)); st.animals.push(a); return a;
 }
 function animalsTick(dt) {
   for (const a of st.animals) {
-    a.hunger = clamp(a.hunger - 0.07 * dt * (a.trait === 'gloton' ? 1.5 : 1));
+    a.hunger = clamp(a.hunger - 0.07 * dt * (a.trait === 'gloton' ? 1.5 : 1)); a.starve = a.hunger < 6 ? (a.starve || 0) + dt : 0;
     a.happy += (animalHappy(a) - a.happy) * Math.min(1, 0.02 * dt);
     if (a.trust != null && a.trust < 100) a.trust = clamp(a.trust + (a.happy > 55 && !a.sick ? 0.012 * (st.staff.keeper ? 1 : 0.4) * (a.trait === 'timido' ? 0.6 : 1) : -0.004) * dt);
     if (a.baby && st.time - a.born > 4 * 1440) { a.baby = false; toast(`La cría de ${SPECIES[a.sp].label.toLowerCase()} ya es adulta`, 'good', 'paw'); }
@@ -209,11 +227,38 @@ function sickWhy(a) {
   if (e && e.biome !== SPECIES[a.sp].biome) w.push(`no es su hábitat (prefiere ${BIOMES[SPECIES[a.sp].biome].label.toLowerCase()})`);
   return w;
 }
+// ---------- edad y fallecimientos ----------
+const lifeOf = (sp) => { const s = SPECIES[sp]?.space || 3; return s <= 2 ? 40 : s <= 3 ? 50 : s <= 5 ? 60 : s <= 7 ? 72 : 90; }; // en días de juego
+const ageOf = (a) => (a.age0 || 0) + (st.time - (a.born || 0)) / 1440;
+function ageLabel(a) { const d = ageOf(a), L = lifeOf(a.sp); return a.baby ? 'cría' : d > L * 0.8 ? 'mayor' : d > L * 0.35 ? 'adulto' : 'joven'; }
+function animalDies(a, cause, by) {
+  if (!st.animals.includes(a)) return;
+  st.animals = st.animals.filter((q) => q !== a);
+  const S = SPECIES[a.sp], days = Math.round(ageOf(a));
+  const txt = { old: `${a.name} (${S.label.toLowerCase()}) ha fallecido de mayor, con ${days} días. Tuvo una buena vida en el santuario.`, sick: `${a.name} (${S.label.toLowerCase()}) ha fallecido: estaba enferm${a.sex === 'f' ? 'a' : 'o'} y nadie l${a.sex === 'f' ? 'a' : 'o'} curó a tiempo.`, hunger: `${a.name} (${S.label.toLowerCase()}) ha fallecido de hambre.`, eaten: `${by?.name || 'Un depredador'} (${SPECIES[by?.sp]?.label.toLowerCase() || ''}) se ha comido a ${a.name} (${S.label.toLowerCase()}).` }[cause];
+  (st.memorial ||= []).unshift({ name: a.name, sp: a.sp, cause, day: dayOf(st.time) + 1, age: days }); if (st.memorial.length > 60) st.memorial.length = 60;
+  hist(cause === 'eaten' ? 'eaten' : 'death', txt); (st.today.events ||= []).push({ kind: 'death', text: S.label, who: a.name });
+  if (cause !== 'old') { st.fame = clamp(st.fame - (cause === 'eaten' ? 0.2 : 0.3), 0, 5); for (const k of st.team || []) if (k.role === 'keeper' || k.role === 'vet') k.mood = clamp(k.mood - 6); }
+  if (followId === a.id) { followId = null; animalCardTick(true); }
+  toast(txt, cause === 'old' ? 'info' : 'bad', cause === 'eaten' ? 'alert' : 'heart');
+  if (cause === 'eaten' && !st.seenEaten) { st.seenEaten = true; say('rufina', 'Un depredador ha cazado', `<p>${txt}</p><p>Los carnívoros cazan a los animales más pequeños que vivan con ellos. Sepáralos en recintos distintos: en la ficha del recinto puedes <b>mover</b> a cada animal.</p>`, 'Entendido'); }
+  else if (cause !== 'old' && !st.seenDeath) { st.seenDeath = true; say('rufina', 'Hemos perdido a un animal', `<p>${txt}</p><p>Cuida de que coman y de curar a los enfermos pronto. Si tu equipo no da abasto, contrata a más gente o llama la atención a quien no cumpla.</p>`, 'Entendido'); }
+  hud(); save();
+}
+// Una vez al día: vejez; enfermedad sin tratar o hambre prolongada pueden ser mortales
+function lifeTick() {
+  for (const a of [...st.animals]) {
+    const L = lifeOf(a.sp), d = ageOf(a);
+    if (d > L * 0.85 && Math.random() < Math.min(0.6, (d - L * 0.85) / (L * 0.3))) { animalDies(a, 'old'); continue; }
+    if (a.sick && st.time - a.sick.since > 2 * 1440 && Math.random() < 0.35) { animalDies(a, 'sick'); continue; }
+    if ((a.starve || 0) > 1440 && Math.random() < 0.5) animalDies(a, 'hunger');
+  }
+}
 function cure(a) { a.sick = null; a.restUntil = 0; }
 function health() {
-  const vets = st.staff.vet || 0; let cured = 0;
+  const vs = teamOf('vet'), vets = vs.length; let cured = 0;
   for (const a of st.animals) {
-    if (a.sick) { a.happy = clamp(a.happy - 2); if (vets && cured < vets * 3 && st.time - a.sick.since > 60) { cure(a); cured++; toast(`El veterinario ha curado a ${a.name}`, 'good', 'heart'); } continue; }
+    if (a.sick) { a.happy = clamp(a.happy - 2); if (vets && cured < vets * 3 && st.time - a.sick.since > 60) { const k = vs[cured % vets]; cured++; if (slips(k)) { if (Math.random() < 0.3) { k.slips++; k.today.miss++; k.lastSlip = st.time; hist('miss', `${k.name} no ha atendido a ${a.name}, que sigue enferm${a.sex === 'f' ? 'a' : 'o'}`); } continue; } cure(a); k.today.ok++; hist('vet', `${k.name} ha curado a ${a.name} (${SPECIES[a.sp].label.toLowerCase()})`); toast(`${k.name} ha curado a ${a.name}`, 'good', 'heart'); } continue; }
     if (Math.random() < sickRisk(a)) { a.sick = { kind: pick(Object.keys(ILLNESS)), since: st.time }; const why = sickWhy(a); toast(`${a.name} se encuentra mal: ${ILLNESS[a.sick.kind].toLowerCase()}. ${vets ? 'El veterinario lo atenderá.' : 'Toca el animal y llama al veterinario.'}${why.length ? ' Causa: ' + why[0] + '.' : ''}`, 'warn', 'alert'); logEvent('sick', a.name); }
   }
 }
@@ -286,13 +331,15 @@ const STATE_TXT = { sick: 'tumbado, se encuentra mal', watch: 'mirando a los vis
 // Pone un montón de comida en el recinto (los animales van a comer)
 function putFood(e) { e.food = { x: e.x + e.n / 2 + rnd(-0.8, 0.8), z: e.z + e.n / 2 + rnd(-0.8, 0.8), until: st.time + 150 }; for (const a of animalsIn(e)) if (a.state !== 'sleep') a.restUntil = 0; }
 function feedTimes() {
-  // cada cuidador alimenta a 8 animales dos veces al día
-  let capacity = st.staff.keeper * 8;
-  const hungry = st.animals.slice().sort((a, b) => a.hunger - b.hunger);
-  const fed = new Set();
-  for (const a of hungry) { if (capacity-- <= 0) break; fed.add(a.enc); }
-  for (const e of st.enclosures) if (fed.has(e.id)) putFood(e);
-  if (st.animals.length > st.staff.keeper * 8) toast('Faltan cuidadores: hay animales sin comer. Contrata más o dales de comer tú.', 'warn', 'paw');
+  // cada recinto con animales se reparte entre el equipo de cuidados (8 animales por persona)
+  const ks = teamOf('keeper'); const encs = st.enclosures.filter((e) => animalsIn(e).length);
+  if (!encs.length) return;
+  if (!ks.length) { toast('Nadie da de comer a los animales: contrata a alguien de cuidados o dales de comer tú', 'warn', 'paw'); hist('miss', 'Nadie ha dado de comer a los animales: no hay personal de cuidados'); return; }
+  const load = st.animals.length / (ks.length * 8);
+  encs.forEach((e, i) => { const k = ks[i % ks.length];
+    if (slips(k, load)) { k.slips++; k.today.miss++; k.lastSlip = st.time; hist('miss', `${k.name} no ha dado de comer al recinto de ${BIOMES[e.biome].label.toLowerCase()}${load > 1 ? ' (va con demasiado trabajo)' : k.mood < 40 ? ' (tiene poco ánimo)' : ''}`); }
+    else { putFood(e); k.today.ok++; hist('feed', `${k.name} ha dado de comer al recinto de ${BIOMES[e.biome].label.toLowerCase()} (${animalsIn(e).length} animales)`); } });
+  if (load > 1) toast('Tu equipo de cuidados no da abasto: hay recintos sin comer. Contrata a alguien más.', 'warn', 'paw');
 }
 function breeding() {
   for (const e of st.enclosures) {
@@ -338,7 +385,22 @@ function rescueTick() {
   if (before !== st.rescues.length && sheet.name === 'animal') renderPanel();
 }
 // ¿Qué recintos le sirven? (su hábitat y algo de espacio)
-function encFits(e, sp, n = 1) { const as = animalsIn(e); const used = as.reduce((t, m) => t + SPECIES[m.sp].space * (m.baby ? 0.5 : 1), 0); return { biome: e.biome === SPECIES[sp].biome, room: (e.n * e.n) - used >= SPECIES[sp].space * n * 0.9, danger: CARNIVORES.includes(sp) !== as.some((m) => CARNIVORES.includes(m.sp)) && as.length > 0 }; }
+// ¿a se come a b?
+function eats(a, b) { const max = PREDATOR[a]; if (!max || a === b) return false; if (PREDATOR[b]) return SPECIES[b].space < SPECIES[a].space - 1; return SPECIES[b].space <= max; }
+function dangerIn(e, sp) { return animalsIn(e).some((m) => eats(sp, m.sp) || eats(m.sp, sp)); }
+function dangerWarn(e, sp, name) { const as = animalsIn(e).filter((m) => m.name !== name); const prey = as.find((m) => eats(sp, m.sp)), hunter = as.find((m) => eats(m.sp, sp)); if (prey) toast(`¡Cuidado! ${SPECIES[sp].label} caza ${SPECIES[prey.sp].label.toLowerCase()}s: ${prey.name} corre peligro en este recinto`, 'bad', 'alert'); else if (hunter) toast(`¡Cuidado! ${hunter.name} (${SPECIES[hunter.sp].label.toLowerCase()}) puede comerse a ${name}`, 'bad', 'alert'); }
+// Cada hora: los depredadores pueden cazar a las presas que compartan recinto
+function predation() {
+  for (const e of st.enclosures) {
+    const as = animalsIn(e); if (as.length < 2) continue;
+    for (const p of as) { if (!PREDATOR[p.sp] || p.baby || p.sick) continue;
+      const prey = as.filter((q) => q !== p && st.animals.includes(q) && eats(p.sp, q.sp)); if (!prey.length) continue;
+      if (Math.random() > 0.06 + (p.hunger < 50 ? 0.18 : 0)) continue;
+      const v = prey.sort((a, b) => (b.baby - a.baby) || (a.happy - b.happy))[0];
+      animalDies(v, 'eaten', p); p.hunger = 100; break; }
+  }
+}
+function encFits(e, sp, n = 1) { const as = animalsIn(e); const used = as.reduce((t, m) => t + SPECIES[m.sp].space * (m.baby ? 0.5 : 1), 0); return { biome: e.biome === SPECIES[sp].biome, room: (e.n * e.n) - used >= SPECIES[sp].space * n * 0.9, danger: dangerIn(e, sp) }; }
 function acceptRescue(r) {
   const S = SPECIES[r.sp], K = RESCUES[r.kind];
   const list = st.enclosures.map((e) => ({ e, f: encFits(e, r.sp, r.n) }));
@@ -394,17 +456,33 @@ function goalsModal() {
   bx.querySelector('#gx').onclick = closeModal;
 }
 function hourly(h) {
-  wfCache = welfare(); rescueTick(); checkGoals();
+  wfCache = welfare(); rescueTick(); checkGoals(); predation(); if (h === 7) lifeTick();
   hatchNests(); health();
   if (h === 9 || h === 17) feedTimes();
   if (h === 6) breeding();
-  for (let i = 0; i < st.staff.cleaner * 2 && st.litter.length; i++) st.litter.shift();
+  for (const k of teamOf('cleaner')) { if (!st.litter.length) break; if (h < 8 || h > 20) continue; if (slips(k, st.litter.length > 30 ? 1.2 : 1)) { if (Math.random() < 0.25) { k.slips++; k.today.miss++; k.lastSlip = st.time; hist('miss', `${k.name} se ha tomado un descanso largo y no ha limpiado`); } continue; } const n = Math.min(st.litter.length, k.mood > 40 ? 3 : 2); st.litter.splice(0, n); k.today.ok += n; }
   if (h === 21) endOfDay();
 }
 // Al final del día: "La Gaceta Salvaje", el periódico del parque, con los titulares de la jornada
+// Ánimo del equipo al final del día: sueldo, carga de trabajo, cómo está el parque y si se les reconoce
+function teamDay() {
+  const ks = teamOf('keeper').length, cs = teamOf('cleaner').length;
+  for (const k of [...st.team]) {
+    let d = (k.wage / WAGES[k.role] - 1) * 30 + rnd(-2, 2);
+    if (k.role === 'keeper') d += st.animals.length > ks * 8 ? -7 : st.animals.length <= ks * 5 ? 2 : 0;
+    if (k.role === 'cleaner') d += st.litter.length > cs * 15 ? -6 : 1;
+    if (k.role === 'vet') d += st.animals.filter((a) => a.sick).length > teamOf('vet').length * 3 ? -5 : 1;
+    d += wfCache > 70 ? 2 : wfCache < 45 ? -2 : 0; d += (k.mood < 60 ? 1.5 : 0); // tienden a recuperarse algo
+    k.mood = clamp(k.mood + d);
+    if (k.today.ok || k.today.miss) hist('staff', `${k.name} (${ROLES[k.role].short.toLowerCase()}): ${k.today.ok} ${k.today.ok === 1 ? 'tarea hecha' : 'tareas hechas'}${k.today.miss ? `, ${k.today.miss} sin hacer` : ''}. Ánimo: ${moodWord(k.mood).toLowerCase()}`);
+    k.today = { ok: 0, miss: 0 };
+    if (k.mood < 12 && Math.random() < 0.5) { st.team = st.team.filter((q) => q !== k); hist('quit', `${k.name} ha dejado el trabajo: no podía más`); toast(`${k.name} ha dejado el santuario: no podía más. Cuida el ánimo de tu equipo.`, 'bad', 'logout'); }
+  }
+  syncStaff();
+}
 function endOfDay() {
   if (st.animals.length) st.fame = clamp(st.fame + (welfare() - 55) / 600, 0, 5);
-  const wages = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner + (st.staff.vet || 0) * WAGES.vet, food = st.animals.length * FOOD_COST;
+  const wages = st.team.reduce((t, k) => t + k.wage, 0), food = st.animals.length * FOOD_COST; teamDay();
   const fans = st.animals.filter((a) => (a.trust ?? 100) >= 80 && a.happy > 55 && !a.sick).length; earn('padrinos', fans * SPONSOR);
   spend('sueldos', wages); spend('comida', food);
   const d = { day: dayOf(st.time) + 1, ...st.today, profit: st.today.income - st.today.spent, stars: stars() };
@@ -453,14 +531,14 @@ function offline() {
   const mins = Math.min((Date.now() - st.lastSaved) / 1000 * 0.2, 1440); if (mins < 20) return;
   const last = st.history[0]; const est = last ? Math.max(0, last.profit) * (mins / 1440) * 0.5 : 0;
   st.time += mins; st.lastHour = Math.floor(st.time / 60); earn('fuera', est);
-  for (const a of st.animals) a.hunger = st.staff.keeper * 8 >= st.animals.length ? 90 : Math.max(20, a.hunger - mins * 0.05);
-  say('rufina', 'Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en el parque.</p>${est ? `<p>Los visitantes han dejado unos <b>${eur(est)}</b>.</p>` : ''}${st.staff.keeper * 8 < st.animals.length ? '<p class="hint">Faltan cuidadores: algunos animales tienen hambre.</p>' : '<p class="hint">Tus cuidadores han atendido a los animales.</p>'}`);
+  syncStaff(); for (const a of st.animals) a.hunger = st.staff.keeper * 8 >= st.animals.length ? 90 : Math.max(20, a.hunger - mins * 0.05);
+  say('rufina', 'Mientras no estabas…', `<p>Han pasado <b>${Math.round(mins / 60)} h</b> en el parque.</p>${est ? `<p>Los visitantes han dejado unos <b>${eur(est)}</b>.</p>` : ''}${st.staff.keeper * 8 < st.animals.length ? '<p class="hint">Falta personal de cuidados: algunos animales tienen hambre.</p>' : '<p class="hint">Tu equipo ha atendido a los animales.</p>'}`);
 }
 
 // ---------- dibujo 3D ----------
 const canvas = $('#stage');
 const eng = new Engine(canvas, { target: [N / 2, 0, N / 2 + 2], dist: 26, maxDist: 90, bounds: N, pitch: 0.9 });
-eng.cam.dist = eng.fitDist(15);
+eng.cam.dist = eng.fitDist(11); eng.cam.pitch = eng.cam.pitchT = 0.82;
 const S3 = eng.scene;
 // Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
 setAnimalDetail(eng.hq ? 0.75 : 0.5);
@@ -664,14 +742,39 @@ function syncExtras() {
 }
 // Matas de hierba en las casillas libres del parque (se rehacen solo al construir)
 const waterT = Look.waterTex();
+// Terreno libre: naturaleza (arboledas, arbustos, rocas, hierba alta) lejos de caminos y construcciones.
+// Al construir cerca, desaparece sola.
 function rebuildTufts() {
-  const g = groups.tufts; g.clear(); const P = pathSet(), pts = [];
-  const fl = [];
-  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) { if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (x === ENTRANCE.x && z >= ENTRANCE.z - 1)) continue; const k = (x * 31 + z * 17) % 7; for (let i = 0; i < (eng.hq ? 1 + (k % 2) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]); if (k === 3 || (eng.hq && k === 5)) for (let i = 0; i < 3; i++) fl.push([x + 0.2 + ((k * 7 + i * 41) % 61) / 100, z + 0.2 + ((k * 11 + i * 23) % 59) / 100]); }
+  const g = groups.tufts; g.clear(); const P = pathSet(), pts = [], fl = [], trees = [], bushes = [], rocks = [], tall = [];
+  const near = (x, z, r) => { for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) { const X = x + dx, Z = z + dz; if (P.has(pk(X, Z)) || encAt(X, Z) || buildingAt(X, Z)) return true; } return false; };
+  const H = (x, z, k) => { let h = (x * 374761393 + z * 668265263 + k * 2147483647) >>> 0; h = (h ^ (h >>> 13)) * 1274126177 >>> 0; return (h % 10000) / 10000; };
+  const dense = eng.hq ? 1 : 0.6;
+  for (let x = 0; x < N; x++) for (let z = 0; z < N; z++) {
+    if (P.has(pk(x, z)) || encAt(x, z) || buildingAt(x, z) || (Math.abs(x - ENTRANCE.x) <= 1 && z >= ENTRANCE.z - 2)) continue;
+    const k = (x * 31 + z * 17) % 7, r = H(x, z, 1);
+    const wild = !near(x, z, 1) && !(Math.abs(x - ENTRANCE.x) <= 3 && z >= ENTRANCE.z - 4);
+    // manchas de bosque: ruido suave por zonas
+    const zone = (Math.sin(x * 0.45 + 1.3) + Math.sin(z * 0.38 + 0.7) + Math.sin((x + z) * 0.21)) / 3;
+    if (wild && zone > 0.15 && r < 0.42 * dense) { trees.push({ x: x + 0.3 + H(x, z, 2) * 0.4, z: z + 0.3 + H(x, z, 3) * 0.4, s: 0.85 + H(x, z, 4) * 0.6, kind: H(x, z, 5) < 0.25 ? 'pino' : H(x, z, 5) < 0.45 ? 'abedul' : 'roble' }); continue; }
+    if (wild && r < 0.12 * dense + (zone > 0 ? 0.08 : 0)) { bushes.push([x + 0.5 + (H(x, z, 6) - 0.5) * 0.4, z + 0.5 + (H(x, z, 7) - 0.5) * 0.4, 0.28 + H(x, z, 8) * 0.18, Math.floor(H(x, z, 9) * 9)]); continue; }
+    if (wild && r > 0.965) { rocks.push([x + 0.5, z + 0.5, 0.18 + H(x, z, 10) * 0.16, Math.floor(H(x, z, 11) * 50)]); continue; }
+    if (wild && zone > -0.2 && r > 0.5 && r < 0.5 + 0.3 * dense) for (let i = 0; i < 4; i++) tall.push([x + H(x, z, 20 + i), z + H(x, z, 30 + i)]);
+    for (let i = 0; i < (eng.hq ? 1 + (k % 2) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]);
+    if (k === 3 || (eng.hq && k === 5)) for (let i = 0; i < 3; i++) fl.push([x + 0.2 + ((k * 7 + i * 41) % 61) / 100, z + 0.2 + ((k * 11 + i * 23) % 59) / 100]);
+  }
   g.add(World.lawnDetail(pts, fl));
+  if (tall.length) g.add(World.tallGrass(tall));
+  if (trees.length) { const f = Look.forest(trees); Look.shadows(f, true, false); g.add(f);}
+  // arbustos: 3 modelos dibujados de una vez cada uno (pocas llamadas a la gráfica)
+  for (let v = 0; v < 3; v++) { const list = bushes.filter((b) => b[3] % 3 === v); if (!list.length) continue; const src = Look.bush(1, v * 3 + 1, '#2f6a2a', '#6aa848');
+    const im = new THREE.InstancedMesh(src.geometry, src.material, list.length); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    list.forEach(([x, z, sz], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (x * 7 + z * 3) % 6.28); im.setMatrixAt(i, m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(sz, sz, sz))); });
+    im.castShadow = eng.hq; g.add(im); }
+  for (const [x, z, sz, sd] of rocks) { const r = Look.rock(sz, '#9a948a', sd); r.position.set(x, 0, z); g.add(r); }
 }
+const flock = World.birds(N / 2, N / 2, 7); S3.add(flock.group);
 function sync(t) {
-  syncExtras();
+  syncExtras(); flock.update(t);
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
   const s2 = JSON.stringify(st.enclosures); if (s2 !== sig.enc) { sig.enc = s2; rebuildEnclosures(); }
   const s3 = JSON.stringify(st.buildings) + st.paths.length; if (s3 !== sig.bld) { sig.bld = s3; rebuildBuildings(); }
@@ -759,7 +862,7 @@ function moveTarget(sx, sy) {
 const without = (arr, item, fn) => { const i = arr.indexOf(item); if (i >= 0) arr.splice(i, 1); try { return fn(); } finally { if (i >= 0) arr.splice(i, 0, item); } };
 function moveValid() {
   const r = mv.ref, x = mv.x, z = mv.z;
-  if (mv.kind === 'enc') return without(st.enclosures, r, () => canPlaceEnclosure(x, z, r.n));
+  if (mv.kind === 'enc') return without(st.enclosures, r, () => canPlaceEnclosure(x, z, r.n)) && !clashNear(x, z, r.n, r.biome, r);
   if (mv.kind === 'bld') return inGrid(x, z) && without(st.buildings, r, () => !occupied(x, z)) && (BUILDINGS[r.type].cat !== 'Tiendas' || nextToPath(x, z));
   if (mv.kind === 'item') { const e = mv.enc; return x >= e.x && x < e.x + e.n && z >= e.z && z < e.z + e.n && !e.items.some((i) => i !== r && i.x === x && i.z === z); }
   if (mv.kind === 'animal') return !!mv.dest;
@@ -806,7 +909,7 @@ function endMove(cancel) {
       if (!encTouchesPath(r)) toast('Recuerda unirlo a un camino para que lo vean los visitantes', 'warn', 'path');
     } else if (m.kind === 'animal') {
       const e = m.dest; r.enc = e.id; r.x = Math.min(e.x + e.n - 0.5, Math.max(e.x + 0.5, m.px)); r.z = Math.min(e.z + e.n - 0.5, Math.max(e.z + 0.5, m.pz)); r.tx = null; r.restUntil = 0; r.state = 'wander';
-      if (e.biome !== SPECIES[r.sp].biome) toast(`${r.name} prefiere el hábitat de ${BIOMES[SPECIES[r.sp].biome].label.toLowerCase()}`, 'warn', 'paw');
+      if (dangerIn(e, r.sp)) dangerWarn(e, r.sp, r.name); else if (e.biome !== SPECIES[r.sp].biome) toast(`${r.name} prefiere el hábitat de ${BIOMES[SPECIES[r.sp].biome].label.toLowerCase()}`, 'warn', 'paw');
     } else { r.x = m.x; r.z = m.z; }
     navigator.vibrate?.(10); Sound.play('place');
   } else if (!cancel) toast(m.kind === 'animal' ? 'Suéltalo dentro de un recinto' : m.kind === 'bld' && BUILDINGS[r.type].cat === 'Tiendas' ? 'Ahí no cabe: las tiendas van junto a un camino' : 'Ahí no cabe', 'warn');
@@ -836,13 +939,14 @@ eng.onTap = (sx, sy) => {
   if (view.tool === 'path') { paintPath(t); hud(); return; }
   if (view.tool === 'enc' && t) {
     const n = SIZES[view.opt.size].n; const x = Math.min(N - n, Math.max(0, t.x - Math.floor(n / 2))), z = Math.min(N - n, Math.max(0, t.z - Math.floor(n / 2)));
-    const ok = canPlaceEnclosure(x, z, n); showGhost({ x, z, w: n, h: n, ok });
+    const clash = canPlaceEnclosure(x, z, n) ? clashNear(x, z, n, view.opt.biome) : null; const ok = canPlaceEnclosure(x, z, n) && !clash; showGhost({ x, z, w: n, h: n, ok });
+    if (clash) toast(clash, 'warn', 'alert');
     view.pending = ok ? { x, z, n } : null; renderToolInfo(); return;
   }
   if (view.tool === 'animal') {
     const e = t && encAt(t.x, t.z); if (!e) return toast('Toca dentro de un recinto', 'warn');
     const S = SPECIES[view.opt]; const fee = Math.round(S.price * 0.5); if (st.money < fee) return toast('No hay dinero suficiente', 'warn');
-    spend('adopciones', fee); const a = addAnimal(view.opt, e); a.trust = 55; a.rescued = 'adopcion'; a.story = 'Nació en otro santuario y ha venido en adopción. Se adapta rápido.'; a.arrived = dayOf(st.time) + 1; logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
+    spend('adopciones', fee); dangerWarn(e, view.opt, ''); const a = addAnimal(view.opt, e); a.trust = 55; a.rescued = 'adopcion'; a.story = 'Nació en otro santuario y ha venido en adopción. Se adapta rápido.'; a.arrived = dayOf(st.time) + 1; logEvent(st.animals.some((q) => q !== a && q.sp === a.sp) ? 'arrive' : 'newsp', S.label, a.name);
     toast(e.biome !== S.biome ? `${a.name} (${S.label.toLowerCase()}) ha llegado, pero prefiere el hábitat de ${BIOMES[S.biome].label.toLowerCase()}` : `${a.name} (${S.label.toLowerCase()}, ${a.sex === 'm' ? 'macho' : 'hembra'}) llega al parque. Puedes cambiarle el nombre en su ficha`, e.biome !== S.biome ? 'warn' : 'good', 'paw');
     hud(); save(); return;
   }
@@ -878,7 +982,7 @@ function enterClose(e) {
   $('#closebar').hidden = false; document.body.classList.add('closeview'); renderCloseBar();
 }
 function exitClose() {
-  close = null; followId = null; nestCard = null; eng.cam.follow = null; eng.cam.min = 4; eng.cam.pitchT = 0.9; eng.cam.distT = eng.fitDist(15);
+  close = null; followId = null; nestCard = null; eng.cam.follow = null; eng.cam.min = 4; eng.cam.pitchT = 0.82; eng.cam.distT = eng.fitDist(11);
   $('#closebar').hidden = true; $('#animalcard').hidden = true; document.body.classList.remove('closeview');
 }
 function followAnimal(aid) { followId = aid; nestCard = null; eng.follow(() => (followId ? animalWorld(followId) : null)); eng.cam.distT = Math.min(eng.cam.dist, eng.fitDist(3.2)); cardT = 0; animalCardTick(true); if (close) renderCloseBar(); }
@@ -900,7 +1004,7 @@ function animalCardTick(force = false) {
   }
   const a = followId && st.animals.find((q) => q.id === followId); if (!a) { el.hidden = true; return; }
   const S = SPECIES[a.sp]; const kids = st.animals.filter((k) => k.mother === a.id && k.baby).length; const mom = a.mother && st.animals.find((m) => m.id === a.mother);
-  el.innerHTML = `<div class="row" style="align-items:center">${zimg(zooPhotos([a.sp])[a.sp], S.biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'}${a.baby ? ' · cría' : ''}</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
+  el.innerHTML = `<div class="row" style="align-items:center">${zimg(zooPhotos([a.sp])[a.sp], S.biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'} · ${ageLabel(a)}, ${Math.round(ageOf(a))} días</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
     <div class="hint" style="color:${animalStatus(a)[1]};font-weight:800">${animalStatus(a)[0]}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
     ${a.sick ? `<div class="sickrow">${icon('alert')} <div style="flex:1;min-width:0"><b>Se encuentra mal: ${ILLNESS[a.sick.kind].toLowerCase()}</b><div class="hint">${sickWhy(a).length ? 'Por qué: ' + sickWhy(a).join(', ') + '. ' : ''}${st.staff.vet ? 'El veterinario lo atenderá pronto.' : ''}</div></div><button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
@@ -915,7 +1019,7 @@ function careLeft(a, k) { const t = (a.care || {})[k]; return t == null ? 0 : Ma
 function careAnimal(a, k) {
   const C = CARE[k]; if (!a || !C) return; const left = careLeft(a, k);
   if (left > 0) return toast(`${a.name} necesita un rato tranquilo. Prueba otra vez en ${Math.ceil(left / 60)} h`, 'info');
-  if (C.keeper && !st.staff.keeper) return toast('Necesitas un cuidador (en Personal)', 'warn');
+  if (C.keeper && !st.staff.keeper) return toast('Necesitas a alguien de cuidados (en Personal)', 'warn');
   if (a.sick && k !== 'keeper') return toast(`${a.name} se encuentra mal: primero, el veterinario`, 'warn');
   if (st.money < C.price) return toast('No hay dinero suficiente', 'warn');
   spend('cuidados', C.price); (a.care ||= {})[k] = st.time;
@@ -969,13 +1073,13 @@ function catList(m, LBL, col) {
 }
 function financeTips(days) {
   const n = Math.max(1, days.length), inc = sumCats(days, 'inc'), exp = sumCats(days, 'exp'); const tips = [];
-  const fixed = st.staff.keeper * WAGES.keeper + st.staff.cleaner * WAGES.cleaner + (st.staff.vet || 0) * WAGES.vet + st.animals.length * FOOD_COST;
+  const fixed = st.team.reduce((t, k) => t + k.wage, 0) + st.animals.length * FOOD_COST;
   tips.push(`Gastos fijos de cada día: <b>${eur(fixed)}</b> (sueldos ${eur(fixed - st.animals.length * FOOD_COST)} + comida ${eur(st.animals.length * FOOD_COST)}). Se cobran a las 21:00.`);
   const obras = (exp.obras || 0) + (exp.terreno || 0) + (exp.adopciones || 0), allExp = Object.values(exp).reduce((t, v) => t + v, 0);
   if (allExp && obras / allExp > 0.3) tips.push(`El ${Math.round(obras / allExp * 100)} % de lo gastado son obras, terreno y adopciones: es inversión, no se repite cada día.`);
   if (!st.buildings.some((b) => BUILDINGS[b.type].sells)) tips.push('No tienes tiendas: cada visitante podría gastar 10-25 € más en comida, bebida y regalos.');
   else if ((inc.tiendas || 0) < (inc.entradas || 0) * 0.3) tips.push('Las tiendas venden poco: ponlas junto a caminos con mucho paso y añade aseos (si no, los visitantes se van antes).');
-  if (st.staff.keeper > Math.ceil(st.animals.length / 8) + 1) tips.push(`Tienes más cuidadores de los necesarios: cada uno cuida 8 animales y cuesta ${eur(WAGES.keeper)} al día.`);
+  if (st.staff.keeper > Math.ceil(st.animals.length / 8) + 1) tips.push(`Tienes más personal de cuidados del necesario: cada persona cuida 8 animales y cuesta ${eur(WAGES.keeper)} al día.`);
   const shy = st.animals.filter((a) => (a.trust ?? 100) < 80).length; if (shy) tips.push(`${shy} animal${shy > 1 ? 'es aún no confían' : ' aún no confía'} del todo. Con un 80 % de confianza consiguen padrinos: ${eur(SPONSOR)} al día cada uno.`);
   if (wfCache < 60) tips.push(`Bienestar del parque ${wfCache} %: los visitantes contentos dejan donativos; animales felices = más donativos y más fama.`);
   if (st.ticket < 15 && st.fame >= 2) tips.push('Con tu fama puedes subir un poco la entrada sin perder muchos visitantes.');
@@ -1022,7 +1126,7 @@ function renderToolInfo() {
   const er = $('#ti_erase'); if (er) er.onclick = () => { view.erase = !view.erase; renderToolInfo(); };
   const ok = $('#ti_ok'); if (ok) ok.onclick = () => {
     const p = view.pending; const price = SIZES[view.opt.size].price; if (st.money < price) return toast('No hay dinero suficiente', 'warn');
-    if (!canPlaceEnclosure(p.x, p.z, p.n)) return;
+    if (!canPlaceEnclosure(p.x, p.z, p.n)) return; const cl = clashNear(p.x, p.z, p.n, view.opt.biome); if (cl) return toast(cl, 'warn', 'alert');
     spend('obras', price); const e = { id: id(), x: p.x, z: p.z, n: p.n, biome: view.opt.biome, items: [] }; st.enclosures.push(e);
     if (!encTouchesPath(e)) toast('Haz un camino hasta el recinto para que los visitantes lo vean', 'warn', 'path');
     view.pending = null; showGhost(null); setTool(null); hud(); save();
@@ -1069,10 +1173,46 @@ function renderPanel() {
     b.querySelectorAll('[data-b]').forEach((x) => (x.onclick = () => { sheet.close(); setTool('build', x.dataset.b); }));
   }
   if (name === 'staff') {
-    const row = (k, label, desc) => `<div class="card"><div class="row" style="align-items:center"><span class="tilebox">${icon(k === 'keeper' ? 'paw' : k === 'vet' ? 'heart' : 'broom')}</span><div style="flex:1"><b>${label}: ${st.staff[k] || 0}</b><div class="hint">${desc} · ${WAGES[k]} €/día</div></div><button class="btn sm alt" data-m="${k}">−</button><button class="btn sm" data-p="${k}">+</button></div></div>`;
-    b.innerHTML = row('keeper', 'Cuidadores', `Alimentan 8 animales cada uno (tienes ${st.animals.length})`) + row('cleaner', 'Limpiadores', `Recogen la basura (hay ${st.litter.length} restos)`) + row('vet', 'Veterinarios', `Curan solos a los animales enfermos (ahora ${st.animals.filter((a) => a.sick).length})`) + `<p class="hint">Los animales enferman más si pasan hambre, están tristes, hay basura o no viven en su hábitat. Sin veterinario, toca un animal enfermo y pulsa Curar (${eur(VET_VISIT)}).</p>`;
-    b.querySelectorAll('[data-p]').forEach((x) => (x.onclick = () => { st.staff[x.dataset.p] = (st.staff[x.dataset.p] || 0) + 1; renderPanel(); save(); }));
-    b.querySelectorAll('[data-m]').forEach((x) => (x.onclick = () => { st.staff[x.dataset.m] = Math.max(0, st.staff[x.dataset.m] - 1); renderPanel(); save(); }));
+    const tab = view.stab || 'team';
+    let h = `<div class="seg" id="stab" style="margin-bottom:6px"><button data-v="team" class="${tab === 'team' ? 'on' : ''}">${icon('users')} Equipo · ${st.team.length}</button><button data-v="log" class="${tab === 'log' ? 'on' : ''}">${icon('book')} Historial</button><button data-v="mem" class="${tab === 'mem' ? 'on' : ''}">${icon('leaf')} Recuerdo</button></div>`;
+    if (tab === 'team') {
+      const today = dayOf(st.time) + 1;
+      for (const r of ['keeper', 'cleaner', 'vet']) {
+        const R = ROLES[r], ks = teamOf(r);
+        const need = r === 'keeper' ? `Cada persona alimenta 8 animales (tienes ${st.animals.length}: harían falta ${Math.max(1, Math.ceil(st.animals.length / 8))})` : r === 'cleaner' ? `Recogen la basura (ahora hay ${st.litter.length} restos)` : `Curan a los enfermos (ahora ${st.animals.filter((a) => a.sick).length})`;
+        h += `<div class="sec" style="color:${R.color}">${icon(R.ic)} ${R.label}</div><p class="hint" style="margin:0 4px 6px">${need}</p>`;
+        h += ks.map((k) => { const recent = k.lastSlip && st.time - k.lastSlip < 1440;
+          return `<div class="card staffcard"><div class="row" style="align-items:center"><span class="sface" style="background:${R.color}">${esc(k.name[0])}</span><div style="flex:1;min-width:0"><b>${esc(k.name)}</b> <span class="hint">· ${eur(k.wage)}/día · desde el día ${k.since}</span>
+            <div class="mrow"><span>Ánimo</span>${minibar(k.mood, k.mood < 35 ? '#dc4a46' : k.mood < 55 ? '#eda22b' : '#2aa876')}<b>${moodWord(k.mood)}</b><span>Constancia</span>${minibar(k.skill, '#3a9bd6')}<b>${Math.round(k.skill)}%</b></div>
+            <div class="hint">${recent ? `<span style="color:#c2343a;font-weight:800">${icon('alert')} Hoy ha dejado tareas sin hacer</span>` : `Hoy: ${k.today.ok} tareas hechas`}${k.slips ? ` · ${k.slips} ${k.slips === 1 ? 'despiste' : 'despistes'} en total` : ''}</div></div></div>
+            <div class="carerow"><button class="btn sm mint" data-praise="${k.id}" ${k.praisedDay === today ? 'disabled' : ''}>${icon('smile')} Felicitar</button><button class="btn sm alt" data-warn="${k.id}">${icon('alert')} Llamar la atención</button><button class="btn sm alt" data-raise="${k.id}">${icon('coin')} Subir sueldo</button><button class="btn sm alt" data-fire="${k.id}" aria-label="Despedir">${icon('logout')}</button></div></div>`; }).join('') || `<p class="hint" style="margin:0 4px">Nadie en este puesto.</p>`;
+        h += `<button class="btn alt" data-hire="${r}" style="width:100%;margin-top:4px">${icon('plus')} Contratar · ${eur(WAGES[r])}/día</button>`;
+      }
+      h += `<p class="hint" style="margin-top:12px">Con buen sueldo, poco agobio y algo de reconocimiento, tu equipo trabaja mejor. Llamar la atención mejora la constancia si de verdad se ha despistado; si no, solo les desanima.</p>`;
+    } else if (tab === 'log') {
+      const f = view.lflt || 'all'; const groups = { all: null, food: ['feed', 'miss'], animals: ['birth', 'death', 'eaten', 'sick', 'rescue', 'vet', 'care'], staff: ['staff', 'miss', 'quit', 'clean'] };
+      const L = (st.log || []).filter((e) => !groups[f] || groups[f].includes(e.k)).slice(0, 120);
+      h += `<div class="chips" id="lflt" style="margin:6px 0 4px">${[['all', 'Todo'], ['food', 'Comida'], ['animals', 'Animales'], ['staff', 'Equipo']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" data-f="${k}">${l}</button>`).join('')}</div>`;
+      let lastDay = null;
+      h += L.map((e) => { const d = dayOf(e.t) + 1, hh = Math.floor((e.t % 1440) / 60), mm = Math.floor(e.t % 60); const [ic, col] = HIST[e.k] || ['bell', '#888'];
+        const head = d !== lastDay ? `<div class="sec">Día ${d}</div>` : ''; lastDay = d;
+        return `${head}<div class="hrow"><span class="hic" style="background:${col}">${icon(ic)}</span><span class="ht">${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}</span><span>${esc(e.txt)}</span></div>`; }).join('') || '<p class="hint">Aún no ha pasado nada. Aquí verás quién da de comer, quién se despista, nacimientos y fallecimientos.</p>';
+    } else {
+      const M = st.memorial || [];
+      h += M.length ? `<p class="hint" style="margin:6px 4px">Los animales que vivieron en el santuario.</p><div class="list">${M.map((m) => `<div class="li"><span class="tilebox">${icon(m.cause === 'eaten' ? 'alert' : 'leaf')}</span><div style="flex:1;min-width:0"><b>${esc(m.name)}</b> <span class="hint">${SPECIES[m.sp]?.label || ''}</span><div class="hint">Día ${m.day} · ${m.age} días · ${{ old: 'de mayor', sick: 'enfermedad sin tratar', hunger: 'hambre', eaten: 'cazado por un depredador' }[m.cause]}</div></div></div>`).join('')}</div>` : '<p class="hint" style="margin:6px 4px">Ningún animal ha fallecido todavía.</p>';
+    }
+    b.innerHTML = h;
+    b.querySelectorAll('#stab button').forEach((x) => (x.onclick = () => { view.stab = x.dataset.v; renderPanel(); }));
+    b.querySelectorAll('#lflt [data-f]').forEach((x) => (x.onclick = () => { view.lflt = x.dataset.f; renderPanel(); }));
+    const W = (x, a) => st.team.find((k) => k.id === x.dataset[a]);
+    b.querySelectorAll('[data-hire]').forEach((x) => (x.onclick = () => { const k = newWorker(x.dataset.hire); st.team.push(k); syncStaff(); hist('staff', `${k.name} empieza a trabajar en ${ROLES[k.role].label.toLowerCase()}`); toast(`${k.name} se une al equipo`, 'good', 'users'); renderPanel(); save(); }));
+    b.querySelectorAll('[data-praise]').forEach((x) => (x.onclick = () => { const k = W(x, 'praise'); k.praisedDay = dayOf(st.time) + 1; const fair = !(k.lastSlip && st.time - k.lastSlip < 1440); k.mood = clamp(k.mood + (fair ? 10 : 3)); toast(fair ? `${k.name} sonríe: «¡Gracias! Da gusto trabajar aquí»` : `${k.name}: «Gracias… aunque hoy no lo he hecho muy bien»`, 'good', 'smile'); hist('staff', `Has felicitado a ${k.name}`); renderPanel(); save(); }));
+    b.querySelectorAll('[data-warn]').forEach((x) => (x.onclick = () => { const k = W(x, 'warn'); const fair = k.lastSlip && st.time - k.lastSlip < 1440;
+      if (fair) { k.skill = clamp(k.skill + 6); k.mood = clamp(k.mood - 5); k.warnedAt = st.time; toast(`${k.name}: «Tienes razón, no volverá a pasar»`, 'info', 'alert'); hist('staff', `Has llamado la atención a ${k.name}: promete ser más constante`); }
+      else { k.mood = clamp(k.mood - 15); toast(`${k.name}: «¿Por qué? ¡Si lo he hecho todo bien!» Ha perdido ánimo.`, 'warn', 'frown'); hist('staff', `Has llamado la atención a ${k.name} sin motivo: ha perdido ánimo`); }
+      renderPanel(); save(); }));
+    b.querySelectorAll('[data-raise]').forEach((x) => (x.onclick = () => { const k = W(x, 'raise'); confirm(`¿Subir el sueldo de ${k.name} de ${eur(k.wage)} a ${eur(k.wage + 15)} al día?`, () => { k.wage += 15; k.mood = clamp(k.mood + 15); hist('staff', `Has subido el sueldo a ${k.name} (${eur(k.wage)}/día)`); toast(`${k.name}: «¡Muchas gracias por la subida!»`, 'good', 'coin'); renderPanel(); save(); }); }));
+    b.querySelectorAll('[data-fire]').forEach((x) => (x.onclick = () => { const k = W(x, 'fire'); confirm(`¿Despedir a ${k.name}? El resto del equipo perderá un poco de ánimo.`, () => { st.team = st.team.filter((q) => q !== k); for (const o of st.team) o.mood = clamp(o.mood - 4); syncStaff(); hist('staff', `Has despedido a ${k.name}`); renderPanel(); save(); }); }));
   }
   if (name === 'info') {
     const last = st.history[0];
@@ -1216,7 +1356,7 @@ renderGoal();
 hud();
 $('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); const c = ev.target.closest('[data-care]'); if (c) { const [aid, k] = c.dataset.care.split('|'); careAnimal(st.animals.find((q) => q.id === aid), k); animalCardTick(true); } });
 Sound.init('zoo');
-window.zoo = { eng, THREE, parkGround, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, parkGround, clashNear, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {
