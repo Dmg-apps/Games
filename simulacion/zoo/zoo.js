@@ -1,7 +1,7 @@
 // Parque Salvaje: gestiona tu propio parque de animales.
 import { Engine, THREE, mat, blob, box, canvasTexture, RoundedBoxGeometry } from '../shared/engine3d.js';
 import * as Look from '../shared/look.js';
-Look.setStyle('cubito'); // vegetación y rocas en estilo cubito (diseño propio)
+Look.setStyle('real'); World.setReal(true); // aspecto realista: formas suaves, texturas fotográficas y cielo real
 import { buildingMesh as propMesh, People } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
 import { cubeModel, cubeScale } from './cube3d.js';
@@ -10,7 +10,8 @@ import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, 
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
 import { thumbs, preview } from '../shared/thumbs.js';
-import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, SPONSOR, CARE, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES, PREDATOR, CLIMATE, STAFF_NAMES, ROLES } from './data.js';
+import { N as N0, ENTRANCE as ENTRANCE0, BIOMES, SIZES, SPECIES, ENRICH, enrichFor, BUILDINGS, PATH_PRICE, WAGES, FOOD_COST, SPONSOR, CARE, ANIMAL_NAMES, CARNIVORES, HYBRIDS, CROSSES, crossChild, TRAITS, ILLNESS, VET_VISIT, RESCUES, PREDATOR, CLIMATE, STAFF_NAMES, ROLES, REAL_SCALE } from './data.js';
+const sizeK = (sp) => REAL_SCALE[sp] ?? 0.7;
 
 const KEY = 'parque_save_v1';
 const SPEEDS = [0, 1, 3, 8]; // minutos de juego por segundo real
@@ -270,10 +271,10 @@ function callVet(a) {
 // Lo que ocupa sitio dentro de un recinto (radio en casillas): los animales se ponen al lado, no dentro
 const SOLID = { charca: 0.46, nenufares: 0.44, establo: 0.78, arbol: 0.32, acacia: 0.3, roca: 0.5, cueva: 0.62, cuevaroca: 0.66, trepador: 0.5, pajar: 0.45, comedero: 0.42, termitero: 0.3, tronco: 0.25, hielo: 0.42, tobogan: 0.5, troncocaido: 0.5, colmena: 0.2, juguete: 0.22, bambu: 0.3, helechos: 0.25, juncos: 0.2, islote: 0.48 };
 function freeSpot(a, e, x, z) {
-  const me = Math.max(0.18, SPECIES[a.sp].body[0] * 0.45 * cubeScale(a.sp) * (a.baby ? 0.55 : 1));
+  const me = Math.max(0.18, SPECIES[a.sp].body[0] * 0.45 * sizeK(a.sp) * (a.baby ? 0.55 : 1));
   for (let k = 0; k < 3; k++) {
     for (const it of e.items) { const r = SOLID[it.type]; if (!r) continue; const cx = it.x + 0.5, cz = it.z + 0.5, dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz), need = r + me; if (d < need) { const ux = d > 0.01 ? dx / d : Math.cos(a.x * 7), uz = d > 0.01 ? dz / d : Math.sin(a.z * 7); x = cx + ux * need; z = cz + uz * need; } }
-    for (const o of st.animals) { if (o === a || o.enc !== a.enc) continue; const ox = o.tx ?? o.x, oz = o.tz ?? o.z, dx = x - ox, dz = z - oz, d = Math.hypot(dx, dz), need = me + Math.max(0.18, SPECIES[o.sp].body[0] * 0.4 * cubeScale(o.sp)); if (d < need && !(a.baby && o.id === a.mother)) { const ux = d > 0.01 ? dx / d : 1, uz = d > 0.01 ? dz / d : 0; x = ox + ux * need; z = oz + uz * need; } }
+    for (const o of st.animals) { if (o === a || o.enc !== a.enc) continue; const ox = o.tx ?? o.x, oz = o.tz ?? o.z, dx = x - ox, dz = z - oz, d = Math.hypot(dx, dz), need = me + Math.max(0.18, SPECIES[o.sp].body[0] * 0.4 * sizeK(o.sp)); if (d < need && !(a.baby && o.id === a.mother)) { const ux = d > 0.01 ? dx / d : 1, uz = d > 0.01 ? dz / d : 0; x = ox + ux * need; z = oz + uz * need; } }
   }
   return { x, z };
 }
@@ -294,7 +295,7 @@ function hideSpot(a, e) {
 }
 function decide(a, e) {
   a.den = null; a.crouch = false;
-  const S = SPECIES[a.sp], h = hourOf(st.time), mg = Math.max(0.45, Math.min(e.n / 2 - 0.05, S.body[0] * 0.5 * cubeScale(a.sp) * (a.baby ? 0.55 : 1) + 0.28));
+  const S = SPECIES[a.sp], h = hourOf(st.time), mg = Math.max(0.45, Math.min(e.n / 2 - 0.05, S.body[0] * 0.5 * sizeK(a.sp) * (a.baby ? 0.55 : 1) + 0.28));
   const inside = (x, z) => ({ x: Math.min(e.x + e.n - mg, Math.max(e.x + mg, x)), z: Math.min(e.z + e.n - mg, Math.max(e.z + mg, z)) });
   const blocked = (x, z) => e.items.some((it) => SOLID[it.type] && Math.hypot(x - it.x - 0.5, z - it.z - 0.5) < SOLID[it.type] + 0.2);
   const go = (x, z, state, mins) => {
@@ -543,9 +544,10 @@ const S3 = eng.scene;
 // Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
 setAnimalDetail(eng.hq ? 0.75 : 0.5);
 Look.setupLook(eng, { cx: N / 2, cz: N / 2, size: N * 0.78, height: 30, fog: { color: '#d4eaf4', near: 45, far: 140 } });
-const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: World.lawnTex(N) }));
+World.realSky(eng); eng.hemi.intensity *= 0.6; eng.sun.intensity *= 1.2; eng.gl.toneMappingExposure = 1.22;
+const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), World.photoMat('lawn', (N + 1) / 1.6, (N + 1) / 1.6, { color: '#b4dc84' }));
 parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); parkGround.receiveShadow = true; S3.add(parkGround);
-{ const hg = new THREE.Mesh(new THREE.CircleGeometry(140, 48), new THREE.MeshLambertMaterial({ map: World.meadowTex(140 / 4) })); hg.rotation.x = -Math.PI / 2; hg.position.set(N / 2, -0.02, N / 2); hg.receiveShadow = true; S3.add(hg); }
+{ const hg = new THREE.Mesh(new THREE.CircleGeometry(140, 48), World.photoMat('meadow', 140 / 1.4, 140 / 1.4, { color: '#d8e0c8' })); hg.rotation.x = -Math.PI / 2; hg.position.set(N / 2, -0.02, N / 2); hg.receiveShadow = true; S3.add(hg); }
 {
   // seto alrededor del parque (con hueco en la entrada) y bosque de fondo
   const R = Look.seeded(7); const hedge = [];
@@ -556,7 +558,7 @@ parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); 
   const field = []; for (let i = 0; i < 260 * Look.detail(eng); i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
 }
 // entrada
-const gate = World.gate(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5); S3.add(gate);
+const gate = World.gateReal(); gate.position.set(ENTRANCE.x + 0.5, 0, ENTRANCE.z + 0.5); S3.add(gate);
 const groups = { tufts: new THREE.Group(), paths: new THREE.Group(), enc: new THREE.Group(), bld: new THREE.Group(), animals: new THREE.Group(), people: new THREE.Group(), litter: new THREE.Group(), ghost: new THREE.Group() };
 Object.values(groups).forEach((g) => S3.add(g));
 const ov = document.createElement('canvas'); ov.className = 'overlay2d'; canvas.after(ov); const octx = ov.getContext('2d');
@@ -565,7 +567,7 @@ let sig = {};
 const pathMat = new THREE.MeshLambertMaterial({ map: Look.pavingTex(1) });
 function rebuildPaths() {
   const g = groups.paths; g.clear(); const n = st.paths.length; if (!n) return;
-  const P = pathSet(); g.add(World.pathMesh(st.paths.map((p) => p.split(',').map(Number)), (x, z) => P.has(pk(x, z)), (x, z) => x === ENTRANCE.x && z > ENTRANCE.z));
+  const P = pathSet(); g.add(World.pathMeshReal(st.paths.map((p) => p.split(',').map(Number)), (x, z) => P.has(pk(x, z)), (x, z) => x === ENTRANCE.x && z > ENTRANCE.z));
 }
 const BIOME_TREE = { granja: 'roble', sabana: 'roble', selva: 'palmera', artico: 'pino', humedal: 'abedul', bosque: 'pino' };
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
@@ -660,7 +662,7 @@ function rebuildEnclosures() {
   const g = groups.enc; g.clear(); eng.shadowsDirty?.();
   for (const e of st.enclosures) {
     const eg = new THREE.Group(); eg.userData.enc = e.id; g.add(eg);
-    eg.add(World.enclosureBase(e));
+    eg.add(World.enclosureBaseReal(e));
     e.items.forEach((it, i) => { const m = enrichMesh(it.type, e.biome, it.x * 7 + it.z); m.position.set(it.x + 0.5, 0.05, it.z + 0.5); m.userData.item = e.id + ':' + i; eg.add(m); });
     const pond = pondMesh(e); if (pond) eg.add(pond);
   }
@@ -674,7 +676,7 @@ const animalMeshes = new Map();
 let glbReady = false; const GLB = {};
 // Animales "cubito": diseño original del juego (cube3d.js)
 function animalModel(sp) {
-  const m = cubeModel(sp); const [L, , W] = SPECIES[sp].body; m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m;
+  const m = organicModel(sp); m.baseScale = sizeK(sp); const [L, , W] = SPECIES[sp].body; if (!eng.hq) m.g.add(blob(Math.max(W, 0.3) * 1.9, Math.max(L, 0.3) * 1.6, 0.38)); return m;
 }
 function syncAnimals(t) {
   const seen = new Set();
@@ -762,7 +764,7 @@ function rebuildTufts() {
     for (let i = 0; i < (eng.hq ? 1 + (k % 2) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]);
     if (k === 3 || (eng.hq && k === 5)) for (let i = 0; i < 3; i++) fl.push([x + 0.2 + ((k * 7 + i * 41) % 61) / 100, z + 0.2 + ((k * 11 + i * 23) % 59) / 100]);
   }
-  g.add(World.lawnDetail(pts, fl));
+  g.add(World.lawnDetail([], fl));
   if (tall.length) g.add(World.tallGrass(tall));
   if (trees.length) { const f = Look.forest(trees); Look.shadows(f, true, false); g.add(f);}
   // arbustos: 3 modelos dibujados de una vez cada uno (pocas llamadas a la gráfica)
@@ -801,7 +803,7 @@ function overlay() {
     octx.fillStyle = '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(v.say.text, x + w / 2, y + 12.5, w - 12);
   }
   if (close) for (const a of st.animals.filter((q) => q.enc === close)) {
-    const m = animalMeshes.get(a.id); if (!m) continue; const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + SPECIES[a.sp].neck * 0.8 + 0.25) * (a.baby ? 0.55 : 1);
+    const m = animalMeshes.get(a.id); if (!m) continue; const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + SPECIES[a.sp].neck * 0.8 + 0.25) * (a.baby ? 0.55 : 1) * sizeK(a.sp);
     const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1 || q.x < 0 || q.x > eng.w) continue;
     const label = m.g.visible ? a.name : a.name + (a.sex === 'f' ? ' · escondida' : ' · escondido'); octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(label).width + 14; const sel = a.id === followId;
     octx.fillStyle = sel ? 'rgba(31,37,64,0.92)' : 'rgba(255,255,255,0.88)'; octx.beginPath(); octx.roundRect(q.x - w / 2, q.y - 11, w, 20, 10); octx.fill();
@@ -809,7 +811,7 @@ function overlay() {
   }
   for (const a of st.animals) {
     if (!a.sick) continue; const m = animalMeshes.get(a.id); if (!m) continue;
-    const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + 0.3) * (a.baby ? 0.55 : 1); const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1) continue;
+    const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + 0.3) * (a.baby ? 0.55 : 1) * sizeK(a.sp); const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1) continue;
     const y = q.y - (close ? 22 : 0); octx.fillStyle = '#fff'; octx.beginPath(); octx.arc(q.x, y, 11, 0, 7); octx.fill(); octx.strokeStyle = '#e5484d'; octx.lineWidth = 2; octx.stroke();
     octx.fillStyle = '#e5484d'; octx.fillRect(q.x - 6, y - 2, 12, 4); octx.fillRect(q.x - 2, y - 6, 4, 12);
   }
@@ -1266,7 +1268,7 @@ function crossPairs(e) {
 }
 // ---------- fotos de los animales ----------
 // Se dibujan una vez por especie (con el mismo modelo 3D del parque) y se guardan
-function zooPhotos(sps) { return thumbs('zoo-cube', [...new Set(sps)], (sp) => { const g = cubeModel(sp).g; g.rotation.y = 1.0; return g; }, { size: 120, dir: [0.2, 0.35, 1], fit: 0.85 }); }
+function zooPhotos(sps) { return thumbs('zoo-org', [...new Set(sps)], (sp) => { const g = organicModel(sp).g; g.rotation.y = 1.0; return g; }, { size: 120, dir: [0.2, 0.35, 1], fit: 0.85 }); }
 const zimg = (src, biome, size = 56) => src ? `<img class="zphoto" src="${src}" alt="" style="width:${size}px;height:${size}px;background:radial-gradient(circle at 50% 40%, #fff8, transparent 70%), ${BIOMES[biome]?.color || '#9cc46a'}">` : `<span class="tilebox">${icon('paw')}</span>`;
 function crossSection(e) {
   const pairs = crossPairs(e); const cph = zooPhotos(pairs.flatMap(({ m, f }) => [m.sp, f.sp]));

@@ -216,3 +216,87 @@ export function birds(cx, cz, n = 6) {
     for (const o of list) { const a = t * o.sp + o.ph; o.b.position.set(cx + Math.cos(a) * o.r, o.h + Math.sin(t * 0.7 + o.ph) * 0.3, cz + Math.sin(a) * o.r); o.b.rotation.y = -a; const f = Math.sin(t * 9 + o.ph * 3) * 0.6; o.wl.rotation.z = f; o.wr.rotation.z = -f; }
   } };
 }
+
+// ---------- aspecto realista: texturas fotográficas (Poly Haven, CC0) y cielo real ----------
+const loader = new THREE.TextureLoader();
+const TEX = new URL('./tex/', import.meta.url).href;
+function photoSrc(name) {
+  return once('ph-' + name, () => {
+    const d = loader.load(TEX + name + '_d.jpg'); d.colorSpace = THREE.SRGBColorSpace; d.wrapS = d.wrapT = THREE.RepeatWrapping; d.anisotropy = 8;
+    const n = loader.load(TEX + name + '_n.jpg'); n.wrapS = n.wrapT = THREE.RepeatWrapping;
+    return { d, n };
+  });
+}
+// Material con foto y relieve. rep: veces que se repite (x, y). color tiñe la foto.
+export function photoMat(name, rx = 1, ry = rx, { color = '#ffffff', rough = 0.95, normal = 0.9 } = {}) {
+  const k = `pm-${name}-${rx}-${ry}-${color}`;
+  return once(k, () => { const s = photoSrc(name); const d = s.d.clone(), n = s.n.clone(); d.repeat.set(rx, ry); n.repeat.set(rx, ry);
+    return new THREE.MeshStandardMaterial({ map: d, normalMap: n, normalScale: new THREE.Vector2(normal, normal), roughness: rough, metalness: 0, color }); });
+}
+// Cielo fotográfico de fondo y como luz ambiental (reflejos y sombras suaves naturales)
+export function realSky(eng, fogColor = '#c9d6df') {
+  const sc = eng.scene; sc.fog = new THREE.Fog(fogColor, 38, 120);
+  loader.load(TEX + 'sky.jpg', (t) => {
+    t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace;
+    sc.background = t; const pm = new THREE.PMREMGenerator(eng.gl); sc.environment = pm.fromEquirectangular(t).texture; pm.dispose();
+    sc.environmentIntensity = 0.75; eng.dirty = true; eng.shadowsDirty?.();
+  });
+}
+// Degradado opaco (gris) para usar como transparencia del camino de tierra junto a la valla
+const edgeAlpha = () => once('edgeA', () => { const t = tex(64, (x, s) => { const g = x.createLinearGradient(0, 0, 0, s); g.addColorStop(0, '#d0d0d0'); g.addColorStop(0.5, '#707070'); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(0, 0, s, s); }); t.colorSpace = THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; });
+const REAL_FENCE = {
+  granja: { wood: '#ffffff', post: '#e8dccb' }, sabana: { wood: '#e8d2b0', post: '#d8c0a0' }, selva: { wood: '#c8d8a0', post: '#b8c890' },
+  artico: { stone: true }, humedal: { wood: '#d8cfc0', post: '#c8bca8' }, bosque: { wood: '#a88e74', post: '#988068' },
+};
+export let REAL = false;
+export function setReal(v) { REAL = v; }
+export function enclosureBaseReal(e) {
+  const g = new THREE.Group(), n = e.n, cx = e.x + n / 2, cz = e.z + n / 2;
+  const TINT = { sabana: '#f0d6a0', granja: '#d8ecb0', bosque: '#e8f0d0', selva: '#d8f0c0', humedal: '#e0ecd8', artico: '#ffffff' };
+  const top = photoMat(e.biome, n / 1.5, n / 1.5, { color: TINT[e.biome] || '#fff' }), side = photoMat('dirt', n / 2, 0.15);
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(n - 0.04, 0.06, n - 0.04), [side, side, top, side, side, side]);
+  ground.position.set(cx, 0.03, cz); ground.receiveShadow = true; g.add(ground);
+  const w = Math.min(0.6, n * 0.12);
+  const em = new THREE.MeshStandardMaterial({ map: photoSrc('dirt').d.clone(), alphaMap: edgeAlpha(), transparent: true, depthWrite: false, roughness: 1, color: e.biome === 'artico' ? '#e8eef2' : '#ffffff', polygonOffset: true, polygonOffsetFactor: -1 });
+  em.map.repeat.set(n / 1.2, w / 1.2);
+  for (const [px, pz, ry] of [[cx, e.z + w / 2, 0], [cx, e.z + n - w / 2, Math.PI], [e.x + w / 2, cz, -Math.PI / 2], [e.x + n - w / 2, cz, Math.PI / 2]]) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(n - 0.06, w), em); p.rotation.set(-Math.PI / 2, 0, ry); p.position.set(px, 0.062, pz); p.renderOrder = 1; p.receiveShadow = true; g.add(p);
+  }
+  // valla de madera (postes redondos y travesaños de tabla); en el ártico, de piedra y madera clara
+  const F = REAL_FENCE[e.biome] || REAL_FENCE.granja;
+  const postM = F.stone ? photoMat('stone', 0.4, 1.2, { color: '#f0eee8' }) : photoMat('bark', 0.5, 1.5, { color: F.post });
+  const railM = F.stone ? photoMat('wood', 1, 0.2, { color: '#f2ece2' }) : photoMat('wood', 1, 0.2, { color: F.wood });
+  const postG = once('rpost', () => new THREE.CylinderGeometry(0.055, 0.065, 0.95, 10).translate(0, 0.47, 0));
+  const railG = once('rrail', () => new RoundedBoxGeometry(1, 0.1, 0.045, 2, 0.015));
+  const posts = [], rails = [], seen = new Set(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i <= n; i++) for (const [x, z] of [[e.x + i, e.z], [e.x + i, e.z + n], [e.x, e.z + i], [e.x + n, e.z + i]]) { const k = x + ',' + z; if (seen.has(k)) continue; seen.add(k); q.setFromAxisAngle(up, (x * 13 + z * 7) % 6.28); posts.push(m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 0.95 + ((x * 7 + z * 3) % 5) * 0.02, 1)).clone()); }
+  for (let i = 0; i < n; i++) for (const [x, z, rot] of [[e.x + i + 0.5, e.z, 0], [e.x + i + 0.5, e.z + n, 0], [e.x, e.z + i + 0.5, Math.PI / 2], [e.x + n, e.z + i + 0.5, Math.PI / 2]]) {
+    q.setFromAxisAngle(up, rot); for (const y of [0.34, 0.68]) rails.push(m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(1.02, 1, 1)).clone());
+  }
+  g.add(inst(postG, postM, posts), inst(railG, railM, rails));
+  return g;
+}
+export function pathMeshReal(tiles, isPath, skip = () => false) {
+  const g = new THREE.Group(); if (!tiles.length) return g;
+  const top = photoMat('path', 1), side = photoMat('stone', 1, 0.1);
+  const slab = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.06, 1), [side, side, top, side, side, side], tiles.length);
+  const m4 = new THREE.Matrix4(); tiles.forEach(([x, z], i) => { m4.makeTranslation(x + 0.5, 0.03, z + 0.5); slab.setMatrixAt(i, m4); }); slab.receiveShadow = true; g.add(slab);
+  const curb = [], q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  for (const [x, z] of tiles) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { if (isPath(x + dx, z + dz) || skip(x + dx, z + dz)) continue; q.setFromAxisAngle(up, dx ? Math.PI / 2 : 0); curb.push(m4.compose(new THREE.Vector3(x + 0.5 + dx * 0.47, 0.045, z + 0.5 + dz * 0.47), q, new THREE.Vector3(1.0, 0.9, 0.3)).clone()); }
+  if (curb.length) { const c = inst(geos().curb, photoMat('stone', 1, 0.15, { color: '#e8e2d6' }), curb); c.castShadow = false; g.add(c); }
+  return g;
+}
+export function gateReal() {
+  const g = new THREE.Group(); const stone = photoMat('stone', 0.6, 1.6), stoneS = photoMat('stone', 0.6, 0.3, { color: '#d8d0c0' }), wood = photoMat('wood', 1.5, 0.3, { color: '#c8a888' });
+  for (const sx of [-0.95, 0.95]) {
+    const p = new THREE.Mesh(new RoundedBoxGeometry(0.46, 1.9, 0.46, 2, 0.03), stone); p.position.set(sx, 0.95, 0); g.add(p);
+    const c = new THREE.Mesh(new RoundedBoxGeometry(0.56, 0.14, 0.56, 2, 0.03), stoneS); c.position.set(sx, 1.97, 0); g.add(c);
+  }
+  const beam = new THREE.Mesh(new RoundedBoxGeometry(2.5, 0.22, 0.26, 2, 0.04), wood); beam.position.set(0, 1.72, 0); g.add(beam);
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 150; const x = cv.getContext('2d');
+  x.fillStyle = '#3c2a1c'; x.fillRect(0, 0, 512, 150); x.fillStyle = '#f2e6cc'; x.font = '900 70px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('SANTUARIO', 256, 80);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  const board = new THREE.Mesh(new RoundedBoxGeometry(1.5, 0.44, 0.07, 2, 0.02), [wood, wood, wood, wood, new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 }), wood]); board.position.set(0, 2.08, 0.02); g.add(board);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}

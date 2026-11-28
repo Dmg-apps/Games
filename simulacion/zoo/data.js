@@ -157,3 +157,8 @@ export const PREDATOR = { leon: 6, tigre: 6, ligre: 6, tigon: 6, osopolar: 7, os
 export const CLIMATE = { artico: 0, bosque: 1, granja: 2, humedal: 2, selva: 3, sabana: 3 };
 export const STAFF_NAMES = ['Lucía', 'Mateo', 'Nora', 'Iker', 'Alba', 'Hugo', 'Sara', 'Leo', 'Inés', 'Bruno', 'Vera', 'Marco', 'Ada', 'Pau', 'Noa', 'Teo', 'Lía', 'Gael', 'Irene', 'Dani', 'Olga', 'Rubén', 'Celia', 'Omar'];
 export const ROLES = { keeper: { label: 'Cuidado de animales', short: 'Cuidados', ic: 'paw', color: '#2aa876' }, cleaner: { label: 'Limpieza', short: 'Limpieza', ic: 'broom', color: '#3a9bd6' }, vet: { label: 'Veterinaria', short: 'Veterinaria', ic: 'heart', color: '#ee6f47' } };
+
+// Escala real de cada especie respecto a su modelo (1 casilla = 2 m; una persona mide unos 1,65 m).
+// Ej.: elefante ~3 m a la cruz, jirafa ~5 m de alto, pingüino <1 m, zorro ~40 cm.
+export const REAL_SCALE = { elefante: 0.9, jirafa: 1.0, pinguino: 1.1, leon: 0.65, tigre: 0.58, cebra: 0.7, caballo: 0.75, cabra: 0.55, vaca: 0.75, ciervo: 0.55, lobo: 0.5, zorro: 0.45, osopardo: 0.55, osopolar: 0.7, panda: 0.48, mono: 0.42, canguro: 0.8, flamenco: 0.6, tortuga: 0.95, alpaca: 0.58, llama: 0.62, burro: 0.66,
+  ligre: 0.7, tigon: 0.58, pizzly: 0.66, cebrallo: 0.72, cebrasno: 0.68, mula: 0.72, huarizo: 0.6 };

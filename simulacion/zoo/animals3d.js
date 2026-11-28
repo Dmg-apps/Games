@@ -106,6 +106,7 @@ function painter(M) {
         const th = pat === 'tiger' ? 0.55 : pat === 'faint' ? 0.75 : 0.05;
         if (w > th && !(pat !== 'stripes' && tag === 'body' && p[1] < yBelly && nrm[1] < 0)) out.copy(cs.dark).lerp(c, pat === 'faint' ? 0.55 : 0);
       }
+      if (pat === 'patches' && tag !== 'snout' && tag !== 'leg') { const n = Math.sin(p[0] * 13 + 1.3) * Math.sin(p[1] * 9 + 0.4) * Math.sin(p[2] * 11 + 0.7) + Math.sin(p[2] * 5 + p[0] * 4) * 0.35; if (n > 0.22) out.copy(cs.spot); }
       if (pat === 'spots' && tag !== 'snout') { const [d1, d2] = voronoi(p, 0.085); if (d2 - d1 > 0.12 && p[1] > M.legH * 0.45) out.copy(cs.spot); }
       if (pat === 'panda') { const black = tag === 'leg' || (tag === 'body' && Math.abs(p[2] - M.L * 0.15) < M.L * 0.16 && p[1] > M.bodyY - M.H * 0.35) || tag === 'ear'; if (black) out.copy(cs.dark); }
       if (pat === 'tuxedo') { if (nrm[2] > 0.15 && tag === 'body') out.copy(cs.belly); }
@@ -133,6 +134,10 @@ const MODELS = {
   panda: { arch: 'quad', L: 0.8, H: 0.55, W: 0.5, legH: 0.34, legR: 0.1, neckL: 0.12, neckA: 1.0, neckR: 0.15, headR: 0.17, snoutL: 0.07, snoutR: 0.07, round: true, col: { body: '#f6f4ee', belly: '#f6f4ee', dark: '#161616', nose: '#161616' }, pattern: 'panda', ears: 'round', earDark: true, eyePatch: true, tail: 0.05, paws: true, fur: 0.005 },
   elefante: { arch: 'quad', L: 1.3, H: 0.95, W: 0.8, legH: 0.7, legR: 0.15, neckL: 0.12, neckA: 1.2, neckR: 0.26, headR: 0.32, snoutL: 0, snoutR: 0.1, round: true, col: { body: '#9a9aa0', belly: '#8a8a90', dark: '#6a6a70', nose: '#8a8a90', tuft: '#3a3a3a' }, ears: 'big', trunk: true, tusks: true, tail: 0.32, tuft: true, feet: true },
   mono: { arch: 'quad', L: 0.34, H: 0.34, W: 0.26, legH: 0.3, legR: 0.035, neckL: 0.06, neckA: 0.6, neckR: 0.06, headR: 0.11, snoutL: 0.04, snoutR: 0.05, round: true, slope: -0.2, col: { body: '#7a5232', belly: '#a07a52', face: '#e8c8a0', dark: '#3a2414', nose: '#5a3a2a' }, ears: 'monkey', tail: 0.5, tailCurl: true, paws: true, face: true },
+  vaca: { arch: 'quad', L: 0.95, H: 0.5, W: 0.45, legH: 0.45, legR: 0.07, neckL: 0.2, neckA: 0.8, neckR: 0.12, headR: 0.12, snoutL: 0.14, snoutR: 0.07, col: { body: '#f2ece2', belly: '#f6f0e6', dark: '#2a2220', spot: '#2a2220', nose: '#d8a0a0', hoof: '#2a2420' }, pattern: 'patches', ears: 'side', horns: true, tail: 0.4, tuft: true, hooves: true },
+  ciervo: { arch: 'quad', L: 0.85, H: 0.45, W: 0.32, legH: 0.6, legR: 0.045, neckL: 0.36, neckA: 0.5, neckR: 0.08, headR: 0.095, snoutL: 0.13, snoutR: 0.04, col: { body: '#9a6a40', belly: '#e8d4b0', dark: '#3a2a1a', nose: '#2a1a10', hoof: '#2a2018' }, ears: 'up', antlers: true, tail: 0.08, hooves: true },
+  lobo: { arch: 'quad', L: 0.75, H: 0.38, W: 0.26, legH: 0.42, legR: 0.05, neckL: 0.14, neckA: 0.8, neckR: 0.09, headR: 0.11, snoutL: 0.15, snoutR: 0.045, col: { body: '#7c7c82', belly: '#d8d8d8', dark: '#2a2a2e', nose: '#1a1a1a' }, ears: 'up', earL: 0.07, tail: 0.42, paws: true, fur: 0.002 },
+  zorro: { arch: 'quad', L: 0.5, H: 0.25, W: 0.18, legH: 0.22, legR: 0.03, neckL: 0.08, neckA: 0.8, neckR: 0.06, headR: 0.08, snoutL: 0.11, snoutR: 0.03, col: { body: '#d8742a', belly: '#f4ece0', dark: '#2a1a10', nose: '#1a1010' }, ears: 'up', earL: 0.065, tail: 0.38, paws: true },
   canguro: { arch: 'roo', L: 0.5, H: 0.55, W: 0.34, legH: 0.4, legR: 0.07, headR: 0.1, snoutL: 0.1, snoutR: 0.045, col: { body: '#c8885a', belly: '#e8c09a', dark: '#4a3020', nose: '#2a1a10' }, ears: 'up', earL: 0.13 },
   flamenco: { arch: 'bird', L: 0.36, H: 0.26, W: 0.22, legH: 0.62, headR: 0.06, col: { body: '#f4849f', belly: '#f8a8bc', dark: '#2a2a2a', beak: '#f0e0d0', leg: '#e07a90' } },
   pinguino: { arch: 'penguin', L: 0.3, H: 0.42, W: 0.28, legH: 0.06, headR: 0.1, col: { body: '#1c1f2a', belly: '#f4f4f0', dark: '#1c1f2a', beak: '#f0a030', leg: '#f0a030', cheek: '#f5c040' } },
@@ -259,6 +264,9 @@ function assembleQuad(M, parts) {
     else { e.position.set(sd * headR * 0.45, hc[1] + headR * 0.7, hc[2] - headR * 0.25); e.rotation.set(-0.25, 0, -sd * (t === 'long' ? 0.25 : 0.32)); }
     head.add(e);
     if (M.horns) { const h = new THREE.Mesh(new THREE.ConeGeometry(headR * 0.16, headR * 1.3, 8), smat('#6a5a48')); h.position.set(sd * headR * 0.3, hc[1] + headR * 1.05, hc[2] - headR * 0.35); h.rotation.x = -0.75; head.add(h); }
+    if (M.antlers) { const am = smat('#7a5e40'); const base = new THREE.Group(); base.position.set(sd * headR * 0.32, hc[1] + headR * 0.9, hc[2] - headR * 0.3); base.rotation.set(-0.35, 0, -sd * 0.45); head.add(base);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(headR * 0.06, headR * 0.1, headR * 2.2, 6), am); beam.position.y = headR * 1.1; base.add(beam);
+      for (const [y, rz, l] of [[0.6, 0.9, 0.9], [1.2, -0.7, 0.8], [1.7, 0.6, 0.6]]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(headR * 0.04, headR * 0.06, headR * l, 6), am); t.position.set(sd * headR * 0.22 * Math.sign(rz), headR * y + headR * 0.25, headR * 0.12); t.rotation.set(0.5, 0, -sd * rz); base.add(t); } }
     if (M.ossicones) { const o = new THREE.Mesh(new THREE.CylinderGeometry(headR * 0.12, headR * 0.15, headR * 0.9, 8), smat(M.col.spot || '#8a5a2a')); o.position.set(sd * headR * 0.28, hc[1] + headR * 1.1, hc[2] - headR * 0.2); head.add(o); const tip = new THREE.Mesh(new THREE.SphereGeometry(headR * 0.18, 8, 6), smat('#3a2414')); tip.position.set(sd * headR * 0.28, hc[1] + headR * 1.55, hc[2] - headR * 0.2); head.add(tip); }
     if (M.tusks) { const tk = new THREE.Mesh(new THREE.ConeGeometry(headR * 0.1, headR * 1.1, 10), smat('#f4efe0')); tk.position.set(sd * headR * 0.35, hc[1] - headR * 0.6, hc[2] + headR * 0.85); tk.rotation.x = 2.2; head.add(tk); }
   }
