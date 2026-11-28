@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <meta name="theme-color" content="#8fcdf0">
+  <meta name="theme-color" content="#9fd3ec">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Parque Salvaje · Simulación</title>
@@ -11,17 +11,17 @@
   <link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
   <link rel="preload" href="../shared/fonts/nunito.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="../shared/ui.css">
-  <style>html, body { position: fixed; inset: 0; height: auto; } html { background: #fffcf7; } body { background: linear-gradient(#8fcdf0, #d8eef8); } #toolinfo { flex-wrap: wrap; justify-content: center; } .closebar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 90px); z-index: 9; display: flex; gap: 6px; align-items: center; border-radius: 18px; padding: 6px 6px 6px 12px; max-width: calc(100vw - 20px); flex-wrap: wrap; justify-content: center; } .closebar .ttl { font-size: 13px; font-weight: 800; display: flex; gap: 6px; align-items: center; } .closecard { position: fixed; left: 10px; right: 10px; top: calc(var(--safe-t) + 106px); z-index: 9; border-radius: 18px; padding: 10px 12px; max-width: 420px; margin: 0 auto; } .closecard .tilebox { width: 36px; height: 36px; border-radius: 12px; font-size: 18px; } .toolbar.closing .tools { opacity: 0.35; pointer-events: none; }</style>
+  <link rel="stylesheet" href="zoo.css">
+  <style>html, body { position: fixed; inset: 0; height: auto; } html { background: #fffcf7; } #toolinfo { flex-wrap: wrap; justify-content: center; } .closebar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 90px); z-index: 9; display: flex; gap: 6px; align-items: center; border-radius: 18px; padding: 6px 6px 6px 12px; max-width: calc(100vw - 20px); flex-wrap: wrap; justify-content: center; } .closebar .ttl { font-size: 13px; font-weight: 800; display: flex; gap: 6px; align-items: center; } .closecard { position: fixed; left: 10px; right: 10px; top: calc(var(--safe-t) + 106px); z-index: 9; border-radius: 18px; padding: 10px 12px; max-width: 420px; margin: 0 auto; } .closecard .tilebox { width: 36px; height: 36px; border-radius: 12px; font-size: 18px; } .toolbar.closing .tools { opacity: 0.35; pointer-events: none; }</style>
 </head>
-<body>
+<body class="zoo">
   <canvas id="stage" class="stage"></canvas>
   <header class="hudbar">
     <div id="back" class="hud glass back"><a href="../" aria-label="Menú de juegos"></a></div>
-    <div id="money" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#ffc94a,#f59e0b)"></span><b></b></div>
-    <div id="clock" class="hud glass grow"><span class="badge" style="background:linear-gradient(160deg,#7cc4ff,#3b8fe0)"></span><div class="t"><b></b><span></span></div></div>
-    <div id="fame" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#ffb84a,#f08a1c)"></span><b></b></div>
+    <div id="money" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#ffd257,#f2a20c)"></span><b></b><span id="fame" class="fame"><span class="badge"></span><b></b></span></div>
+    <div id="clock" class="hud glass"><span class="badge" style="background:linear-gradient(160deg,#7cc4ff,#3b8fe0)"></span><div class="t"><b></b><span></span></div></div>
   </header>
-  <div class="hudbar" style="top:52px;justify-content:flex-end;padding-top:calc(var(--safe-t) + 10px)"><div id="speeds" class="hud glass speeds"></div></div>
+  <div id="speeds" class="glass speeds"></div>
   <div id="camctl" class="camctl"></div>
   <div id="animalcard" class="glass closecard" hidden></div>
   <div id="closebar" class="glass closebar" hidden></div>

@@ -383,7 +383,8 @@ function renderGoal() {
   let el = $('#goalpill'); if (!el) { el = document.createElement('button'); el.id = 'goalpill'; el.className = 'goalpill glass'; el.onclick = goalsModal; document.body.appendChild(el); }
   const C = CHAPTERS[st.chapter]; if (!C) { el.hidden = true; return; }
   const done = C.goals.filter(([, ok]) => ok()).length, next = C.goals.find(([, ok]) => !ok());
-  el.hidden = false; el.innerHTML = `${icon('flag')}<span><b>${next ? next[0] : C.title}</b><i>Capítulo ${st.chapter + 1} · ${done}/${C.goals.length}</i></span>`;
+  el.hidden = false; const k = `${st.chapter}|${done}|${next?.[0]}`; if (el.dataset.k === k) return; el.dataset.k = k;
+  el.innerHTML = `${icon('flag')}<span><b>${next ? next[0] : C.title}</b><i><span class="gp"><u style="transform:scaleX(${done / C.goals.length})"></u></span>Cap. ${st.chapter + 1} · ${done}/${C.goals.length}</i></span>`;
 }
 function goalsModal() {
   const C = CHAPTERS[st.chapter]; if (!C) return;
@@ -463,9 +464,9 @@ const S3 = eng.scene;
 // Paisaje: luz cálida, sombras, niebla en el horizonte, campo y bosque alrededor del parque
 setAnimalDetail(eng.hq ? 0.75 : 0.5);
 Look.setupLook(eng, { cx: N / 2, cz: N / 2, size: N * 0.78, height: 30, fog: { color: '#d4eaf4', near: 45, far: 140 } });
-const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: Look.grassTex(N / 3) }));
+const parkGround = new THREE.Mesh(new THREE.PlaneGeometry(N + 1, N + 1), new THREE.MeshLambertMaterial({ map: Look.grassTex(N / 3), color: '#e2ecc8' }));
 parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); parkGround.receiveShadow = true; S3.add(parkGround);
-S3.add(Look.horizonGround(N / 2, N / 2, '#8fb070'));
+S3.add(Look.horizonGround(N / 2, N / 2, '#9bb27a'));
 {
   // seto alrededor del parque (con hueco en la entrada) y bosque de fondo
   const R = Look.seeded(7); const hedge = [];
@@ -710,7 +711,7 @@ function overlay() {
   if (close) for (const a of st.animals.filter((q) => q.enc === close)) {
     const m = animalMeshes.get(a.id); if (!m) continue; const h = (SPECIES[a.sp].legs + SPECIES[a.sp].body[1] + SPECIES[a.sp].neck * 0.8 + 0.25) * (a.baby ? 0.55 : 1);
     const q = eng.project(new THREE.Vector3(m.g.position.x, h, m.g.position.z)); if (q.z > 1 || q.x < 0 || q.x > eng.w) continue;
-    const label = m.g.visible ? a.name : a.name + ' · escondido'; octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(label).width + 14; const sel = a.id === followId;
+    const label = m.g.visible ? a.name : a.name + (a.sex === 'f' ? ' · escondida' : ' · escondido'); octx.font = '800 12px Nunito, sans-serif'; const w = octx.measureText(label).width + 14; const sel = a.id === followId;
     octx.fillStyle = sel ? 'rgba(31,37,64,0.92)' : 'rgba(255,255,255,0.88)'; octx.beginPath(); octx.roundRect(q.x - w / 2, q.y - 11, w, 20, 10); octx.fill();
     octx.fillStyle = sel ? '#fff' : '#1f2540'; octx.textAlign = 'center'; octx.textBaseline = 'middle'; octx.fillText(label, q.x, q.y);
   }
@@ -885,18 +886,18 @@ function animalWorld(aid) { const m = animalMeshes.get(aid); return m ? m.g.posi
 function enterClose(e) {
   close = e.id; followId = null; nestCard = null; sheet.close(); setTool(null); closeModal();
   eng.cam.follow = null; eng.cam.min = 1.5; eng.cam.tx = new THREE.Vector3(e.x + e.n / 2, 0, e.z + e.n / 2); eng.cam.distT = eng.fitDist(e.n * 0.95); eng.cam.pitchT = 0.42;
-  $('#closebar').hidden = false; $('#tools').parentElement.classList.add('closing'); renderCloseBar();
+  $('#closebar').hidden = false; document.body.classList.add('closeview'); renderCloseBar();
 }
 function exitClose() {
   close = null; followId = null; nestCard = null; eng.cam.follow = null; eng.cam.min = 4; eng.cam.pitchT = 0.9; eng.cam.distT = eng.fitDist(15);
-  $('#closebar').hidden = true; $('#animalcard').hidden = true; $('#tools').parentElement.classList.remove('closing');
+  $('#closebar').hidden = true; $('#animalcard').hidden = true; document.body.classList.remove('closeview');
 }
-function followAnimal(aid) { followId = aid; nestCard = null; eng.follow(() => (followId ? animalWorld(followId) : null)); eng.cam.distT = Math.min(eng.cam.dist, eng.fitDist(3.2)); cardT = 0; animalCardTick(true); }
+function followAnimal(aid) { followId = aid; nestCard = null; eng.follow(() => (followId ? animalWorld(followId) : null)); eng.cam.distT = Math.min(eng.cam.dist, eng.fitDist(3.2)); cardT = 0; animalCardTick(true); if (close) renderCloseBar(); }
 function renderCloseBar() {
   const e = st.enclosures.find((q) => q.id === close); if (!e) return exitClose();
   const as = animalsIn(e);
-  const key = e.id + as.length + e.biome; if ($('#closebar').dataset.k === key) return; $('#closebar').dataset.k = key;
-  $('#closebar').innerHTML = `<span class="ttl">${icon('fence')} ${BIOMES[e.biome].label} · ${as.length} ${as.length === 1 ? 'animal' : 'animales'}</span><button class="btn sm" id="cb_f">${icon('eye')} Seguir a uno</button><button class="btn sm alt" id="cb_i">${icon('menu')} Ficha</button><button class="btn sm alt" id="cb_x">${icon('x')}</button>`;
+  const key = e.id + as.length + e.biome + !!followId; if ($('#closebar').dataset.k === key) return; $('#closebar').dataset.k = key;
+  $('#closebar').innerHTML = `<span class="ttl">${BIOMES[e.biome].label} <span class="cnt">${icon('paw')} ${as.length}</span></span><button class="btn sm" id="cb_f">${icon('eye')} ${followId ? 'Siguiente' : 'Seguir'}</button><button class="btn sm alt" id="cb_i" aria-label="Ficha del recinto">${icon('menu')}</button><button class="btn sm alt" id="cb_x" aria-label="Salir">${icon('x')}</button>`;
   $('#cb_f').onclick = () => { if (!as.length) return; const i = as.findIndex((a) => a.id === followId); followAnimal(as[(i + 1) % as.length].id); };
   $('#cb_i').onclick = () => encCard(e);
   $('#cb_x').onclick = exitClose;
@@ -911,7 +912,7 @@ function animalCardTick(force = false) {
   const a = followId && st.animals.find((q) => q.id === followId); if (!a) { el.hidden = true; return; }
   const S = SPECIES[a.sp]; const kids = st.animals.filter((k) => k.mother === a.id && k.baby).length; const mom = a.mother && st.animals.find((m) => m.id === a.mother);
   el.innerHTML = `<div class="row" style="align-items:center">${zimg(zooPhotos([a.sp])[a.sp], S.biome, 52)}<div style="flex:1;min-width:0"><b>${esc(a.name)}</b> <button class="renbtn" data-ren="${a.id}" aria-label="Cambiar nombre">${icon('pencil')}</button> <span class="hint">${S.label} · ${a.sex === 'm' ? '♂' : '♀'}${a.baby ? ' · cría' : ''}</span> <span class="trait" title="${TRAITS[a.trait]?.desc || ''}">${traitLabel(a)}</span>
-    <div class="hint">Está ${STATE_TXT[a.state] || 'tranquilo'}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
+    <div class="hint" style="color:${animalStatus(a)[1]};font-weight:800">${animalStatus(a)[0]}${a.preg ? ` · embarazada (nace en ${Math.max(1, Math.round((a.preg.until - st.time) / 60))} h)` : ''}${kids ? ` · ${kids} ${kids > 1 ? 'crías' : 'cría'}` : ''}${mom ? ` · hija de ${esc(mom.name)}` : ''}</div></div></div>
     ${a.sick ? `<div class="sickrow">${icon('alert')} <div style="flex:1;min-width:0"><b>Se encuentra mal: ${ILLNESS[a.sick.kind].toLowerCase()}</b><div class="hint">${sickWhy(a).length ? 'Por qué: ' + sickWhy(a).join(', ') + '. ' : ''}${st.staff.vet ? 'El veterinario lo atenderá pronto.' : ''}</div></div><button class="btn sm coral" data-vet="${a.id}">Curar · ${eur(VET_VISIT)}</button></div>` : ''}
     <div class="stat" style="margin:6px 0 0"><span class="tile" style="background:#f08a3c">${icon('food')}</span><span>Hambre</span><div class="bar"><i style="transform:scaleX(${a.hunger / 100});background:${a.hunger < 30 ? '#e5484d' : '#f08a3c'}"></i></div></div>
     <div class="stat" style="margin:4px 0 0"><span class="tile" style="background:#25c48f">${icon('heart')}</span><span>Felicidad</span><div class="bar"><i style="transform:scaleX(${a.happy / 100});background:${a.happy < 35 ? '#e5484d' : '#25c48f'}"></i></div></div>
@@ -1013,9 +1014,9 @@ function hud() {
   const h = hourOf(st.time); const open = h >= 9 && h < 20;
   $('#clock .t b').textContent = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor(st.time % 60)).padStart(2, '0')}`;
   $("#clock .t span").textContent = `Día ${dayOf(st.time) + 1}`;
-  $('#fame b').textContent = `${stars()}★`;
+  $('#fame b').textContent = `${stars()}`;
   const rdot = $('#tools [data-t="animal"] .dot'); if (rdot) rdot.hidden = !st.rescues.length;
-  document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.s === st.speed));
+  const spP = $('#sp_p'), spX = $('#sp_x'); if (spP) { const k = st.speed ? 'run' + st.speed : 'paused'; if (spP.dataset.k !== k) { spP.dataset.k = k; spP.innerHTML = icon(st.speed ? 'pause' : 'play'); spP.classList.toggle('paused', !st.speed); spX.textContent = `×${st.speed || lastSpeed || 1}`; spX.classList.toggle('fast', st.speed > 1); } }
   document.querySelectorAll('#tools button').forEach((b) => b.classList.toggle('on', b.dataset.t === sheet.name || (b.dataset.t === 'path' && view.tool === 'path')));
 }
 function renderToolInfo() {
@@ -1191,8 +1192,11 @@ function itemCard(key) {
 }
 function animalCard(aid) { const a = st.animals.find((q) => q.id === aid); if (!a) return; encCard(st.enclosures.find((e) => e.id === a.enc)); }
 
-document.querySelector('#speeds').innerHTML = [['pause', 0], ['play', 1], ['ff', 2], ['fff', 3]].map(([ic, s]) => `<button data-s="${s}">${icon(ic)}</button>`).join('');
-document.querySelector('#speeds').onclick = (e) => { const b = e.target.closest('button'); if (b) { st.speed = +b.dataset.s; hud(); } };
+// Velocidad: un botón de pausa y otro que cambia el ritmo (×1 → ×2 → ×3)
+document.querySelector('#speeds').innerHTML = `<button id="sp_p" aria-label="Pausa"></button><button id="sp_x" aria-label="Velocidad"></button>`;
+let lastSpeed = 1;
+$('#sp_p').onclick = () => { if (st.speed) { lastSpeed = st.speed; st.speed = 0; } else st.speed = lastSpeed || 1; hud(); };
+$('#sp_x').onclick = () => { st.speed = st.speed ? (st.speed % 3) + 1 : lastSpeed || 1; lastSpeed = st.speed; hud(); };
 document.querySelector('#tools').innerHTML = [['path', 'path', 'Caminos'], ['enc', 'fence', 'Recintos'], ['animal', 'heart', 'Animales'], ['build', 'shop', 'Tiendas'], ['staff', 'users', 'Personal'], ['info', 'chart', 'Parque']].map(([t, ic, l]) => `<button data-t="${t}" style="position:relative">${icon(ic)}<span>${l}</span>${t === 'animal' ? '<i class="dot" hidden></i>' : ''}</button>`).join('');
 document.querySelector('#tools').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.t === 'path') { sheet.close(); setTool(view.tool === 'path' ? null : 'path'); hud(); } else openPanel(b.dataset.t); };
 $('#money .badge').innerHTML = icon('coin'); $('#clock .badge').innerHTML = icon('sun'); $('#fame .badge').innerHTML = icon('star'); $('#back a').innerHTML = icon('home');
@@ -1214,12 +1218,16 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (store.load(KEY)) offline(); else { newRescue(true); say('rufina', 'Bienvenida a tu santuario', '¡Hola! Soy Rufina. Llevo cuarenta años rescatando animales y ahora este santuario es tuyo. Aquí no se compran animales: se rescatan, se cuidan y se les da una segunda vida.', '¡Empezamos!', null, `<ul style="padding-left:18px;line-height:1.6"><li><b>Rescates</b>: llegan avisos de animales que necesitan hogar. Acógelos si tienes un recinto preparado.</li><li><b>Recintos</b>: cada especie necesita su hábitat, espacio y compañía.</li><li><b>Confianza</b>: los rescatados llegan asustados. Con buenos cuidados se sienten en casa.</li><li><b>Visitantes</b>: con caminos y tiendas, financian el santuario.</li><li>Sigue los <b>objetivos</b> de arriba para avanzar en la historia.</li></ul><p>Ya tienes tu primer aviso: dos animales de una granja abandonada.</p>`); }
+if (store.load(KEY)) offline(); else { newRescue(true); say('rufina', 'Este santuario es tuyo', '¡Hola! Soy Rufina. Aquí no se compran animales: se rescatan, se cuidan y se les da una segunda vida.', '¡Empezamos!', null, `<div class="pillars">
+    <div><span class="ic" style="background:#ee6f47">${icon('heart')}</span><span><b>Rescata</b>Llegan avisos de animales sin hogar. Acógelos en un recinto de su hábitat.</span></div>
+    <div><span class="ic" style="background:#7c5cd6">${icon('smile')}</span><span><b>Gánate su confianza</b>Llegan con miedo y se esconden. Premios, juegos y su cuidador les ayudan.</span></div>
+    <div><span class="ic" style="background:#2aa876">${icon('users')}</span><span><b>Abre las puertas</b>Caminos y tiendas atraen visitantes, y ellos pagan los gastos.</span></div></div>
+    <p class="hint" style="margin-top:10px">Tu primer aviso ya está aquí: dos animales de una granja abandonada. Toca <b>Animales</b> abajo.</p>`); }
 renderGoal();
 hud();
 $('#animalcard').addEventListener('click', (ev) => { const b = ev.target.closest('[data-ren]'); if (b) renameAnimal(st.animals.find((q) => q.id === b.dataset.ren)); const v = ev.target.closest('[data-vet]'); if (v) callVet(st.animals.find((q) => q.id === v.dataset.vet)); const c = ev.target.closest('[data-care]'); if (c) { const [aid, k] = c.dataset.care.split('|'); careAnimal(st.animals.find((q) => q.id === aid), k); animalCardTick(true); } });
 Sound.init('zoo');
-window.zoo = { eng, THREE, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
+window.zoo = { eng, THREE, parkGround, enterClose, rebuildEnclosures, organicModel, tick, addAnimal, decide, financeModal, followAnimal, get st() { return st; }, get visitors() { return visitors; } };
 
 // Al abrir: si en otro dispositivo hay una partida más reciente, se ofrece (o se recupera sola si aquí no había ninguna)
 function cloudCheck() {
@@ -1234,3 +1242,4 @@ function cloudCheck() {
 cloud.onRetry = cloudCheck;
 if (sessionStorage.getItem('cloud_restored')) { sessionStorage.removeItem('cloud_restored'); setTimeout(() => toast('Partida recuperada de la nube', 'good', 'cloud'), 600); }
 cloudCheck();
+$('#money').onclick = financeModal; $('#money').setAttribute('role', 'button'); $('#money').setAttribute('aria-label', 'Ver cuentas');

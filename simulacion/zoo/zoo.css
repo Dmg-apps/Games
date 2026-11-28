@@ -1,0 +1,196 @@
+/* Parque Salvaje · identidad visual propia del santuario.
+   Paleta de bosque y arena, materiales translúcidos, una sola línea de estado arriba
+   y respuesta inmediata al tocar. Solo afecta al zoo (body.zoo). */
+body.zoo {
+  --ink: #16352b; --ink-2: #4c6359; --ink-3: #8a9c93;
+  --fill: #eef0e6; --fill-2: #e4e8db; --line: rgba(22, 53, 43, 0.09);
+  --card: rgba(251, 250, 244, 0.78); --card-solid: #fbfaf4;
+  --coral: #ee6f47; --mint: #2aa876; --mint-d: #1d8a5f; --amber: #eda22b; --red: #dc4a46; --violet: #7c5cd6; --sky: #3a9bd6;
+  --leaf: #2f6b4f; --sand: #f3ead8;
+  --shadow: 0 1px 1px rgba(22, 53, 43, 0.05), 0 6px 18px rgba(22, 53, 43, 0.12);
+  --shadow-l: 0 2px 6px rgba(22, 53, 43, 0.08), 0 24px 60px rgba(22, 53, 43, 0.24);
+  --press: cubic-bezier(0.23, 1, 0.32, 1);
+  background: linear-gradient(#9fd3ec, #dbeee6);
+}
+body.zoo, body.zoo button { font-feature-settings: 'tnum' 1; }
+
+/* Material: translúcido, con un borde de luz arriba (el cristal recoge la luz) */
+body.zoo .glass {
+  background: var(--card);
+  backdrop-filter: blur(20px) saturate(170%); -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), inset 0 0 0 0.5px rgba(22, 53, 43, 0.06), var(--shadow);
+}
+
+/* ---------- línea de estado ---------- */
+body.zoo .hudbar { gap: 6px; align-items: center; }
+body.zoo .hud { border-radius: 999px; height: 44px; padding: 0 14px 0 5px; gap: 7px; }
+body.zoo .hud .badge { width: 34px; height: 34px; border-radius: 50%; font-size: 17px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12); }
+body.zoo .hud b { font-size: 15.5px; font-weight: 850; letter-spacing: -0.01em; }
+body.zoo .hud.back { width: 44px; padding: 0; justify-content: center; }
+body.zoo .hud.back a { width: 44px; height: 44px; color: var(--ink); }
+body.zoo #money { flex: 1 1 auto; min-width: 0; }
+body.zoo #fame { padding-right: 12px; }
+body.zoo #clock { flex: none; padding-right: 4px; }
+body.zoo #clock .t { margin-right: 4px; }
+body.zoo #clock .t b { font-size: 15px; }
+body.zoo #clock .t span { font-size: 11px; color: var(--ink-2); font-weight: 750; }
+/* velocidad dentro del reloj: pausa y ritmo (×1 ×2 ×3) */
+body.zoo .speeds { display: flex; gap: 3px; padding: 0; background: none; box-shadow: none; }
+body.zoo .speeds button { width: 36px; height: 36px; border-radius: 50%; background: var(--fill); color: var(--ink); font-size: 14px; font-weight: 900; display: grid; place-items: center; transition: transform 140ms var(--press), background-color 160ms ease; }
+body.zoo .speeds button:active { transform: scale(0.92); }
+body.zoo .speeds button.paused { background: var(--amber); color: #fff; }
+body.zoo .speeds button.fast { background: var(--ink); color: #fff; }
+
+/* objetivo: banda fina con progreso */
+body.zoo .goalpill { top: calc(var(--safe-t) + 62px); left: calc(var(--safe-l) + 10px); max-width: min(330px, calc(100vw - 20px)); border-radius: 18px; padding: 8px 12px 8px 8px; gap: 10px; transition: transform 140ms var(--press); }
+body.zoo .goalpill:active { transform: scale(0.97); }
+body.zoo .goalpill > svg { width: 30px; height: 30px; padding: 6px; border-radius: 50%; background: #fff2dc; color: #d97a12; }
+body.zoo .goalpill b { font-size: 13px; font-weight: 850; letter-spacing: -0.005em; }
+body.zoo .goalpill i { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--ink-2); }
+body.zoo .goalpill .gp { width: 54px; height: 5px; border-radius: 3px; background: var(--fill-2); overflow: hidden; flex: none; }
+body.zoo .goalpill .gp u { display: block; height: 100%; background: var(--amber); border-radius: 3px; transform-origin: left; transition: transform 500ms var(--ease-out); }
+
+/* ---------- avisos: bajan desde arriba y se van por donde vinieron ---------- */
+body.zoo .toasts { top: calc(var(--safe-t) + 118px); left: 50%; right: auto; transform: translateX(-50%); width: min(calc(100vw - 20px), 380px); align-items: center; }
+body.zoo .toast { border-radius: 999px; padding: 6px 16px 6px 6px; font-size: 13px; font-weight: 700; transform: translateY(-10px) scale(0.98); transition: opacity 220ms ease, transform 300ms var(--ease-out); max-width: 100%; }
+body.zoo .toast.in { transform: none; }
+body.zoo .toast.out { transform: translateY(-10px) scale(0.98); transition-duration: 160ms; }
+body.zoo .toast .tile { width: 30px; height: 30px; border-radius: 50%; font-size: 15px; }
+
+/* ---------- barra inferior: material translúcido, la pestaña activa con su color ---------- */
+body.zoo .toolbar .tools { gap: 2px; }
+body.zoo .toolbar .tools button { position: relative; gap: 3px; padding: 5px 4px 4px; border-radius: 16px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.01em; color: var(--ink-2); transition: transform 140ms var(--press), color 160ms ease; }
+body.zoo .toolbar .tools button .ic { font-size: 22px; width: 52px; height: 30px; padding: 4px 0; border-radius: 999px; transition: background-color 200ms ease; }
+body.zoo .toolbar .tools button.on { background: none; box-shadow: none; color: var(--leaf); }
+body.zoo .toolbar .tools button.on .ic { background: rgba(47, 107, 79, 0.14); }
+body.zoo .toolbar .tools button:active { transform: scale(0.93); }
+body.zoo #tools .dot { top: 3px; right: calc(50% - 22px); width: 9px; height: 9px; background: var(--coral); box-shadow: 0 0 0 2px var(--card-solid); }
+@media (orientation: portrait), (min-height: 561px) {
+  body.zoo .toolbar .tools { background: rgba(251, 250, 244, 0.86); border-radius: 26px 26px 0 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 -1px 0 rgba(22, 53, 43, 0.06), 0 -8px 30px rgba(22, 53, 43, 0.1); }
+}
+body.zoo .toolbar .info { border-radius: 999px; padding: 6px 6px 6px 14px; font-weight: 750; }
+body.zoo .toolbar .info .x { width: 32px; height: 32px; border-radius: 50%; background: var(--fill); display: grid; place-items: center; color: var(--ink-2); }
+
+/* ---------- hojas ---------- */
+body.zoo .sheet { background: var(--card-solid); border-radius: 28px; box-shadow: inset 0 1px 0 #fff, var(--shadow-l); transition: transform 380ms var(--ease-drawer), opacity 200ms ease; }
+body.zoo .sheet.closed { transform: translateY(calc(100% + 140px)); transition: transform 240ms var(--ease-out), opacity 180ms ease; }
+body.zoo .sheet-head { padding: 12px 14px 6px 20px; }
+body.zoo .sheet-head h2 { font-size: 24px; font-weight: 900; letter-spacing: -0.025em; line-height: 1.1; }
+body.zoo .sheet-head .close { width: 36px; height: 36px; border-radius: 50%; font-size: 15px; transition: transform 140ms var(--press); }
+body.zoo .sheet-head .close:active { transform: scale(0.9); }
+body.zoo .sheet-body { padding: 2px 16px 22px; }
+body.zoo .sec { color: var(--leaf); font-size: 11.5px; letter-spacing: 0.08em; margin: 20px 4px 8px; }
+body.zoo .sec .ic { font-size: 14px; }
+body.zoo .hint { color: var(--ink-2); font-weight: 600; }
+body.zoo .sheet-body > .hint, body.zoo .sheet-body > p.hint { margin: 4px 4px 8px; }
+
+/* tarjetas blancas sobre fondo cálido (antes eran planas) */
+body.zoo .card, body.zoo .list .li, body.zoo .item { background: #fff; box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(22, 53, 43, 0.05); }
+body.zoo .list .li { border-radius: 20px; padding: 12px; margin: 8px 0; }
+body.zoo .list .li b { font-size: 15.5px; letter-spacing: -0.01em; }
+body.zoo .item { border-radius: 20px; transition: transform 140ms var(--press), box-shadow 160ms ease; }
+body.zoo .item:active { transform: scale(0.96); }
+body.zoo .item.on { box-shadow: 0 0 0 2.5px var(--leaf); }
+body.zoo .item .tilebox, body.zoo .tilebox { background: var(--fill); border-radius: 16px; }
+body.zoo .item .p { color: var(--mint-d); }
+body.zoo .item.locked { opacity: 0.55; }
+@media (hover: hover) and (pointer: fine) { body.zoo .list .li:hover, body.zoo .item:hover { background: #fdfdf9; } }
+
+/* botones: el color principal es verde bosque */
+body.zoo .btn { background: var(--ink); border-radius: 16px; font-weight: 850; letter-spacing: -0.005em; transition: transform 140ms var(--press), opacity 160ms ease; }
+body.zoo .btn:active { transform: scale(0.97); }
+body.zoo .btn.coral { background: var(--coral); }
+body.zoo .btn.mint { background: var(--mint); }
+body.zoo .btn.alt { background: var(--fill); color: var(--ink); }
+body.zoo .btn.sm { border-radius: 12px; }
+body.zoo .seg button, body.zoo .tabs button, body.zoo .chip { transition: transform 140ms var(--press), background-color 160ms ease, color 160ms ease; }
+body.zoo .seg button { border-radius: 999px; padding: 9px 15px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+body.zoo .seg button.on, body.zoo .chip.on { background: var(--ink); color: #fff; box-shadow: none; }
+body.zoo .seg button:active, body.zoo .chip:active { transform: scale(0.95); }
+body.zoo .chip { background: #fff; box-shadow: 0 0 0 1px var(--line); padding: 5px 12px; }
+body.zoo .bar { background: var(--fill-2); height: 8px; }
+body.zoo .mbar { background: var(--fill-2); }
+body.zoo .trait { background: #eee8fb; color: #5a3cae; }
+
+/* ---------- ventanas ---------- */
+body.zoo .modal { background: rgba(14, 32, 26, 0.38); backdrop-filter: blur(6px) saturate(120%); -webkit-backdrop-filter: blur(6px) saturate(120%); }
+body.zoo .modal-box { border-radius: 30px; padding: 22px 18px 18px; box-shadow: inset 0 1px 0 #fff, var(--shadow-l); animation: zooModalIn 240ms var(--ease-out); }
+body.zoo .modal-box h2 { display: flex; align-items: center; gap: 10px; font-size: 23px; letter-spacing: -0.025em; line-height: 1.15; }
+body.zoo .modal-box h2 > .ic { width: 36px; height: 36px; padding: 8px; border-radius: 50%; background: var(--fill); color: var(--leaf); flex: none; }
+body.zoo .speech { background: var(--sand); }
+body.zoo .speech::before { border-bottom-color: var(--sand); }
+@keyframes zooModalIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+
+/* bienvenida en tres ideas, sin muro de texto */
+body.zoo .pillars { display: grid; gap: 8px; margin: 12px 0 2px; }
+body.zoo .pillars div { display: flex; gap: 12px; align-items: center; background: #fff; border-radius: 18px; padding: 10px 12px; box-shadow: 0 0 0 1px var(--line); font-size: 13.5px; line-height: 1.35; color: var(--ink-2); }
+body.zoo .pillars b { display: block; color: var(--ink); font-size: 14.5px; }
+body.zoo .pillars .ic { width: 40px; height: 40px; padding: 9px; border-radius: 14px; color: #fff; flex: none; }
+
+/* ---------- vista de cerca: ficha abajo, el animal queda a la vista ---------- */
+body.zoo.closeview .toolbar { transform: translateY(110%); pointer-events: none; }
+body.zoo .toolbar { transition: transform 300ms var(--ease-drawer); }
+body.zoo.closeview .camctl { bottom: calc(var(--safe-b) + 84px); }
+body.zoo .closebar { bottom: calc(var(--safe-b) + 14px); border-radius: 999px; padding: 5px 5px 5px 16px; gap: 6px; flex-wrap: nowrap; animation: zooRise 280ms var(--ease-out); }
+body.zoo .closebar .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-weight: 850; }
+body.zoo .closebar .btn.sm { border-radius: 999px; min-height: 40px; padding: 8px 14px; }
+body.zoo .closebar #cb_x { width: 40px; padding: 0; }
+body.zoo .closecard { top: auto; bottom: calc(var(--safe-b) + 72px); left: 10px; right: 10px; border-radius: 26px; padding: 12px 14px 12px; max-height: 46dvh; overflow-y: auto; overscroll-behavior: contain; animation: zooRise 280ms var(--ease-out); }
+body.zoo.closeview .camctl { display: none; }
+body.zoo .closecard .stat { grid-template-columns: 22px 78px 1fr; margin: 3px 0 0; font-size: 12.5px; }
+body.zoo .closecard .stat .tile { width: 22px; height: 22px; border-radius: 50%; font-size: 12px; }
+body.zoo .closecard .zphoto { border-radius: 16px; }
+@keyframes zooRise { from { opacity: 0; transform: translateY(12px); } }
+body.zoo .closebar { animation-name: zooRiseC; }
+@keyframes zooRiseC { from { opacity: 0; transform: translate(-50%, 12px); } }
+
+/* cámara */
+body.zoo .camctl button { border-radius: 50%; transition: transform 140ms var(--press); }
+body.zoo .camctl button:active { transform: scale(0.9); }
+
+/* accesibilidad */
+@media (prefers-reduced-transparency: reduce) {
+  body.zoo .glass, body.zoo .toolbar .tools { background: var(--card-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  body.zoo .glass, body.zoo .card, body.zoo .list .li, body.zoo .item { box-shadow: 0 0 0 1.5px var(--ink); }
+}
+
+/* dinero y fama en una sola cápsula; el reloj sin icono para que todo quepa en una línea */
+body.zoo #money { padding-right: 12px; }
+body.zoo #money > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.zoo .fame { display: flex; align-items: center; gap: 3px; padding-left: 9px; margin-left: 2px; border-left: 1px solid var(--line); height: 22px; flex: none; }
+body.zoo .fame .badge { width: auto; height: auto; background: none !important; box-shadow: none; color: #e98a12; font-size: 16px; }
+body.zoo .fame b { font-size: 14.5px; }
+body.zoo #clock { padding-left: 14px; }
+body.zoo #clock > .badge { display: none; }
+body.zoo .hudbar > #money { flex: 1 1 auto; }
+body.zoo .closebar .cnt { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); margin-left: 4px; }
+body.zoo #money { cursor: pointer; transition: transform 140ms var(--press); } body.zoo #money:active { transform: scale(0.97); }
+/* ajuste fino para pantallas de 375-390 px */
+body.zoo .hudbar { gap: 5px; }
+body.zoo .hud { height: 42px; gap: 6px; }
+body.zoo .hud .badge { width: 30px; height: 30px; font-size: 15px; }
+body.zoo .hud.back, body.zoo .hud.back a { width: 42px; height: 42px; }
+body.zoo #money { padding-left: 6px; padding-right: 11px; }
+body.zoo #money > b { font-size: 15px; letter-spacing: -0.02em; }
+body.zoo .fame { padding-left: 7px; gap: 2px; }
+body.zoo #clock { padding-left: 12px; gap: 5px; }
+body.zoo .speeds button { width: 32px; height: 32px; font-size: 13px; }
+/* velocidad: segunda fila, a la derecha del objetivo */
+body.zoo #speeds { position: fixed; z-index: 6; top: calc(var(--safe-t) + 62px); right: calc(var(--safe-r) + 10px); padding: 4px; gap: 4px; border-radius: 999px; background: var(--card); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), inset 0 0 0 0.5px rgba(22, 53, 43, 0.06), var(--shadow); }
+body.zoo #speeds button { width: 36px; height: 36px; font-size: 14px; }
+body.zoo .goalpill { max-width: calc(100vw - 20px - var(--safe-l) - var(--safe-r) - 96px); }
+body.zoo #clock { padding-right: 14px; }
+body.zoo.sheet-open #speeds { display: none; }
+@media (max-width: 380px) {
+  body.zoo .hud .badge { width: 26px; height: 26px; font-size: 14px; }
+  body.zoo #money { gap: 5px; padding-left: 5px; padding-right: 9px; }
+  body.zoo .fame { padding-left: 6px; }
+  body.zoo #clock { padding: 0 11px; }
+  body.zoo #money > b { font-size: 14.5px; }
+}
+body.zoo .goalpill i { white-space: nowrap; } body.zoo .goalpill > span { min-width: 0; } body.zoo .goalpill b { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+body.zoo .closecard .carerow { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.zoo .closecard .carerow .btn.sm { font-size: 12px; padding: 6px 9px; gap: 5px; white-space: nowrap; }
+body.zoo .closecard .carerow .btn .ic { font-size: 15px; }
