@@ -5,8 +5,10 @@ import { THREE, mat, blob, canvasTexture } from '../shared/engine3d.js';
 import { RoundedBoxGeometry } from '../shared/vendor/RoundedBoxGeometry.js';
 import * as Look from '../shared/look.js';
 import { peek, instance as modelInstance, preload as preloadModels } from '../shared/assets.js';
-// Visitantes low-poly animados ("Mini Characters" de Kenney, CC0)
-const PEOPLE_FILES = ['b', 'c', 'd', 'e', 'f'].map((k) => `people/mini_female_${k}.glb`).concat(['a', 'b', 'c', 'd', 'e', 'f'].map((k) => `people/mini_male_${k}.glb`));
+// Visitantes low-poly animados ("Ultimate Animated Character Pack" de Quaternius, CC0), a escala real (1,65 m)
+const PEOPLE_FILES = ['casual_male', 'casual_female', 'casual2_male', 'casual2_female', 'casual3_male', 'casual3_female', 'oldclassy_male', 'oldclassy_female', 'suit_female', 'cowboy_male'].map((k) => `q/people/${k}.glb`); // Quaternius, CC0
+const SKINS = new Map();
+const skinMat = (c = '#d29b74') => SKINS.get(c) || SKINS.set(c, Object.assign(new THREE.MeshLambertMaterial({ color: c }), { name: 'Skin' })).get(c);
 export class GlbPeople {
   constructor(scene, max = 30) { this.scene = scene; this.max = max; this.map = new Map(); this.ready = false; this.lastT = 0; preloadModels(PEOPLE_FILES).then((r) => { this.ready = r.every(Boolean); }); }
   // Devuelve los visitantes que no ha dibujado
@@ -16,8 +18,8 @@ export class GlbPeople {
     const shown = list.slice(0, this.max); const seen = new Set();
     for (const p of shown) {
       seen.add(p.id); let r = this.map.get(p.id);
-      if (!r) { const gl = peek(PEOPLE_FILES[Math.floor(Math.abs(p.id) * 1e6) % PEOPLE_FILES.length]); r = modelInstance(gl, { height: p.kid ? 0.56 : 0.82 }); r.g.add(blob(0.36, 0.36, 0.3)); r.g.traverse((o) => { o.castShadow = false; }); this.scene.add(r.g); this.map.set(p.id, r); }
-      const walk = p.path && p.path.length; r.play(walk ? 'walk' : 'idle', { speed: walk ? 1.1 : 1 }); r.update(dt);
+      if (!r) { const gl = peek(PEOPLE_FILES[Math.floor(Math.abs(p.id) * 1e6) % PEOPLE_FILES.length]); r = modelInstance(gl, { height: p.kid ? 0.6 : 0.84 }); r.g.add(blob(0.36, 0.36, 0.3)); const skin = skinMat(p.skin); r.g.traverse((o) => { o.castShadow = false; if (o.isMesh) { const fx = (m) => (m && (m.name === 'Skin' || m.name === 'Face') ? skin : m); o.material = Array.isArray(o.material) ? o.material.map(fx) : fx(o.material); } }); this.scene.add(r.g); this.map.set(p.id, r); }
+      const v = r.px != null && dt > 0 ? Math.hypot(p.x - r.px, p.z - r.pz) / dt : 0; r.px = p.x; r.pz = p.z; r.v = (r.v || 0) + (v - (r.v || 0)) * Math.min(1, dt * 5); const walk = r.v > 0.08; r.play(walk ? ['Walk', 'walk'] : ['Idle', 'idle'], { speed: walk ? Math.max(0.6, Math.min(3, r.v / 0.75)) : 1 }); r.update(dt);
       r.g.position.set(p.x + 0.5, 0.05, p.z + 0.5); r.g.rotation.y = p.dir || 0;
     }
     for (const [id, r] of this.map) if (!seen.has(id)) { this.scene.remove(r.g); this.map.delete(id); }

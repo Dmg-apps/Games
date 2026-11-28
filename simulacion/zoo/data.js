@@ -13,8 +13,8 @@ export const SIZES = { S: { label: 'Pequeño', n: 4, price: 400 }, M: { label: '
 
 // Especies originales. Cuerpo [largo, alto, ancho], patas, cuello, cabeza; colores; rasgos para el modelo 3D.
 export const SPECIES = {
-  oveja: { label: 'Oveja', fem: true, biome: 'pradera', price: 250, appeal: 1, fame: 0, space: 2, social: true, len: 0.62, body: [0.5, 0.3, 0.26], legs: 0.24, neck: 0.08, head: 0.1, model: { any: ['sheep'] }, static: true, colors: ['#ece6d8'] },
-  cerdo: { label: 'Cerdo', biome: 'granja', price: 300, appeal: 1, fame: 0, space: 3, social: true, len: 0.7, body: [0.56, 0.3, 0.3], legs: 0.18, neck: 0.06, head: 0.12, model: { any: ['pig'] }, static: true, tint: '#f0b0a8', colors: ['#f0b0a8'] },
+  oveja: { label: 'Oveja', fem: true, biome: 'pradera', price: 250, appeal: 1, fame: 0, space: 2, social: true, len: 0.62, body: [0.5, 0.3, 0.26], legs: 0.24, neck: 0.08, head: 0.1, model: { any: ['q/animals/sheep'] }, noWalk: true, colors: ['#ece6d8'] },
+  cerdo: { label: 'Cerdo', biome: 'granja', price: 300, appeal: 1, fame: 0, space: 3, social: true, len: 0.7, body: [0.56, 0.3, 0.3], legs: 0.18, neck: 0.06, head: 0.12, model: { any: ['q/animals/pig'] }, noWalk: true, colors: ['#f0b0a8'] },
   burro: { label: 'Burro', biome: 'granja', price: 350, appeal: 1, fame: 0, space: 3, social: true, len: 0.9, body: [0.7, 0.36, 0.3], legs: 0.4, neck: 0.18, head: 0.13, model: { any: ['donkey'] }, colors: ['#8d8780'] },
   alpaca: { label: 'Alpaca', fem: true, biome: 'pradera', price: 400, appeal: 2, fame: 0, space: 3, social: true, len: 0.78, body: [0.6, 0.38, 0.3], legs: 0.4, neck: 0.4, head: 0.12, model: { any: ['alpaca'] }, colors: ['#c8a070'] },
   vaca: { label: 'Vaca', m: 'Toro', fem: true, biome: 'granja', price: 450, appeal: 2, fame: 0, space: 4, social: true, len: 1.2, body: [0.95, 0.5, 0.42], legs: 0.4, neck: 0.15, head: 0.17, model: { f: ['cow'], m: ['bull'] }, colors: ['#8a5a30'] },
@@ -22,6 +22,10 @@ export const SPECIES = {
   perro: { label: 'Perro', biome: 'granja', price: 300, appeal: 3, fame: 0.5, space: 2, social: true, len: 0.5, body: [0.42, 0.26, 0.2], legs: 0.22, neck: 0.08, head: 0.1, model: { any: ['husky', 'shiba'] }, colors: ['#c88a40'] },
   ciervo: { label: 'Ciervo', f: 'Cierva', biome: 'bosque', price: 900, appeal: 3, fame: 1, space: 4, social: true, len: 0.95, body: [0.75, 0.42, 0.3], legs: 0.5, neck: 0.3, head: 0.13, model: { f: ['deer'], m: ['stag'] }, colors: ['#9a6a40'] },
   zorro: { label: 'Zorro', biome: 'bosque', price: 700, appeal: 3, fame: 1, space: 2, len: 0.6, body: [0.45, 0.24, 0.18], legs: 0.2, neck: 0.08, head: 0.1, model: { any: ['fox'] }, colors: ['#d8742a'] },
+  gallina: { label: 'Gallina', fem: true, biome: 'granja', price: 60, appeal: 2, fame: 0, space: 1, social: true, len: 0.22, body: [0.18, 0.16, 0.14], legs: 0.06, neck: 0.04, head: 0.06, model: { any: ['q/animals/chick'] }, yaw: -Math.PI / 2, noWalk: true, colors: ['#f5d24a'] },
+  gato: { label: 'Gato', biome: 'granja', price: 150, appeal: 3, fame: 0, space: 1, len: 0.28, body: [0.22, 0.14, 0.1], legs: 0.1, neck: 0.04, head: 0.06, model: { any: ['q/animals/cat'] }, yaw: -Math.PI / 2, colors: ['#3c3c42'] },
+  llama: { label: 'Llama', fem: true, biome: 'pradera', price: 500, appeal: 2, fame: 0.5, space: 3, social: true, len: 0.8, body: [0.6, 0.4, 0.3], legs: 0.45, neck: 0.45, head: 0.12, model: { any: ['q/animals/llama'] }, noWalk: true, colors: ['#6a4028'] },
+  aguila: { label: 'Águila', biome: 'bosque', price: 1200, appeal: 5, fame: 1.5, space: 3, len: 0.62, body: [0.35, 0.3, 0.3], legs: 0.12, neck: 0.08, head: 0.08, model: { any: ['q/animals/eagle'] }, yaw: Math.PI, flier: true, colors: ['#4a2a18'] },
   lobo: { label: 'Lobo', biome: 'bosque', price: 1800, appeal: 5, fame: 2, space: 5, social: true, len: 0.85, body: [0.65, 0.34, 0.24], legs: 0.34, neck: 0.1, head: 0.13, model: { any: ['wolf'] }, colors: ['#7a7a80'] },
 };
 
@@ -59,7 +63,7 @@ export const BUILDINGS = {
   farola: { label: 'Farola', price: 60, cat: 'Decoración', decor: 1, ic: 'lamp' },
   flores: { label: 'Flores', price: 30, cat: 'Decoración', decor: 2, ic: 'leaf' },
   arbolp: { label: 'Árbol', price: 100, cat: 'Decoración', decor: 3, ic: 'tree' },
-  fuente: { label: 'Fuente', price: 900, cat: 'Decoración', decor: 8, ic: 'drop' },
+  fuente: { label: 'Pozo de los deseos', price: 900, cat: 'Decoración', decor: 8, ic: 'drop' },
 };
 export const PATH_PRICE = 10;
 export const WAGES = { keeper: 120, cleaner: 90, vet: 160 };
@@ -69,7 +73,7 @@ export const SPONSOR = 25; // al día por cada animal rescatado que ya confía (
 export const CARE = { treat: { label: "Darle un premio", short: "Premio", ic: "heart", price: 10, gain: 6, cd: 180, desc: "Fruta, pescado o pienso especial, según la especie" }, keeper: { label: "Rato con su cuidador", short: "Cuidador", ic: "paw", price: 0, gain: 10, cd: 480, keeper: true, desc: "El cuidador se sienta cerca, sin prisa, y le habla bajito" }, toy: { label: "Juego de enriquecimiento", short: "Juego", ic: "sparkle", price: 25, gain: 8, cd: 720, happy: 12, desc: "Comida escondida en cajas y cuerdas para que la busque" } };
 
 export const ANIMAL_NAMES = ['Luna', 'Kiko', 'Nala', 'Bruno', 'Coco', 'Tula', 'Simba', 'Maya', 'Rufo', 'Kira', 'Toto', 'Lola', 'Bamba', 'Nube', 'Pipa', 'Zuri', 'Oto', 'Sol', 'Mora', 'Chispa', 'Duna', 'Leo', 'Nilo', 'Tara', 'Bimba', 'Canela', 'Trufa', 'Pelusa', 'Golfo', 'Jazmín', 'Lirio', 'Menta', 'Ocre', 'Pimienta', 'Ramón', 'Sombra', 'Tango', 'Uva', 'Vainilla', 'Yuca', 'Zafiro', 'Arena', 'Bombón', 'Cacao', 'Dátil', 'Eco', 'Fresa', 'Gofio', 'Higo', 'Indi', 'Jara', 'Kala', 'Lima', 'Mango', 'Nuez', 'Olivo', 'Pan', 'Queso', 'Roble', 'Salvia', 'Tomillo', 'Ulises', 'Vega', 'Wanda', 'Xoco', 'Yago', 'Zarza', 'Ámbar', 'Brisa', 'Cometa', 'Dino', 'Estrella', 'Faro', 'Gema', 'Hada', 'Iris', 'Jade', 'Kumo', 'Loto', 'Merlín', 'Niebla', 'Ópalo', 'Pompón', 'Quimera', 'Rizos', 'Saltarín', 'Trueno', 'Umbra', 'Volcán'];
-export const CARNIVORES = ['lobo', 'zorro', 'perro'];
+export const CARNIVORES = ['lobo', 'zorro', 'perro', 'gato', 'aguila'];
 
 // Cruces posibles en la naturaleza (o en cautividad) entre especies emparentadas.
 // Los híbridos no se compran: solo se consiguen cruzando. Muchos son estériles, como en la realidad.
@@ -99,22 +103,22 @@ export const TRAITS = {
   grunon: { m: 'Gruñón', f: 'Gruñona', desc: 'Necesita su espacio: se aparta de los demás.' },
 };
 // Género gramatical de cada especie (para que los textos concuerden: "una cebra", "un león")
-for (const k of ['oveja', 'alpaca', 'vaca', 'mula']) (SPECIES[k] || {}).fem = true;
+for (const k of ['oveja', 'alpaca', 'vaca', 'mula', 'gallina', 'llama']) (SPECIES[k] || {}).fem = true;
 
 // ---------- Santuario: rescates y adopciones ----------
 // Cada rescate trae una historia y un estado al llegar. trust: confianza inicial (0-100).
 export const RESCUES = {
-  circo: { title: 'Un circo cierra', ic: 'alert', trust: 10, fame: 0.15, species: ['caballo', 'burro', 'perro', 'cerdo', 'oveja'], story: 'Viene de un circo que ha cerrado. Le asusta la gente y los ruidos: necesita calma.' },
-  granja: { title: 'Granja abandonada', ic: 'home', trust: 30, hungry: true, fame: 0.08, species: ['oveja', 'burro', 'cerdo', 'vaca', 'alpaca', 'caballo'], story: 'Lo encontraron en una granja abandonada, delgado y con poca comida. Agradecerá un buen plato.' },
-  maltrato: { title: 'Rescate por maltrato', ic: 'alert', trust: 12, fame: 0.2, species: ['perro', 'caballo', 'burro', 'vaca', 'cerdo'], story: 'Lo han rescatado de un lugar donde lo trataban mal. Desconfía de las personas y necesita paciencia.' },
-  herido: { title: 'Herido, ya curado', ic: 'heart', trust: 35, injured: true, fame: 0.12, species: ['ciervo', 'zorro', 'lobo'], story: 'Sufrió un accidente en el monte y ya está curado, pero no puede volver a la naturaleza. Aún cojea un poco.' },
+  circo: { title: 'Un circo cierra', ic: 'alert', trust: 10, fame: 0.15, species: ['caballo', 'burro', 'perro', 'cerdo', 'oveja', 'llama'], story: 'Viene de un circo que ha cerrado. Le asusta la gente y los ruidos: necesita calma.' },
+  granja: { title: 'Granja abandonada', ic: 'home', trust: 30, hungry: true, fame: 0.08, species: ['oveja', 'burro', 'cerdo', 'vaca', 'alpaca', 'caballo', 'gallina', 'llama'], story: 'Lo encontraron en una granja abandonada, delgado y con poca comida. Agradecerá un buen plato.' },
+  maltrato: { title: 'Rescate por maltrato', ic: 'alert', trust: 12, fame: 0.2, species: ['perro', 'gato', 'caballo', 'burro', 'vaca', 'cerdo', 'gallina'], story: 'Lo han rescatado de un lugar donde lo trataban mal. Desconfía de las personas y necesita paciencia.' },
+  herido: { title: 'Herido, ya curado', ic: 'heart', trust: 35, injured: true, fame: 0.12, species: ['ciervo', 'zorro', 'lobo', 'aguila'], story: 'Sufrió un accidente en el monte y ya está curado, pero no puede volver a la naturaleza. Aún cojea un poco.' },
   huerfano: { title: 'Cría huérfana', ic: 'heart', trust: 25, baby: true, fame: 0.15, species: ['ciervo', 'zorro', 'lobo', 'oveja', 'vaca', 'caballo'], story: 'Cría huérfana: su madre no pudo cuidarla. Necesita compañía y alguien pendiente de ella.' },
-  abandono: { title: 'Abandonado en la carretera', ic: 'users', trust: 40, fame: 0.06, species: ['perro', 'oveja', 'cerdo', 'burro'], story: 'Lo dejaron abandonado junto a una carretera. Está asustado, pero se nota que ha vivido con personas.' },
-  centro: { title: 'Otro centro sin sitio', ic: 'users', trust: 50, fame: 0.05, species: ['alpaca', 'lobo', 'zorro', 'vaca', 'ciervo', 'caballo'], story: 'Otro centro de rescate se ha quedado sin sitio y busca un hogar tranquilo para él.' },
+  abandono: { title: 'Abandonado en la carretera', ic: 'users', trust: 40, fame: 0.06, species: ['perro', 'gato', 'oveja', 'cerdo', 'burro', 'gallina'], story: 'Lo dejaron abandonado junto a una carretera. Está asustado, pero se nota que ha vivido con personas.' },
+  centro: { title: 'Otro centro sin sitio', ic: 'users', trust: 50, fame: 0.05, species: ['alpaca', 'llama', 'lobo', 'zorro', 'vaca', 'ciervo', 'caballo', 'aguila'], story: 'Otro centro de rescate se ha quedado sin sitio y busca un hogar tranquilo para él.' },
 };
 
 // Depredadores: tamaño máximo de presa (espacio que ocupa). Los grandes también cazan carnívoros más pequeños.
-export const PREDATOR = { lobo: ['oveja', 'cerdo', 'alpaca', 'ciervo', 'perro', 'zorro'], zorro: [] }; // a quién caza cada uno
+export const PREDATOR = { lobo: ['oveja', 'cerdo', 'alpaca', 'llama', 'ciervo', 'perro', 'zorro', 'gato', 'gallina'], zorro: ['gallina'], aguila: ['gallina'], perro: [] }; // a quién caza cada uno
 // Clima de cada hábitat: no pueden ir pegados si son muy distintos
 export const CLIMATE = { bosque: 1, granja: 2, pradera: 3 };
 export const STAFF_NAMES = ['Lucía', 'Mateo', 'Nora', 'Iker', 'Alba', 'Hugo', 'Sara', 'Leo', 'Inés', 'Bruno', 'Vera', 'Marco', 'Ada', 'Pau', 'Noa', 'Teo', 'Lía', 'Gael', 'Irene', 'Dani', 'Olga', 'Rubén', 'Celia', 'Omar'];

@@ -1,10 +1,12 @@
-Modelos 3D de libre uso (CC0 1.0, dominio público). No es obligatorio citar, pero lo hacemos:
+Modelos 3D de libre uso (CC0 1.0, dominio público), todos de Quaternius (https://quaternius.com).
+No es obligatorio citar, pero lo hacemos:
 
-- animals/: de Quaternius (https://quaternius.com), CC0.
-  · "Ultimate Animated Animal Pack": caballo, caballo blanco, vaca, toro, burro, alpaca, ciervo, cierva, zorro, lobo, husky y shiba.
-  · "Farm Animal Pack": cerdo y oveja (convertidos de FBX a glTF, sin esqueleto).
-  Comprimidos con gltf-transform (meshopt).
-- people/: "Mini Characters" de Kenney (https://www.kenney.nl), CC0.
-- nature/, food/: Kenney y Quaternius, CC0.
+- animals/: "Ultimate Animated Animal Pack" — caballo, caballo blanco, vaca, toro, burro, alpaca, ciervo, cierva, zorro, lobo, husky, shiba.
+- q/animals/: "Farm Animal Pack" (cerdo, oveja, llama, carlino), "Animal Pack Vol.2" (gato, perro, águila) y "Low Poly Animals" (pollito, pájaro).
+- q/people/: "Ultimate Animated Character Pack" — visitantes.
+- q/nature/: "Ultimate Nature Pack" — árboles, arbustos, rocas, hierba, flores, nenúfares, troncos.
+- q/props/: "Medieval Village Pack" (puestos de mercado, carro, banco, barril, caja, paja, pozo, valla, saco)
+  y "Ultimate House Interior Pack" (papelera, farola).
 
-Licencia completa en CC0-1.0.txt.
+Descargados de las copias oficiales en OpenGameArt; convertidos de FBX a glTF (colores tomados de sus .mtl)
+y comprimidos con gltf-transform (meshopt). Licencia completa en CC0-1.0.txt.

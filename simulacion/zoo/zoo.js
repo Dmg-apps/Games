@@ -6,6 +6,7 @@ import { buildingMesh as propMesh, People, GlbPeople } from './props3d.js';
 import { animalModel as organicModel, setDetail as setAnimalDetail } from './animals3d.js';
 import { loadModel, peek, instance as modelInstance, preload as preloadModels, staticModel } from '../shared/assets.js';
 import * as World from './world3d.js';
+import * as QM from './qmodels.js';
 import { $, esc, eur, icon, toast, modal, closeModal, modalOpen, info, confirm, Sheet, store, trash, edgePan, say, pickOne, Sound } from '../shared/ui.js';
 import { autoSync, pullSlot, session as cloudSession } from '../shared/cloud.js';
 import { renderCloud, chooseSave } from '../shared/cloudui.js';
@@ -216,7 +217,9 @@ function animalsTick(dt) {
     if (a.state === 'eat' && arrived) a.hunger = clamp(a.hunger + 1.2 * dt);
     if (arrived && (!a.restUntil || st.time > a.restUntil)) decide(a, e);
     if (!arrived) {
-      const S = SPECIES[a.sp]; const sp = (S.hop ? 1.4 : 0.9) * dt * (a.baby ? 0.8 : 1) * 0.6;
+      // paso natural de cada especie (en casillas por segundo real), igual a cualquier velocidad de juego: no corren como locos al acelerar
+      const S = SPECIES[a.sp]; const real = dt / Math.max(1, SPEEDS[st.speed] || 1); const far = Math.hypot(a.tx - a.x, a.tz - a.z) > 3.5 && a.state === 'wander';
+      const sp = Math.min(0.6, Math.max(0.12, 0.55 * (S.len || 0.8))) * (far ? 1.7 : 1) * (a.baby ? 0.85 : 1) * real * 60 / 60;
       const dx = a.tx - a.x, dz = a.tz - a.z, d = Math.hypot(dx, dz);
       if (d <= sp) { a.x = a.tx; a.z = a.tz; } else { a.x += dx / d * sp; a.z += dz / d * sp; a.dir = Math.atan2(dx, dz); }
     }
@@ -562,7 +565,8 @@ parkGround.rotation.x = -Math.PI / 2; parkGround.position.set(N / 2, 0, N / 2); 
   for (let i = -0.5; i <= N + 0.5; i += 0.7) for (const [x, z] of [[i, -0.6], [i, N + 0.6], [-0.6, i], [N + 0.6, i]]) if (!(Math.abs(x - ENTRANCE.x - 0.5) < 1.6 && z > N)) hedge.push([x, z]);
   S3.add(Look.hedge(hedge));
   const trees = []; for (let i = 0; i < 150 * Look.detail(eng); i++) { const a = R() * Math.PI * 2, d = N * 0.62 + 2 + Math.pow(R(), 0.7) * 34; const x = N / 2 + Math.cos(a) * d, z = N / 2 + Math.sin(a) * d; if (z > N + 1 && Math.abs(x - ENTRANCE.x) < 4) continue; trees.push({ x, z, s: 1.4 + R() * 1.4, kind: R() < 0.3 ? 'pino' : R() < 0.5 ? 'abedul' : 'roble' }); }
-  S3.add(Look.forest(trees));
+  const bgOld = Look.forest(trees); S3.add(bgOld);
+  QM.loaded.then((ok) => { if (!ok) return; const pick2 = (r) => (r < 0.3 ? QM.PINES : r < 0.5 ? QM.BIRCH : QM.TREES); const keep = eng.hq ? 1 : 0.5; const list = trees.filter((_, i) => (i * 0.618) % 1 < keep).map((t, i) => { const r = (i * 0.618) % 1; const L = eng.hq ? pick2(r) : r < 0.55 ? QM.PINES : QM.BIRCH; return { name: L[i % L.length], x: t.x, z: t.z, h: t.s * 1.35, ry: i * 1.7 }; }); S3.remove(bgOld); S3.add(QM.many(list, { shadows: false })); eng.dirty = true; });
   const field = []; for (let i = 0; i < 260 * Look.detail(eng); i++) { const x = rnd(-8, N + 8), z = rnd(-8, N + 8); if (x > -1.2 && x < N + 1.2 && z > -1.2 && z < N + 1.2) continue; field.push([x, z]); } S3.add(Look.grassTufts(field, { size: 0.22 }));
 }
 // entrada
@@ -581,6 +585,23 @@ const BIOME_TREE = { granja: 'roble', pradera: 'abedul', sabana: 'roble', selva:
 function tree(scale = 1, kind = 'roble', seed = 1) { const g = new THREE.Group(); const t = Look.tree(kind, scale, seed); if (kind === 'roble' && scale > 1.1) t.scale.y = scale * 0.85; g.add(t); g.add(blob(0.9 * scale, 0.9 * scale, 0.3)); return g; }
 function enrichMesh(type, biome = 'granja', seed = 1) {
   const g = new THREE.Group();
+  if (QM.ready) { // objetos de Quaternius
+    const put = (name, h, x = 0, z = 0, ry = 0) => { const m = QM.one(name, h, ry); if (m) { m.position.set(x, 0, z); g.add(m); } return m; };
+    const MAP = {
+      arbol: () => put((biome === 'bosque' ? QM.PINES : QM.TREES)[seed % 3], 1.7, 0, 0, seed),
+      acacia: () => put('nature/commontree_1', 1.5, 0, 0, seed),
+      roca: () => { put(QM.ROCKS[seed % 3], 0.45, -0.15, 0, seed); put(QM.ROCKS[(seed + 1) % 3], 0.3, 0.22, 0.15, seed + 1); },
+      cuevaroca: () => { put('nature/rock_moss_1', 0.9, -0.2, -0.1, 0.4); put('nature/rock_moss_2', 0.6, 0.25, 0.15, 2); put('nature/plant_1', 0.25, 0.1, 0.38); },
+      juncos: () => { for (let i = 0; i < 4; i++) put(QM.GRASS[i % 3], 0.35 + (i % 2) * 0.1, Math.cos(i * 1.7) * 0.25, Math.sin(i * 1.7) * 0.25, i); },
+      helechos: () => { put('nature/plant_1', 0.35, -0.15, 0, 0); put('nature/plant_3', 0.4, 0.2, 0.1, 1); put('nature/plant_1', 0.3, 0, -0.25, 2); },
+      troncocaido: () => put('nature/woodlog_moss', 0.28, 0, 0, seed),
+      tronco: () => put('nature/treestump', 0.4, 0, 0, seed),
+      pajar: () => { put('props/hay', 0.45, -0.2, 0); put('props/hay', 0.38, 0.22, 0.12, 1); },
+      comedero: () => { put('props/crate', 0.32, -0.12, 0); put('props/barrel', 0.38, 0.22, 0.05); },
+    };
+    if (MAP[type]) { MAP[type](); return g; }
+    if (type === 'charca') { const hit = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.95), new THREE.MeshBasicMaterial({ visible: false })); hit.position.y = 0.06; g.add(hit); put('nature/lilypad', 0.06, 0.12, -0.1, seed); return g; }
+  }
   if (type === 'arbol') g.add(tree(1.25, BIOME_TREE[biome], seed));
   if (type === 'roca') { for (let i = 0; i < 3; i++) { const r = Look.rock(0.2 + i * 0.07, biome === 'artico' ? '#b8c0c8' : '#9a9286', seed + i); r.position.x = i * 0.26 - 0.26; r.position.z = (i % 2) * 0.2; r.rotation.y = i * 2; g.add(r); } }
   if (type === 'charca') { // el agua se dibuja junta para todo el recinto (pondMesh); aquí solo la zona que se puede tocar
@@ -675,22 +696,35 @@ function rebuildEnclosures() {
     const pond = pondMesh(e); if (pond) eg.add(pond);
   }
 }
-function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = propMesh(b, BUILDINGS); Look.shadows(m, true, false); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.rotation.y = faceToPath(b); m.userData.bld = b.id; g.add(m); } }
+// Tiendas y decoración con modelos de Quaternius (puestos de mercado, carros, bancos, farolas...), con un cartel del color de cada tienda
+function qBuilding(b) {
+  if (!QM.ready) return null; const B = BUILDINGS[b.type]; const g = new THREE.Group();
+  const put = (name, h, x = 0, z = 0, ry = 0) => { const m = QM.one(name, h, ry); if (m) { m.position.set(x, 0, z); g.add(m); } return m; };
+  const sign = (text, color) => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 72; const x = cv.getContext('2d'); x.fillStyle = color; x.fillRect(0, 0, 256, 72); x.fillStyle = '#fff'; x.font = '900 40px Nunito, system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 128, 40);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const m = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.17, 0.03), [mat('#6a4a2c'), mat('#6a4a2c'), mat('#6a4a2c'), mat('#6a4a2c'), new THREE.MeshLambertMaterial({ map: t }), mat('#6a4a2c')]); return m; };
+  const SHOP = { helados: ['props/cart', 0.8, 'HELADOS'], bebidas: ['props/cart', 0.8, 'BEBIDAS'], comida: ['props/marketstand_2', 0.9, 'COMIDA'], regalos: ['props/marketstand_1', 0.9, 'REGALOS'] };
+  if (SHOP[b.type]) { const [n, h, txt] = SHOP[b.type]; const m = put(n, h, 0, -0.05, -Math.PI / 2); if (!m) return null; const sg = sign(txt, B.color); sg.position.set(0, h + 0.14, 0.12); g.add(sg); return g; }
+  const DECO = { banco: () => put('props/bench_1', 0.42, 0, 0, Math.PI / 2), papelera: () => put('props/trashcan_green', 0.34), farola: () => put('props/light_floor1', 1.15), flores: () => { put('nature/flowers', 0.3, -0.15, 0); put('nature/flowers', 0.26, 0.18, 0.12, 1); put('nature/flowers', 0.24, 0, -0.2, 2); },
+    arbolp: () => put(QM.TREES[(b.x + b.z) % 5], 1.6, 0, 0, b.x), fuente: () => put('props/well', 0.95) };
+  if (DECO[b.type]) { DECO[b.type](); return g.children.length ? g : null; }
+  return null;
+}
+function rebuildBuildings() { const g = groups.bld; g.clear(); eng.shadowsDirty?.(); for (const b of st.buildings) { const m = qBuilding(b) || propMesh(b, BUILDINGS); Look.shadows(m, true, false); m.position.set(b.x + 0.5, 0.05, b.z + 0.5); m.rotation.y = faceToPath(b); m.userData.bld = b.id; g.add(m); } }
 // las tiendas miran hacia el camino más cercano
 function faceToPath(b) { const P = pathSet(); for (const [dx, dz, r] of [[0, 1, 0], [1, 0, Math.PI / 2], [0, -1, Math.PI], [-1, 0, -Math.PI / 2]]) if (P.has(pk(b.x + dx, b.z + dz))) return r; return 0; }
 
 // Animales: modelos animados de Quaternius (CC0), con variante según el sexo (vaca/toro, cierva/ciervo) o al azar
 const animalMeshes = new Map();
 let glbReady = false;
-const modelFile = (n) => `animals/${n}.glb`;
+const modelFile = (n) => (n.includes('/') ? `${n}.glb` : `animals/${n}.glb`);
 const ALL_MODELS = [...new Set(Object.values(SPECIES).flatMap((S) => Object.values(S.model || {}).flat()))];
 preloadModels(ALL_MODELS.map(modelFile)).then(() => { glbReady = true; for (const [, m] of animalMeshes) groups.animals.remove(m.g); animalMeshes.clear(); eng.dirty = true; });
 function modelName(sp, sex, seed = 0) { const M = SPECIES[sp]?.model || {}; const list = (sex === 'm' ? M.m : M.f) || M.any || M.f || M.m || []; return list[Math.abs(seed) % list.length]; }
 function tintModel(root, hex) { const c = new THREE.Color(hex); root.traverse((o) => { if (o.isMesh) { o.material = (Array.isArray(o.material) ? o.material : [o.material]).map((x) => { const y = x.clone(); y.color.lerp(c, 0.6); return y; }); if (o.material.length === 1) o.material = o.material[0]; } }); }
 function glbAnimal(sp, sex = 'f', seed = 0) {
   const S = SPECIES[sp]; const name = modelName(sp, sex, seed); const gl = name && peek(modelFile(name)); if (!gl) return null;
-  const it = modelInstance(gl, { length: S.len || 1 }); if (S.tint) tintModel(it.g, S.tint);
-  it.glb = !S.static; it.isStatic = !!S.static; it.play(['Idle', 'Idle_A']); it.update(0.01); return it;
+  const it = modelInstance(gl, { length: S.len || 1, yaw: S.yaw || 0 }); if (S.tint) tintModel(it.g, S.tint);
+  it.glb = !S.static; it.isStatic = !!S.static; it.noWalk = !!S.noWalk; it.flier = !!S.flier; it.play(['Idle', 'Idle_A']); it.update(0.01); return it;
 }
 const idHash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return h; };
 function animalModel(a) {
@@ -720,6 +754,12 @@ function syncAnimals(t) {
     const k = (a.baby ? 0.55 : 1) * (m.baseScale || 1) * (0.35 + 0.65 * m.fade); m.g.scale.setScalar(k);
     const S = SPECIES[a.sp]; const w = moving ? Math.sin(t * (S.hop ? 9 : 7) + a.x) : 0;
     const crouch = a.state === 'hide' && a.crouch && !moving; const sleeping = (a.state === 'sleep' || a.state === 'sick') && !moving, headDown = !moving && ['eat', 'drink', 'graze'].includes(a.state);
+    if (m.glb && (m.noWalk || m.flier)) { // sin animación de andar (balanceo propio) o águila (vuela al moverse)
+      const pv = m.g.children[0]; const v = m.vel || 0; m.walking = m.walking ? v > 0.04 : v > 0.12;
+      if (m.flier) { m.play(m.walking ? ['Flying'] : ['Idle'], { speed: m.walking ? 1.2 : 1 }); pv.position.y = m.walking ? 0.35 + Math.sin(t * 3 + a.x) * 0.05 : 0; }
+      else { m.play(['Idle', 'ArmatureAction.002', 'ArmatureAction'], { speed: 1 }); pv.position.y = m.walking ? Math.abs(Math.sin(t * 9 + a.x)) * 0.025 * (S.len || 1) : 0; pv.rotation.z = m.walking ? Math.sin(t * 9 + a.x) * 0.06 : 0; pv.rotation.x = headDown ? 0.08 : 0; }
+      m.update(rdt); continue;
+    }
     if (m.glb) { // modelo animado: elige la animación según lo que hace y a qué velocidad va de verdad
       const L = (SPECIES[a.sp]?.len || 1) * (a.baby ? 0.55 : 1), v = m.vel || 0;
       m.walking = m.walking ? v > 0.04 : v > 0.12; // con margen, para que no parpadee entre andar y parar
@@ -792,6 +832,15 @@ function rebuildTufts() {
     for (let i = 0; i < (eng.hq ? 1 + (k % 2) : k % 2); i++) pts.push([x + ((k * 13 + i * 37) % 97) / 97, z + ((k * 29 + i * 53) % 89) / 89]);
     if (k === 3 || (eng.hq && k === 5)) for (let i = 0; i < 3; i++) fl.push([x + 0.2 + ((k * 7 + i * 41) % 61) / 100, z + 0.2 + ((k * 11 + i * 23) % 59) / 100]);
   }
+  if (QM.ready) { // vegetación de Quaternius: todo instanciado (pocas llamadas a la gráfica)
+    const L = [], H = (a, b) => ((a * 9301 + b * 49297) % 233280) / 233280;
+    trees.forEach((t, i) => { const set = t.kind === 'pino' ? QM.PINES : t.kind === 'abedul' || (!eng.hq && i % 3) ? QM.BIRCH : QM.TREES; L.push({ name: set[i % set.length], x: t.x, z: t.z, h: t.s * 1.15, ry: i * 2.3 }); });
+    bushes.forEach(([x, z, sz], i) => L.push({ name: QM.BUSHES[i % QM.BUSHES.length], x, z, h: sz * 1.4, ry: i * 1.3 }));
+    rocks.forEach(([x, z, sz], i) => L.push({ name: QM.ROCKS[i % QM.ROCKS.length], x, z, h: sz * 1.6, ry: i * 2.1 }));
+    for (let i = 0; i < tall.length; i += eng.hq ? 2 : 4) L.push({ name: QM.GRASS[i % 3], x: tall[i][0], z: tall[i][1], h: 0.2 + H(i, 3) * 0.12, ry: i });
+    fl.forEach(([x, z], i) => { if (i % 3 === 0) L.push({ name: 'nature/flowers', x, z, h: 0.16, ry: i }); });
+    g.add(QM.many(L, { shadows: eng.hq })); return;
+  }
   g.add(World.lawnDetail([], fl));
   if (tall.length) g.add(World.tallGrass(tall));
   if (trees.length) { const f = Look.forest(trees); Look.shadows(f, true, false); g.add(f);}
@@ -802,7 +851,8 @@ function rebuildTufts() {
     im.castShadow = eng.hq; g.add(im); }
   for (const [x, z, sz, sd] of rocks) { const r = Look.rock(sz, '#9a948a', sd); r.position.set(x, 0, z); g.add(r); }
 }
-const flock = World.birds(N / 2, N / 2, 7); S3.add(flock.group);
+const flock = QM.birds(S3, N / 2, N / 2, N * 0.9);
+QM.loaded.then(() => { sig.tufts = null; rebuildEnclosures(); rebuildBuildings(); });
 function sync(t) {
   syncExtras(); flock.update(t);
   const s1 = st.paths.join(';'); if (s1 !== sig.paths) { sig.paths = s1; rebuildPaths(); }
@@ -1377,7 +1427,7 @@ eng.onFrame = (dt) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); cloud.now(); } else { offline(); hud(); } });
 window.addEventListener('pagehide', save);
-if (st.migrated) { const M = st.migrated; delete st.migrated; setTimeout(() => say('rufina', 'El santuario cambia', `<p>Desde hoy somos un <b>santuario de granja y bosque</b>: caballos, vacas, burros, alpacas, ovejas, cerdos, perros, ciervos, zorros y lobos.</p><p>${M.names.length} animales salvajes (${esc(M.names.slice(0, 6).join(', '))}${M.names.length > 6 ? '…' : ''}) se han ido a una reserva especializada, donde vivirán mejor. Te dan <b>${eur(M.refund)}</b> para seguir rescatando.</p><p class="hint">Los recintos se han adaptado al hábitat más parecido.</p>`, 'Entendido'), 600); save(); }
+if (st.migrated) { const M = st.migrated; delete st.migrated; setTimeout(() => say('rufina', 'El santuario cambia', `<p>Desde hoy somos un <b>santuario de granja y bosque</b>: caballos, vacas, burros, alpacas, llamas, ovejas, cerdos, gallinas, perros, gatos, ciervos, zorros, lobos y águilas.</p><p>${M.names.length} animales salvajes (${esc(M.names.slice(0, 6).join(', '))}${M.names.length > 6 ? '…' : ''}) se han ido a una reserva especializada, donde vivirán mejor. Te dan <b>${eur(M.refund)}</b> para seguir rescatando.</p><p class="hint">Los recintos se han adaptado al hábitat más parecido.</p>`, 'Entendido'), 600); save(); }
 if (store.load(KEY)) offline(); else { newRescue(true); say('rufina', 'Este santuario es tuyo', '¡Hola! Soy Rufina. Aquí no se compran animales: se rescatan, se cuidan y se les da una segunda vida.', '¡Empezamos!', null, `<div class="pillars">
     <div><span class="ic" style="background:#ee6f47">${icon('heart')}</span><span><b>Rescata</b>Llegan avisos de animales sin hogar. Acógelos en un recinto de su hábitat.</span></div>
     <div><span class="ic" style="background:#7c5cd6">${icon('smile')}</span><span><b>Gánate su confianza</b>Llegan con miedo y se esconden. Premios, juegos y su cuidador les ayudan.</span></div>
