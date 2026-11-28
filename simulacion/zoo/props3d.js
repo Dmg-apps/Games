@@ -4,6 +4,26 @@
 import { THREE, mat, blob, canvasTexture } from '../shared/engine3d.js';
 import { RoundedBoxGeometry } from '../shared/vendor/RoundedBoxGeometry.js';
 import * as Look from '../shared/look.js';
+import { peek, instance as modelInstance, preload as preloadModels } from '../shared/assets.js';
+// Visitantes low-poly animados ("Mini Characters" de Kenney, CC0)
+const PEOPLE_FILES = ['b', 'c', 'd', 'e', 'f'].map((k) => `people/mini_female_${k}.glb`).concat(['a', 'b', 'c', 'd', 'e', 'f'].map((k) => `people/mini_male_${k}.glb`));
+export class GlbPeople {
+  constructor(scene, max = 30) { this.scene = scene; this.max = max; this.map = new Map(); this.ready = false; this.lastT = 0; preloadModels(PEOPLE_FILES).then((r) => { this.ready = r.every(Boolean); }); }
+  // Devuelve los visitantes que no ha dibujado
+  sync(list, t) {
+    if (!this.ready) return list;
+    const dt = this.lastT ? Math.min(0.1, t - this.lastT) : 0; this.lastT = t;
+    const shown = list.slice(0, this.max); const seen = new Set();
+    for (const p of shown) {
+      seen.add(p.id); let r = this.map.get(p.id);
+      if (!r) { const gl = peek(PEOPLE_FILES[Math.floor(Math.abs(p.id) * 1e6) % PEOPLE_FILES.length]); r = modelInstance(gl, { height: p.kid ? 0.56 : 0.82 }); r.g.add(blob(0.36, 0.36, 0.3)); r.g.traverse((o) => { o.castShadow = false; }); this.scene.add(r.g); this.map.set(p.id, r); }
+      const walk = p.path && p.path.length; r.play(walk ? 'walk' : 'idle', { speed: walk ? 1.1 : 1 }); r.update(dt);
+      r.g.position.set(p.x + 0.5, 0.05, p.z + 0.5); r.g.rotation.y = p.dir || 0;
+    }
+    for (const [id, r] of this.map) if (!seen.has(id)) { this.scene.remove(r.g); this.map.delete(id); }
+    return list.slice(this.max);
+  }
+}
 
 const rb = (w, h, d, m, r = 0.03) => new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, r), typeof m === 'string' ? mat(m) : m);
 const cyl = (rt, rbm, h, m, seg = 16) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rbm, h, seg), typeof m === 'string' ? mat(m) : m);

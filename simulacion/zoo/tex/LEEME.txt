@@ -1,3 +1,0 @@
-Texturas y cielo: Poly Haven (https://polyhaven.com), licencia CC0 (dominio público).
-Se pueden usar gratis en proyectos comerciales, sin atribución obligatoria.
-Reducidas a 512 px para móvil. Cielo: farm_field_puresky.

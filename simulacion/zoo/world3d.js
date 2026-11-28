@@ -59,6 +59,7 @@ export const cobbleTex = () => once('cobble', () => tex(128, (x, s) => {
 
 // Suelo de cada hábitat (textura de 2×2 casillas)
 const BIOME_LOOK = {
+  pradera: { base: '#b8c46a', patch: ['#c8d27c', '#a6b45a', '#d4c47a'], dot: ['#d2dc8a', '#98a84e', '#e0cc80'], track: '#b0945e' },
   granja: { base: '#93c160', patch: ['#a8d070', '#7fae50', '#c9c27a'], dot: ['#b4d67e', '#6f9e48', '#d6c97e'], track: '#a7895a' },
   sabana: { base: '#d3bd72', patch: ['#e2d08c', '#c2a75c', '#b8b06a'], dot: ['#e8d896', '#a99250', '#9caa5a'], track: '#b8915a' },
   selva: { base: '#4d9446', patch: ['#5fa752', '#3c7c38', '#6a8a3a'], dot: ['#6cb45a', '#32682f', '#8a7448'], track: '#6e5a3a' },
@@ -79,6 +80,7 @@ const edgeTex = () => once('edge', () => { const t = tex(64, (x, s) => { const g
 
 // Estilo de valla por hábitat
 const FENCE = {
+  pradera: { post: '#8a6440', rail: '#c09a64', cap: '#6a4a2c', rails: [0.3, 0.6] },
   granja: { post: '#7a5434', rail: '#b0844f', cap: '#5e3f24', rails: [0.3, 0.6] },
   sabana: { post: '#6b4e30', rail: '#94703f', cap: '#4e3822', rails: [0.32, 0.62] },
   selva: { post: '#5f8a34', rail: '#86ac4a', cap: '#4a6e2a', rails: [0.25, 0.5, 0.75] },

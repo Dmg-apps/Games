@@ -1,0 +1,10 @@
+Modelos 3D de libre uso (CC0 1.0, dominio público). No es obligatorio citar, pero lo hacemos:
+
+- animals/: de Quaternius (https://quaternius.com), CC0.
+  · "Ultimate Animated Animal Pack": caballo, caballo blanco, vaca, toro, burro, alpaca, ciervo, cierva, zorro, lobo, husky y shiba.
+  · "Farm Animal Pack": cerdo y oveja (convertidos de FBX a glTF, sin esqueleto).
+  Comprimidos con gltf-transform (meshopt).
+- people/: "Mini Characters" de Kenney (https://www.kenney.nl), CC0.
+- nature/, food/: Kenney y Quaternius, CC0.
+
+Licencia completa en CC0-1.0.txt.
